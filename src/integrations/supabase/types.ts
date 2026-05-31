@@ -432,6 +432,7 @@ export type Database = {
           created_by: string | null
           deleted_at: string | null
           deleted_by: string | null
+          delivery_boy_id: string | null
           expense_date: string
           id: string
           is_deleted: boolean
@@ -448,6 +449,7 @@ export type Database = {
           created_by?: string | null
           deleted_at?: string | null
           deleted_by?: string | null
+          delivery_boy_id?: string | null
           expense_date?: string
           id?: string
           is_deleted?: boolean
@@ -464,6 +466,7 @@ export type Database = {
           created_by?: string | null
           deleted_at?: string | null
           deleted_by?: string | null
+          delivery_boy_id?: string | null
           expense_date?: string
           id?: string
           is_deleted?: boolean
@@ -478,6 +481,13 @@ export type Database = {
             columns: ["agency_id"]
             isOneToOne: false
             referencedRelation: "agencies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "expenses_delivery_boy_id_fkey"
+            columns: ["delivery_boy_id"]
+            isOneToOne: false
+            referencedRelation: "delivery_boys"
             referencedColumns: ["id"]
           },
         ]
@@ -811,6 +821,7 @@ export type Database = {
         | "salary"
         | "paytm_transfer"
         | "miscellaneous"
+        | "delivery_boy_payment"
       ledger_entry_kind: "sale_credit" | "payment" | "adjustment"
       payment_mode: "cash" | "online" | "paytm" | "credit"
       payment_receipt_mode: "cash" | "online" | "paytm"
@@ -952,6 +963,7 @@ export const Constants = {
         "salary",
         "paytm_transfer",
         "miscellaneous",
+        "delivery_boy_payment",
       ],
       ledger_entry_kind: ["sale_credit", "payment", "adjustment"],
       payment_mode: ["cash", "online", "paytm", "credit"],
