@@ -171,3 +171,90 @@
   /* Numeric tabular figures for amounts */
   .tabular-nums { font-variant-numeric: tabular-nums; }
 }
+
+/* Custom Print Stylesheet */
+@media print {
+  body {
+    background: white !important;
+    color: black !important;
+    font-size: 11pt !important;
+  }
+  
+  /* Hide sidebar navigation, filters, buttons, and other interactive controls */
+  aside, 
+  nav, 
+  header, 
+  footer,
+  .no-print,
+  button,
+  [role="dialog"],
+  [role="menu"],
+  .dropdown-menu,
+  .sheet,
+  .filters-panel,
+  .print-hide,
+  .sidebar,
+  .no-print-el {
+    display: none !important;
+  }
+
+  /* Full width container for printed elements */
+  main,
+  .main-content,
+  .container,
+  #app-content {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+
+  /* Make printed cards borderless and flat */
+  .card, 
+  .shadow-soft, 
+  .shadow-card {
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+  }
+
+  /* Print Tables cleanly with high contrast borders */
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    page-break-inside: auto !important;
+  }
+  
+  tr {
+    page-break-inside: avoid !important;
+    page-break-after: auto !important;
+  }
+  
+  th, td {
+    border-bottom: 1px solid #000 !important;
+    padding: 8px !important;
+    color: black !important;
+  }
+  
+  th {
+    background-color: #f1f5f9 !important;
+    font-weight: bold !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* High contrast colors for print */
+  .text-success, .text-success-dark {
+    color: #15803d !important;
+  }
+
+  .text-destructive, .text-destructive-dark {
+    color: #b91c1c !important;
+  }
+
+  .text-primary, .text-primary-dark {
+    color: #1e3a8a !important;
+  }
+}

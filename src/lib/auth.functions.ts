@@ -333,3 +333,284 @@ export const getMe = createServerFn({ method: "GET" })
     }
     return { user: au, roles: roles ?? [], agency };
   });
+
+export const listAgencyUsers = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const admin = getAdminClient();
+    // 1. Get caller info
+    const { data: caller } = await admin
+      .from("agency_users")
+      .select("agency_id, user_id")
+      .eq("user_id", context.userId)
+      .maybeSingle();
+    if (!caller || !caller.agency_id) throw new Error("Unauthorized");
+
+    // 2. Verify caller is agency_admin
+    const { data: role } = await admin
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", context.userId)
+      .eq("role", "agency_admin")
+      .eq("agency_id", caller.agency_id)
+      .maybeSingle();
+    if (!role) throw new Error("Forbidden: Only agency admins can manage users");
+
+    // 3. Fetch users
+    const { data: users, error } = await admin
+      .from("agency_users")
+      .select("id, user_id, username, full_name, is_active, created_at")
+      .eq("agency_id", caller.agency_id)
+      .order("created_at", { ascending: false });
+    if (error) throw new Error(error.message);
+
+    // 4. Fetch roles for all these users
+    const { data: userRoles, error: rErr } = await admin
+      .from("user_roles")
+      .select("user_id, role")
+      .eq("agency_id", caller.agency_id);
+    if (rErr) throw new Error(rErr.message);
+
+    const rolesMap = Object.fromEntries((userRoles ?? []).map((r) => [r.user_id, r.role]));
+
+    return {
+      users: (users ?? []).map((u) => ({
+        ...u,
+        role: rolesMap[u.user_id] ?? "agency_operator",
+      })),
+    };
+  });
+
+export const createAgencyUser = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        username: z.string().trim().min(3).max(50).regex(/^[a-zA-Z0-9_.-]+$/),
+        password: z.string().min(8).max(72),
+        fullName: z.string().trim().min(1).max(100),
+        role: z.enum(["agency_admin", "agency_operator"]),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const admin = getAdminClient();
+    // 1. Get caller info
+    const { data: caller } = await admin
+      .from("agency_users")
+      .select("agency_id, user_id")
+      .eq("user_id", context.userId)
+      .maybeSingle();
+    if (!caller || !caller.agency_id) throw new Error("Unauthorized");
+
+    // 2. Verify caller is agency_admin
+    const { data: role } = await admin
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", context.userId)
+      .eq("role", "agency_admin")
+      .eq("agency_id", caller.agency_id)
+      .maybeSingle();
+    if (!role) throw new Error("Forbidden: Only agency admins can manage users");
+
+    // Get agency code
+    const { data: agency } = await admin
+      .from("agencies")
+      .select("code")
+      .eq("id", caller.agency_id)
+      .single();
+    if (!agency) throw new Error("Agency not found");
+
+    // 3. Create user in auth
+    const email = agencyAuthEmail(agency.code, data.username);
+    const { data: created, error: uErr } = await admin.auth.admin.createUser({
+      email,
+      password: data.password,
+      email_confirm: true,
+      user_metadata: {
+        username: data.username,
+        agency_code: agency.code,
+        agency_id: caller.agency_id,
+        kind: data.role,
+      },
+    });
+    if (uErr || !created.user) throw new Error(uErr?.message ?? "Failed to create user");
+
+    // 4. Create in agency_users and user_roles
+    const { error: auErr } = await admin.from("agency_users").insert({
+      user_id: created.user.id,
+      agency_id: caller.agency_id,
+      username: data.username,
+      full_name: data.fullName,
+      is_active: true,
+      is_platform_admin: false,
+    });
+    if (auErr) {
+      await admin.auth.admin.deleteUser(created.user.id);
+      throw new Error(auErr.message);
+    }
+
+    const { error: rErr } = await admin.from("user_roles").insert({
+      user_id: created.user.id,
+      role: data.role,
+      agency_id: caller.agency_id,
+    });
+    if (rErr) {
+      await admin.from("agency_users").delete().eq("user_id", created.user.id);
+      await admin.auth.admin.deleteUser(created.user.id);
+      throw new Error(rErr.message);
+    }
+
+    return { ok: true };
+  });
+
+export const updateAgencyUser = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        userId: z.string().uuid(),
+        fullName: z.string().trim().min(1).max(100),
+        role: z.enum(["agency_admin", "agency_operator"]),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const admin = getAdminClient();
+    // 1. Get caller info
+    const { data: caller } = await admin
+      .from("agency_users")
+      .select("agency_id, user_id")
+      .eq("user_id", context.userId)
+      .maybeSingle();
+    if (!caller || !caller.agency_id) throw new Error("Unauthorized");
+
+    // 2. Verify caller is agency_admin
+    const { data: role } = await admin
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", context.userId)
+      .eq("role", "agency_admin")
+      .eq("agency_id", caller.agency_id)
+      .maybeSingle();
+    if (!role) throw new Error("Forbidden");
+
+    // Verify target user is in the same agency
+    const { data: target } = await admin
+      .from("agency_users")
+      .select("id")
+      .eq("user_id", data.userId)
+      .eq("agency_id", caller.agency_id)
+      .maybeSingle();
+    if (!target) throw new Error("User not found in your agency");
+
+    // 3. Update full name
+    const { error: auErr } = await admin
+      .from("agency_users")
+      .update({ full_name: data.fullName })
+      .eq("user_id", data.userId);
+    if (auErr) throw new Error(auErr.message);
+
+    // 4. Update role
+    await admin
+      .from("user_roles")
+      .delete()
+      .eq("user_id", data.userId)
+      .eq("agency_id", caller.agency_id);
+
+    const { error: rErr } = await admin.from("user_roles").insert({
+      user_id: data.userId,
+      role: data.role,
+      agency_id: caller.agency_id,
+    });
+    if (rErr) throw new Error(rErr.message);
+
+    return { ok: true };
+  });
+
+export const toggleAgencyUserStatus = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({ userId: z.string().uuid(), isActive: z.boolean() }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const admin = getAdminClient();
+    // 1. Get caller info
+    const { data: caller } = await admin
+      .from("agency_users")
+      .select("agency_id, user_id")
+      .eq("user_id", context.userId)
+      .maybeSingle();
+    if (!caller || !caller.agency_id) throw new Error("Unauthorized");
+
+    // 2. Verify caller is agency_admin
+    const { data: role } = await admin
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", context.userId)
+      .eq("role", "agency_admin")
+      .eq("agency_id", caller.agency_id)
+      .maybeSingle();
+    if (!role) throw new Error("Forbidden");
+
+    // Verify target user is in the same agency and NOT the caller themselves (cannot disable self)
+    if (data.userId === context.userId) throw new Error("Cannot change your own active status");
+
+    const { data: target } = await admin
+      .from("agency_users")
+      .select("id")
+      .eq("user_id", data.userId)
+      .eq("agency_id", caller.agency_id)
+      .maybeSingle();
+    if (!target) throw new Error("User not found in your agency");
+
+    // 3. Update status
+    const { error } = await admin
+      .from("agency_users")
+      .update({ is_active: data.isActive })
+      .eq("user_id", data.userId);
+    if (error) throw new Error(error.message);
+
+    return { ok: true };
+  });
+
+export const resetAgencyUserPassword = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({ userId: z.string().uuid(), newPassword: z.string().min(8).max(72) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const admin = getAdminClient();
+    // 1. Get caller info
+    const { data: caller } = await admin
+      .from("agency_users")
+      .select("agency_id, user_id")
+      .eq("user_id", context.userId)
+      .maybeSingle();
+    if (!caller || !caller.agency_id) throw new Error("Unauthorized");
+
+    // 2. Verify caller is agency_admin
+    const { data: role } = await admin
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", context.userId)
+      .eq("role", "agency_admin")
+      .eq("agency_id", caller.agency_id)
+      .maybeSingle();
+    if (!role) throw new Error("Forbidden");
+
+    // Verify target user is in the same agency
+    const { data: target } = await admin
+      .from("agency_users")
+      .select("id")
+      .eq("user_id", data.userId)
+      .eq("agency_id", caller.agency_id)
+      .maybeSingle();
+    if (!target) throw new Error("User not found in your agency");
+
+    // 3. Reset password in auth
+    const { error } = await admin.auth.admin.updateUserById(data.userId, { password: data.newPassword });
+    if (error) throw new Error(error.message);
+
+    return { ok: true };
+  });

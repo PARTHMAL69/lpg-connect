@@ -348,6 +348,81 @@ export type Database = {
           },
         ]
       }
+      delivery_settlements: {
+        Row: {
+          id: string
+          agency_id: string
+          settlement_date: string
+          delivery_boy_id: string
+          collection_amount: number
+          commission_kept: number
+          submitted_amount: number
+          notes: string | null
+          status: string
+          remarks: string | null
+          is_deleted: boolean
+          deleted_at: string | null
+          deleted_by: string | null
+          created_at: string
+          updated_at: string
+          created_by: string | null
+          updated_by: string | null
+        }
+        Insert: {
+          id?: string
+          agency_id: string
+          settlement_date?: string
+          delivery_boy_id: string
+          collection_amount?: number
+          commission_kept?: number
+          submitted_amount?: number
+          notes?: string | null
+          status?: string
+          remarks?: string | null
+          is_deleted?: boolean
+          deleted_at?: string | null
+          deleted_by?: string | null
+          created_at?: string
+          updated_at?: string
+          created_by?: string | null
+          updated_by?: string | null
+        }
+        Update: {
+          id?: string
+          agency_id?: string
+          settlement_date?: string
+          delivery_boy_id?: string
+          collection_amount?: number
+          commission_kept?: number
+          submitted_amount?: number
+          notes?: string | null
+          status?: string
+          remarks?: string | null
+          is_deleted?: boolean
+          deleted_at?: string | null
+          deleted_by?: string | null
+          created_at?: string
+          updated_at?: string
+          created_by?: string | null
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "delivery_settlements_agency_id_fkey"
+            columns: ["agency_id"]
+            isOneToOne: false
+            referencedRelation: "agencies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_settlements_delivery_boy_id_fkey"
+            columns: ["delivery_boy_id"]
+            isOneToOne: false
+            referencedRelation: "delivery_boys"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
       expenses: {
         Row: {
           agency_id: string
@@ -357,6 +432,7 @@ export type Database = {
           created_by: string | null
           deleted_at: string | null
           deleted_by: string | null
+          delivery_boy_id: string | null
           expense_date: string
           id: string
           is_deleted: boolean
@@ -373,6 +449,7 @@ export type Database = {
           created_by?: string | null
           deleted_at?: string | null
           deleted_by?: string | null
+          delivery_boy_id?: string | null
           expense_date?: string
           id?: string
           is_deleted?: boolean
@@ -389,6 +466,7 @@ export type Database = {
           created_by?: string | null
           deleted_at?: string | null
           deleted_by?: string | null
+          delivery_boy_id?: string | null
           expense_date?: string
           id?: string
           is_deleted?: boolean
@@ -736,6 +814,7 @@ export type Database = {
         | "salary"
         | "paytm_transfer"
         | "miscellaneous"
+        | "delivery_boy_payment"
       ledger_entry_kind: "sale_credit" | "payment" | "adjustment"
       payment_mode: "cash" | "online" | "paytm" | "credit"
       payment_receipt_mode: "cash" | "online" | "paytm"

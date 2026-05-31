@@ -53,9 +53,9 @@ function AdminLayout() {
   );
 }
 
-export const IndexRoute = createFileRoute("/platform-admin/")({ component: AgenciesPage });
 
-function AgenciesPage() {
+
+export function AgenciesPage() {
   const listFn = useServerFn(listAgencies);
   const setStatusFn = useServerFn(setAgencyStatus);
   const resetPwFn = useServerFn(resetAgencyAdminPassword);

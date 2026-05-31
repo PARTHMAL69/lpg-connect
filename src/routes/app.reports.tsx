@@ -1,0 +1,291 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { RequireAgencyUser } from "@/components/route-guards";
+import { useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/lib/auth-context";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { PageHeader } from "@/components/page-header";
+import { useTranslation } from "react-i18next";
+import { fmtCurrency, fmtDate, todayISO } from "@/lib/format";
+import { exportToExcel, exportToPDF } from "@/lib/exports";
+import { getStockBalances, getStockLedger } from "@/lib/stock-store";
+import { Download, FileText, Play } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+
+export const Route = createFileRoute("/app/reports")({ component: () => <RequireAgencyUser><Page/></RequireAgencyUser> });
+
+type Kind = "daily_summary" | "product_sales" | "payments" | "udhari" | "cashbook" | "delivery" | "stock";
+
+function Page() {
+  const { t } = useTranslation();
+  const { agency, session } = useAuth();
+  const [kind, setKind] = useState<Kind>("daily_summary");
+  const [from, setFrom] = useState(todayISO()); const [to, setTo] = useState(todayISO());
+  const [cols, setCols] = useState<string[]>([]); const [data, setData] = useState<(string|number)[][]>([]);
+
+  const run = async () => {
+    if (!agency) return;
+    if (kind === "daily_summary") {
+      const [salesQ, paysQ, expQ, cashQ] = await Promise.all([
+        supabase.from("sales").select("sale_date, gross_amount, payment_mode").eq("agency_id", agency.id).eq("is_deleted", false).gte("sale_date", from).lte("sale_date", to),
+        supabase.from("payments").select("payment_date, amount, mode").eq("agency_id", agency.id).eq("is_deleted", false).gte("payment_date", from).lte("payment_date", to),
+        supabase.from("expenses").select("expense_date, amount").eq("agency_id", agency.id).eq("is_deleted", false).gte("expense_date", from).lte("expense_date", to),
+        supabase.from("cash_book_days").select("book_date, opening_cash").eq("agency_id", agency.id).gte("book_date", from).lte("book_date", to)
+      ]);
+
+      const dates = Array.from(new Set([
+        ...(salesQ.data ?? []).map(s => s.sale_date),
+        ...(paysQ.data ?? []).map(p => p.payment_date),
+        ...(expQ.data ?? []).map(e => e.expense_date),
+        ...(cashQ.data ?? []).map(c => c.book_date),
+      ])).sort().reverse();
+
+      setCols(["Date", "Gross Sales (₹)", "Cash Collections (₹)", "Online/Paytm (₹)", "Expenses Paid (₹)", "Expected Cash Drawer (₹)"]);
+      setData(dates.map((dateStr) => {
+        const salesOnDate = (salesQ.data ?? []).filter(s => s.sale_date === dateStr);
+        const paysOnDate = (paysQ.data ?? []).filter(p => p.payment_date === dateStr);
+        const expOnDate = (expQ.data ?? []).filter(e => e.expense_date === dateStr);
+        const cashOnDate = (cashQ.data ?? []).find(c => c.book_date === dateStr);
+
+        const grossSales = salesOnDate.reduce((sum, s) => sum + Number(s.gross_amount), 0);
+        const cashSales = salesOnDate.filter(s => s.payment_mode === 'cash').reduce((sum, s) => sum + Number(s.gross_amount), 0);
+        const cashPayments = paysOnDate.filter(p => p.mode === 'cash').reduce((sum, p) => sum + Number(p.amount), 0);
+        
+        const cashCollections = cashSales + cashPayments;
+        const nonCashCollections = paysOnDate.filter(p => p.mode !== 'cash').reduce((sum, p) => sum + Number(p.amount), 0) + 
+                             salesOnDate.filter(s => s.payment_mode !== 'cash' && s.payment_mode !== 'credit').reduce((sum, s) => sum + Number(s.gross_amount), 0);
+        
+        const expenses = expOnDate.reduce((sum, e) => sum + Number(e.amount), 0);
+        const openingCash = Number(cashOnDate?.opening_cash ?? 0);
+        const expectedCash = openingCash + cashCollections - expenses;
+
+        return [
+          fmtDate(dateStr),
+          Number(grossSales),
+          Number(cashCollections),
+          Number(nonCashCollections),
+          Number(expenses),
+          Number(expectedCash)
+        ];
+      }));
+    } else if (kind === "product_sales") {
+      const { data: sales } = await supabase
+        .from("sales")
+        .select("quantity, gross_amount, product:products(name)")
+        .eq("agency_id", agency.id)
+        .eq("is_deleted", false)
+        .gte("sale_date", from)
+        .lte("sale_date", to);
+
+      const prodMap: Record<string, { qty: number, rev: number }> = {};
+      (sales ?? []).forEach((s: any) => {
+        const pName = s.product?.name ?? "Cylinder";
+        if (!prodMap[pName]) prodMap[pName] = { qty: 0, rev: 0 };
+        prodMap[pName].qty += Number(s.quantity);
+        prodMap[pName].rev += Number(s.gross_amount);
+      });
+
+      setCols(["Product Name", "Total Quantity Sold", "Average Rate", "Gross Revenue (₹)"]);
+      setData(Object.entries(prodMap).map(([pName, val]) => [
+        pName,
+        val.qty,
+        val.qty > 0 ? Number((val.rev / val.qty).toFixed(2)) : 0,
+        Number(val.rev)
+      ]));
+    } else if (kind === "payments") {
+      const { data: r } = await supabase
+        .from("payments")
+        .select("id, payment_date, amount, mode, remarks, customer:customers(name)")
+        .eq("agency_id", agency.id)
+        .eq("is_deleted", false)
+        .gte("payment_date", from)
+        .lte("payment_date", to)
+        .order("payment_date", { ascending: false });
+
+      setCols(["Receipt ID", "Payment Date", "Customer Name", "Mode", "Notes / Remarks", "Amount (₹)"]);
+      setData((r ?? []).map((p: any) => [
+        p.id.substring(0, 8).toUpperCase(),
+        fmtDate(p.payment_date),
+        p.customer?.name ?? "Direct walk-in",
+        p.mode.toUpperCase(),
+        p.remarks ?? "Payment recorded",
+        Number(p.amount)
+      ]));
+    } else if (kind === "udhari") {
+      const { data: r } = await (supabase.from("customers") as any)
+        .select("name, mobile, village, outstanding_balance")
+        .eq("agency_id", agency.id)
+        .eq("is_deleted", false)
+        .gt("outstanding_balance", 0)
+        .order("outstanding_balance", { ascending: false });
+
+      setCols(["Debtor Name", "Mobile Number", "Village / Route", "Outstanding Udhari Balance (₹)"]);
+      setData((r ?? []).map((c: any) => [
+        c.name,
+        c.mobile ?? "—",
+        c.village ?? "—",
+        Number(c.outstanding_balance)
+      ]));
+    } else if (kind === "cashbook") {
+      const [cashQ, salesQ, paysQ, expQ] = await Promise.all([
+        supabase.from("cash_book_days").select("book_date, opening_cash, actual_closing, notes").eq("agency_id", agency.id).gte("book_date", from).lte("book_date", to),
+        supabase.from("sales").select("sale_date, gross_amount").eq("agency_id", agency.id).eq("payment_mode", "cash").eq("is_deleted", false).gte("sale_date", from).lte("sale_date", to),
+        supabase.from("payments").select("payment_date, amount").eq("agency_id", agency.id).eq("mode", "cash").eq("is_deleted", false).gte("payment_date", from).lte("payment_date", to),
+        supabase.from("expenses").select("expense_date, amount").eq("agency_id", agency.id).eq("is_deleted", false).gte("expense_date", from).lte("expense_date", to)
+      ]);
+
+      const dates = Array.from(new Set([
+        ...(cashQ.data ?? []).map(c => c.book_date),
+        ...(salesQ.data ?? []).map(s => s.sale_date),
+        ...(paysQ.data ?? []).map(p => p.payment_date),
+        ...(expQ.data ?? []).map(e => e.expense_date)
+      ])).sort().reverse();
+
+      setCols(["Date", "Opening Cash", "Cash Sales", "Cash Payments Recd", "Expenses Paid", "Expected closing", "Actual closing", "Shortage/Surplus"]);
+      setData(dates.map((dateStr) => {
+        const cashRow = (cashQ.data ?? []).find(c => c.book_date === dateStr);
+        const cashSalesSum = (salesQ.data ?? []).filter(s => s.sale_date === dateStr).reduce((s, x) => s + Number(x.gross_amount), 0);
+        const cashPaymentsSum = (paysQ.data ?? []).filter(p => p.payment_date === dateStr).reduce((s, x) => s + Number(x.amount), 0);
+        const expensesSum = (expQ.data ?? []).filter(e => e.expense_date === dateStr).reduce((s, x) => s + Number(x.amount), 0);
+
+        const opening = Number(cashRow?.opening_cash ?? 0);
+        const expected = opening + cashSalesSum + cashPaymentsSum - expensesSum;
+        const actual = cashRow?.actual_closing != null ? Number(cashRow.actual_closing) : expected;
+        const diff = actual - expected;
+
+        return [
+          fmtDate(dateStr),
+          Number(opening),
+          Number(cashSalesSum),
+          Number(cashPaymentsSum),
+          Number(expensesSum),
+          Number(expected),
+          Number(actual),
+          Number(diff)
+        ];
+      }));
+    } else if (kind === "delivery") {
+      const [boysQ, salesQ, settlementsQ, payoutsQ] = await Promise.all([
+        supabase.from("delivery_boys").select("id, name, default_commission").eq("agency_id", agency.id).eq("is_deleted", false),
+        supabase.from("sales").select("delivery_boy_id, quantity, gross_amount, commission_amount, payment_mode").eq("agency_id", agency.id).eq("is_deleted", false).gte("sale_date", from).lte("sale_date", to),
+        supabase.from("delivery_settlements").select("delivery_boy_id, collection_amount, commission_kept, submitted_amount").eq("agency_id", agency.id).eq("is_deleted", false).gte("settlement_date", from).lte("settlement_date", to),
+        supabase.from("expenses").select("delivery_boy_id, amount").eq("agency_id", agency.id).eq("category", "delivery_boy_payment").eq("is_deleted", false).gte("expense_date", from).lte("expense_date", to)
+      ]);
+
+      setCols(["Delivery Partner", "Trips (Delivered Qty)", "Commission Earned", "Cash Collections", "Cash Submitted", "Commission Paid", "Pending Commission"]);
+      setData((boysQ.data ?? []).map((boy) => {
+        const boySales = (salesQ.data ?? []).filter(s => s.delivery_boy_id === boy.id);
+        const boySettlements = (settlementsQ.data ?? []).filter(s => s.delivery_boy_id === boy.id);
+        const boyPayouts = (payoutsQ.data ?? []).filter(p => p.delivery_boy_id === boy.id);
+
+        const qty = boySales.reduce((sum, s) => sum + Number(s.quantity), 0);
+        const earned = boySales.reduce((sum, s) => sum + Number(s.commission_amount), 0);
+        const collections = boySales.filter(s => s.payment_mode === 'cash').reduce((sum, s) => sum + Number(s.gross_amount), 0);
+        
+        const submitted = boySettlements.reduce((sum, s) => sum + Number(s.submitted_amount), 0);
+        const kept = boySettlements.reduce((sum, s) => sum + Number(s.commission_kept), 0);
+        const payouts = boyPayouts.reduce((sum, p) => sum + Number(p.amount), 0);
+        
+        const paid = kept + payouts;
+        const pending = earned - paid;
+
+        return [
+          boy.name,
+          qty,
+          Number(earned),
+          Number(collections),
+          Number(submitted),
+          Number(paid),
+          Number(pending)
+        ];
+      }));
+    } else if (kind === "stock") {
+      const { data: prods } = await supabase.from("products").select("id, name").eq("agency_id", agency.id).eq("is_deleted", false);
+      const balances = getStockBalances(agency.id, prods ?? []);
+      const ledger = getStockLedger(agency.id);
+
+      setCols(["Product Name", "Opening Stock", "Purchases Logged", "Adjustments", "Transfers", "Sales Deductions", "Closing Stock Balance"]);
+      setData((prods ?? []).map((p) => {
+        const bal = balances[p.id] || { openingStock: 0, currentStock: 0 };
+        const led = ledger.filter(l => l.productId === p.id && l.entryDate >= from && l.entryDate <= to);
+
+        const purchases = led.filter(l => l.type === 'purchase').reduce((sum, l) => sum + Number(l.quantity), 0);
+        const adjustments = led.filter(l => l.type === 'adjustment').reduce((sum, l) => sum + Number(l.quantity), 0);
+        const transfers = led.filter(l => l.type === 'transfer').reduce((sum, l) => sum + Number(l.quantity), 0);
+        const sales = led.filter(l => l.type === 'sale').reduce((sum, l) => sum + Number(l.quantity), 0);
+
+        return [
+          p.name,
+          Number(bal.openingStock),
+          Number(purchases),
+          Number(adjustments),
+          Number(transfers),
+          Number(sales),
+          Number(bal.currentStock)
+        ];
+      }));
+    }
+  };
+
+  const title = t(`reports.${kind}` as never, kind);
+  return (
+    <div className="space-y-6 pb-8">
+      <PageHeader title={t("reports.title")} />
+      <Card className="shadow-soft"><CardContent className="p-4 grid grid-cols-2 md:grid-cols-5 gap-3">
+        <div className="col-span-2 md:col-span-2">
+          <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Select Roster Report Sheet</Label>
+          <Select value={kind} onValueChange={(v) => setKind(v as Kind)}>
+            <SelectTrigger className="h-11 mt-1"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="daily_summary">📋 Corporate Daily Summary</SelectItem>
+              <SelectItem value="product_sales">📈 Cylinder Product Sales Report</SelectItem>
+              <SelectItem value="payments">💰 Payment Collections Log</SelectItem>
+              <SelectItem value="udhari">⚠️ Debtor Udhari Balance Sheet</SelectItem>
+              <SelectItem value="cashbook">📓 Reconciled expected Cashbook</SelectItem>
+              <SelectItem value="delivery">🚚 Delivery Boy Performance Report</SelectItem>
+              <SelectItem value="stock">📦 LPG Gas Cylinder Inventory Stock</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div><Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{t("reports.from")}</Label><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-11 mt-1 text-sm" /></div>
+        <div><Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{t("reports.to")}</Label><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="h-11 mt-1 text-sm" /></div>
+        <div className="flex items-end"><Button onClick={run} className="w-full h-11 shadow-soft font-semibold"><Play className="h-4 w-4 mr-1.5" />{t("reports.run")}</Button></div>
+      </CardContent></Card>
+      {data.length > 0 && (
+        <Card><CardContent className="p-0">
+          <div className="px-4 py-3 border-b flex items-center justify-between">
+            <div className="font-semibold text-sm">{title} — {data.length} rows</div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild><Button variant="outline" size="sm"><Download className="h-4 w-4 mr-1.5" />Export</Button></DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => exportToPDF(title, cols, data, "report")}><FileText className="h-4 w-4 mr-2" />PDF</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => {
+                  const formattedExcelData = data.map((row) => {
+                    const obj: any = {};
+                    cols.forEach((col, idx) => {
+                      obj[col] = row[idx];
+                    });
+                    return obj;
+                  });
+                  exportToExcel(formattedExcelData, "report", title);
+                }}><FileText className="h-4 w-4 mr-2" />Excel</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-surface-muted"><tr>{cols.map((c) => <th key={c} className="text-left px-3 py-2 font-semibold">{c}</th>)}</tr></thead>
+              <tbody>{data.map((row, i) => (
+                <tr key={i} className="border-t">{row.map((v, j) => <td key={j} className="px-3 py-2 whitespace-nowrap">{typeof v === "number" ? v.toLocaleString("en-IN") : v}</td>)}</tr>
+              ))}</tbody>
+            </table>
+          </div>
+        </CardContent></Card>
+      )}
+    </div>
+  );
+}

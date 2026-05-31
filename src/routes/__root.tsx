@@ -21,6 +21,7 @@ import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { initI18n } from "@/lib/i18n";
 import { supabase } from "@/integrations/supabase/client";
+import { AuthProvider } from "@/lib/auth-context";
 
 initI18n();
 
@@ -126,9 +127,11 @@ function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthListener />
-      <Outlet />
-      <Toaster position="top-center" richColors closeButton />
+      <AuthProvider>
+        <AuthListener />
+        <Outlet />
+        <Toaster position="top-center" richColors closeButton />
+      </AuthProvider>
     </QueryClientProvider>
   );
 }

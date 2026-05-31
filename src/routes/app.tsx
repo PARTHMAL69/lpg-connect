@@ -4,11 +4,12 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { getMe } from "@/lib/auth.functions";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/lib/auth-context";
 import {
   LayoutDashboard, ShoppingCart, Users, Package, IndianRupee,
-  Receipt, Wallet, Truck, BookOpen, LogOut, Flame, Menu,
+  Receipt, Wallet, Truck, BookOpen, LogOut, Flame, Menu, UserCog,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/app")({
@@ -35,8 +36,21 @@ const NAV = [
 function AppLayout() {
   const meFn = useServerFn(getMe);
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: () => meFn() });
+  const { roles } = useAuth();
   const [open, setOpen] = useState(false);
   const nav = useNavigate();
+
+  const isAdmin = useMemo(() => {
+    return roles.includes("agency_admin") || roles.includes("platform_admin" as any);
+  }, [roles]);
+
+  const navItems = useMemo(() => {
+    const items = [...NAV] as any[];
+    if (isAdmin) {
+      items.push({ to: "/app/users", label: "Users", icon: UserCog });
+    }
+    return items;
+  }, [isAdmin]);
 
   async function signOut() {
     await supabase.auth.signOut();
@@ -57,12 +71,12 @@ function AppLayout() {
           </div>
         </div>
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-          {NAV.map((n) => (
+          {navItems.map((n) => (
             <Link
               key={n.to} to={n.to}
               className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
               activeProps={{ className: "bg-sidebar-accent text-sidebar-primary" }}
-              activeOptions={{ exact: n.exact }}
+              activeOptions={{ exact: (n as any).exact }}
             >
               <n.icon className="w-5 h-5" />
               {n.label}
@@ -94,11 +108,11 @@ function AppLayout() {
                 <div className="font-bold">{me?.agency?.name}</div>
                 <div className="text-xs text-muted-foreground">{me?.agency?.code}</div>
               </div>
-              {NAV.map((n) => (
+              {navItems.map((n) => (
                 <Link key={n.to} to={n.to} onClick={() => setOpen(false)}
                   className="flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium hover:bg-sidebar-accent"
                   activeProps={{ className: "bg-sidebar-accent text-sidebar-primary" }}
-                  activeOptions={{ exact: n.exact }}
+                  activeOptions={{ exact: (n as any).exact }}
                 >
                   <n.icon className="w-5 h-5" />{n.label}
                 </Link>
