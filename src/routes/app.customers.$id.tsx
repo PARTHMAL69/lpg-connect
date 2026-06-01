@@ -300,6 +300,29 @@ function Page() {
     return Math.abs(liveOutstanding - cached) > 0.01;
   }, [c, liveOutstanding]);
 
+  const stats = useMemo(() => {
+    const activeSales = sales.filter(s => !s.is_deleted);
+    const activePayments = pays.filter(p => !p.is_deleted);
+
+    const lifetimeSales = activeSales.reduce((sum, s) => sum + Number(s.gross_amount), 0);
+    const lifetimePayments = activePayments.reduce((sum, p) => sum + Number(p.amount), 0);
+
+    const lastSaleDate = activeSales.length > 0 
+      ? [...activeSales].sort((a, b) => new Date(b.sale_date).getTime() - new Date(a.sale_date).getTime())[0].sale_date 
+      : null;
+
+    const lastPaymentDate = activePayments.length > 0 
+      ? [...activePayments].sort((a, b) => new Date(b.payment_date).getTime() - new Date(a.payment_date).getTime())[0].payment_date 
+      : null;
+
+    return {
+      lifetimeSales,
+      lifetimePayments,
+      lastSaleDate,
+      lastPaymentDate
+    };
+  }, [sales, pays]);
+
   return (
     <div className="space-y-6 pb-8">
       
@@ -312,10 +335,18 @@ function Page() {
         </Button>
         <div className="flex gap-2">
           <Button 
+            asChild
+            className="h-10 bg-primary hover:bg-primary-dark text-white font-bold shadow-soft"
+          >
+            <Link to="/app/sales">
+              <ShoppingBag className="h-4 w-4 mr-1.5" />New Sale
+            </Link>
+          </Button>
+          <Button 
             onClick={() => setShowPaymentModal(true)} 
             className="h-10 bg-success hover:bg-success-dark text-white font-bold shadow-soft"
           >
-            <HandCoins className="h-4 w-4 mr-1.5" />Collect Payment
+            <HandCoins className="h-4 w-4 mr-1.5" />Receive Payment
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -376,6 +407,26 @@ function Page() {
                 </div>
               </div>
               <div className="text-[10px] uppercase text-muted-foreground tracking-wider font-bold">Outstanding Dues Balance</div>
+            </div>
+          </div>
+
+          {/* Detailed Lifetime Stats & Last Transaction Dates Grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4 border-t border-slate-100 pt-4 text-xs">
+            <div className="bg-slate-50/50 p-3 rounded-lg border">
+              <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Last Sale Date</span>
+              <div className="font-semibold text-foreground mt-1">{stats.lastSaleDate ? fmtDate(stats.lastSaleDate) : "No Sales Recorded"}</div>
+            </div>
+            <div className="bg-slate-50/50 p-3 rounded-lg border">
+              <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Last Payment Date</span>
+              <div className="font-semibold text-foreground mt-1">{stats.lastPaymentDate ? fmtDate(stats.lastPaymentDate) : "No Payments Recorded"}</div>
+            </div>
+            <div className="bg-slate-50/50 p-3 rounded-lg border">
+              <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Lifetime Sales</span>
+              <div className="font-bold text-foreground mt-1">{fmtCurrency(stats.lifetimeSales)}</div>
+            </div>
+            <div className="bg-slate-50/50 p-3 rounded-lg border">
+              <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Lifetime Payments</span>
+              <div className="font-bold text-success mt-1">{fmtCurrency(stats.lifetimePayments)}</div>
             </div>
           </div>
         </CardContent>

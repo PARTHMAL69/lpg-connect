@@ -7,8 +7,8 @@ let _public: SupabaseClient<Database> | undefined;
 export function getAdminClient(): SupabaseClient<Database> {
   if (_admin) return _admin;
   const url = process.env.SUPABASE_URL || (import.meta.env && import.meta.env.SUPABASE_URL);
-  // Accept either the standard SUPABASE_SERVICE_ROLE_KEY (when Lovable injects it)
-  // or LPG_SERVICE_ROLE_KEY (user-provided secret, since SUPABASE_ prefix is reserved).
+  // Accept either the standard SUPABASE_SERVICE_ROLE_KEY
+  // or LPG_SERVICE_ROLE_KEY (user-provided secret, since SUPABASE_ prefix may be reserved).
   const key =
     process.env.LPG_SERVICE_ROLE_KEY ||
     process.env.SUPABASE_SERVICE_ROLE_KEY ||

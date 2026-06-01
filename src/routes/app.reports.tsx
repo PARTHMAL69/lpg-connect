@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { RequireAgencyUser } from "@/components/route-guards";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import { Card, CardContent } from "@/components/ui/card";
@@ -15,10 +15,11 @@ import { exportToExcel, exportToPDF } from "@/lib/exports";
 import { getStockBalances, getStockLedger } from "@/lib/stock-store";
 import { Download, FileText, Play } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/app/reports")({ component: () => <RequireAgencyUser><Page/></RequireAgencyUser> });
 
-type Kind = "daily_summary" | "product_sales" | "payments" | "udhari" | "cashbook" | "delivery" | "stock";
+type Kind = "daily_summary" | "product_sales" | "payments" | "udhari" | "cashbook" | "delivery" | "stock" | "customer_ledger";
 
 function Page() {
   const { t } = useTranslation();
@@ -26,6 +27,16 @@ function Page() {
   const [kind, setKind] = useState<Kind>("daily_summary");
   const [from, setFrom] = useState(todayISO()); const [to, setTo] = useState(todayISO());
   const [cols, setCols] = useState<string[]>([]); const [data, setData] = useState<(string|number)[][]>([]);
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
+  const [customers, setCustomers] = useState<Array<{ id: string; name: string }>>([]);
+
+  useEffect(() => {
+    if (!agency) return;
+    (async () => {
+      const { data } = await supabase.from("customers").select("id, name").eq("agency_id", agency.id).eq("is_deleted", false).order("name");
+      setCustomers(data ?? []);
+    })();
+  }, [agency]);
 
   const run = async () => {
     if (!agency) return;
@@ -246,10 +257,88 @@ function Page() {
           Number(bal.currentStock)
         ];
       }));
+    } else if (kind === "customer_ledger") {
+      if (!selectedCustomerId) {
+        toast.error("Please select a customer first.");
+        return;
+      }
+      const [
+        { data: sData }, 
+        { data: pData },
+        { data: prevSales },
+        { data: prevPayments }
+      ] = await Promise.all([
+        supabase.from("sales").select("id, sale_date, gross_amount, payment_mode, notes, product:products(name)").eq("customer_id", selectedCustomerId).eq("is_deleted", false).gte("sale_date", from).lte("sale_date", to),
+        supabase.from("payments").select("id, payment_date, amount, mode, remarks").eq("customer_id", selectedCustomerId).eq("is_deleted", false).gte("payment_date", from).lte("payment_date", to),
+        supabase.from("sales").select("gross_amount").eq("customer_id", selectedCustomerId).eq("payment_mode", "credit").eq("is_deleted", false).lt("sale_date", from),
+        supabase.from("payments").select("amount").eq("customer_id", selectedCustomerId).eq("is_deleted", false).lt("payment_date", from)
+      ]);
+
+      const prevSalesSum = (prevSales ?? []).reduce((sum, s) => sum + Number(s.gross_amount), 0);
+      const prevPaymentsSum = (prevPayments ?? []).reduce((sum, p) => sum + Number(p.amount), 0);
+      const openingBalance = prevSalesSum - prevPaymentsSum;
+
+      const sItems = ((sData ?? []) as any[]).map((s) => ({
+        date: s.sale_date,
+        type: "Sale",
+        ref: s.id.substring(0, 8).toUpperCase(),
+        desc: `${s.product?.name ?? "Cylinder"} (${s.payment_mode})`,
+        debit: Number(s.gross_amount),
+        credit: s.payment_mode !== 'credit' ? Number(s.gross_amount) : 0,
+        notes: s.notes ?? "Sale recorded"
+      }));
+
+      const pItems = ((pData ?? []) as any[]).map((p) => ({
+        date: p.payment_date,
+        type: "Payment",
+        ref: p.id.substring(0, 8).toUpperCase(),
+        desc: `Payment Received (${p.mode})`,
+        debit: 0,
+        credit: Number(p.amount),
+        notes: p.remarks ?? "Payment recorded"
+      }));
+
+      const merged = [...sItems, ...pItems].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      
+      let runningBalance = openingBalance;
+      const rowsData = [
+        ["—", "Opening Dues", "—", "Outstanding balance before " + fmtDate(from), 0, 0, Number(openingBalance)],
+        ...merged.map((item) => {
+          runningBalance += item.debit - item.credit;
+          return [
+            fmtDate(item.date),
+            item.type,
+            item.ref,
+            item.desc,
+            item.debit > 0 ? Number(item.debit) : 0,
+            item.credit > 0 ? Number(item.credit) : 0,
+            Number(runningBalance)
+          ];
+        })
+      ];
+
+      setCols(["Date", "Type", "Reference ID", "Description", "Debit (+)", "Credit (-)", "Running Balance (₹)"]);
+      setData(rowsData);
     }
   };
 
-  const title = t(`reports.${kind}` as never, kind);
+  const title = (kind === "customer_ledger"
+    ? `${customers.find(c => c.id === selectedCustomerId)?.name || "Customer"}'s Account Ledger`
+    : kind === "daily_summary"
+    ? "Daily Sales Register"
+    : kind === "payments"
+    ? "Collection Report"
+    : kind === "udhari"
+    ? "Udhari Register"
+    : kind === "cashbook"
+    ? "Cashbook"
+    : kind === "delivery"
+    ? "Delivery Boy Settlement Report"
+    : kind === "stock"
+    ? "Cylinder Stock Register"
+    : kind === "product_sales"
+    ? "Cylinder Sales Report"
+    : t(`reports.${kind}` as never, kind)) as string;
   return (
     <div className="space-y-6 pb-8">
       <PageHeader title={t("reports.title")} />
@@ -259,16 +348,31 @@ function Page() {
           <Select value={kind} onValueChange={(v) => setKind(v as Kind)}>
             <SelectTrigger className="h-11 mt-1"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="daily_summary">📋 Corporate Daily Summary</SelectItem>
-              <SelectItem value="product_sales">📈 Cylinder Product Sales Report</SelectItem>
-              <SelectItem value="payments">💰 Payment Collections Log</SelectItem>
-              <SelectItem value="udhari">⚠️ Debtor Udhari Balance Sheet</SelectItem>
-              <SelectItem value="cashbook">📓 Reconciled expected Cashbook</SelectItem>
-              <SelectItem value="delivery">🚚 Delivery Boy Performance Report</SelectItem>
-              <SelectItem value="stock">📦 LPG Gas Cylinder Inventory Stock</SelectItem>
+              <SelectItem value="daily_summary">📋 Daily Sales Register</SelectItem>
+              <SelectItem value="product_sales">📈 Cylinder Sales Report</SelectItem>
+              <SelectItem value="payments">💰 Collection Report</SelectItem>
+              <SelectItem value="udhari">⚠️ Udhari Register</SelectItem>
+              <SelectItem value="cashbook">📓 Cashbook</SelectItem>
+              <SelectItem value="delivery">🚚 Delivery Boy Settlement Report</SelectItem>
+              <SelectItem value="stock">📦 Cylinder Stock Register</SelectItem>
+              <SelectItem value="customer_ledger">👤 Customer Ledger</SelectItem>
             </SelectContent>
           </Select>
         </div>
+
+        {kind === "customer_ledger" && (
+          <div className="col-span-2 md:col-span-2">
+            <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Select Customer</Label>
+            <Select value={selectedCustomerId} onValueChange={setSelectedCustomerId}>
+              <SelectTrigger className="h-11 mt-1"><SelectValue placeholder="Select Customer..." /></SelectTrigger>
+              <SelectContent>
+                {customers.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
         <div><Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{t("reports.from")}</Label><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-11 mt-1 text-sm" /></div>
         <div><Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{t("reports.to")}</Label><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="h-11 mt-1 text-sm" /></div>
         <div className="flex items-end"><Button onClick={run} className="w-full h-11 shadow-soft font-semibold"><Play className="h-4 w-4 mr-1.5" />{t("reports.run")}</Button></div>

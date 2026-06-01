@@ -340,14 +340,30 @@ function UdhariPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {filtered.map((c) => (
-                    <tr key={c.id} className="hover:bg-muted/30 transition-colors">
-                      <td className="p-4 pl-6">
-                        <div className="font-bold text-foreground">{c.name}</div>
-                        <div className="text-xs text-muted-foreground mt-0.5 font-medium">
-                          {c.mobile ?? "—"}{c.consumer_number ? ` · ${c.consumer_number}` : ""}
-                        </div>
-                      </td>
+                  {filtered.map((c) => {
+                    const isPriority = c.ageDays > 60;
+                    return (
+                      <tr 
+                        key={c.id} 
+                        className={`transition-colors border-l-4 ${
+                          isPriority 
+                            ? "bg-destructive/5 hover:bg-destructive/10 border-l-destructive" 
+                            : "hover:bg-muted/30 border-l-transparent"
+                        }`}
+                      >
+                        <td className="p-4 pl-6">
+                          <div className="flex items-center flex-wrap gap-1.5">
+                            <span className="font-bold text-foreground">{c.name}</span>
+                            {isPriority && (
+                              <span className="bg-destructive/15 text-destructive border border-destructive/25 text-[8px] font-black uppercase px-1.5 py-0.5 rounded animate-pulse">
+                                🚨 Priority
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-0.5 font-medium">
+                            {c.mobile ?? "—"}{c.consumer_number ? ` · ${c.consumer_number}` : ""}
+                          </div>
+                        </td>
                       <td className="p-4 text-sm text-muted-foreground">{c.village || "—"}</td>
                       <td className="p-4 text-center"><BucketBadge bucket={c.bucket} days={c.ageDays} /></td>
                       <td className="p-4 text-xs text-muted-foreground whitespace-nowrap">
@@ -382,7 +398,8 @@ function UdhariPage() {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                  );
+                })}
                 </tbody>
               </table>
             </div>
