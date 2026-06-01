@@ -54,14 +54,30 @@ function Page() {
   const load = async () => {
     if (!agency) return;
     
-    // Fetch customers
-    const { data: cData } = await (supabase
-      .from("customers") as any)
-      .select("id, name, outstanding:outstanding_balance")
-      .eq("agency_id", agency.id)
-      .eq("is_deleted", false)
-      .order("name");
-    setCustomers(cData ?? []);
+    // Fetch customers & their ledger entries
+    const [cRes, lRes] = await Promise.all([
+      (supabase.from("customers") as any)
+        .select("id, name")
+        .eq("agency_id", agency.id)
+        .eq("is_deleted", false)
+        .order("name"),
+      (supabase.from("customer_ledger") as any)
+        .select("customer_id, debit, credit")
+        .eq("agency_id", agency.id)
+    ]);
+
+    const ledgerMap: Record<string, number> = {};
+    (lRes.data ?? []).forEach((r: any) => {
+      ledgerMap[r.customer_id] = (ledgerMap[r.customer_id] ?? 0) + Number(r.debit || 0) - Number(r.credit || 0);
+    });
+
+    const mappedCustomers = ((cRes.data ?? []) as any[]).map((c) => ({
+      id: c.id,
+      name: c.name,
+      outstanding: ledgerMap[c.id] ?? 0
+    }));
+
+    setCustomers(mappedCustomers);
 
     // Fetch payments
     let query = (supabase

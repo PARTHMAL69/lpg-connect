@@ -116,19 +116,37 @@ function Page() {
         Number(p.amount)
       ]));
     } else if (kind === "udhari") {
-      const { data: r } = await (supabase.from("customers") as any)
-        .select("name, mobile, village, outstanding_balance")
-        .eq("agency_id", agency.id)
-        .eq("is_deleted", false)
-        .gt("outstanding_balance", 0)
-        .order("outstanding_balance", { ascending: false });
+      const [cRes, lRes] = await Promise.all([
+        (supabase.from("customers") as any)
+          .select("id, name, mobile, village")
+          .eq("agency_id", agency.id)
+          .eq("is_deleted", false),
+        (supabase.from("customer_ledger") as any)
+          .select("customer_id, debit, credit")
+          .eq("agency_id", agency.id)
+      ]);
+
+      const ledgerMap: Record<string, number> = {};
+      (lRes.data ?? []).forEach((r: any) => {
+        ledgerMap[r.customer_id] = (ledgerMap[r.customer_id] ?? 0) + Number(r.debit || 0) - Number(r.credit || 0);
+      });
+
+      const debtors = ((cRes.data ?? []) as any[])
+        .map((c) => ({
+          name: c.name,
+          mobile: c.mobile,
+          village: c.village,
+          outstanding: ledgerMap[c.id] ?? 0
+        }))
+        .filter(c => c.outstanding > 0)
+        .sort((a, b) => b.outstanding - a.outstanding);
 
       setCols(["Debtor Name", "Mobile Number", "Village / Route", "Outstanding Udhari Balance (₹)"]);
-      setData((r ?? []).map((c: any) => [
+      setData(debtors.map((c: any) => [
         c.name,
         c.mobile ?? "—",
         c.village ?? "—",
-        Number(c.outstanding_balance)
+        Number(c.outstanding)
       ]));
     } else if (kind === "cashbook") {
       const [cashQ, salesQ, paysQ, expQ] = await Promise.all([

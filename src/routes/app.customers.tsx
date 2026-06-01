@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { PageHeader, EmptyState } from "@/components/page-header";
-import { Plus, Download, FileText, Search, Archive, RotateCcw, Edit, Loader2 } from "lucide-react";
+import { Plus, Download, FileText, Search, Archive, RotateCcw, Edit, Loader2, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { fmtCurrency } from "@/lib/format";
@@ -27,6 +27,9 @@ interface C {
   consumer_number: string | null; 
   outstanding: number;
   is_deleted: boolean;
+  hasMismatch?: boolean;
+  liveOutstanding?: number;
+  dbOutstanding?: number;
 }
 
 function Page() {
@@ -37,6 +40,7 @@ function Page() {
   const [open, setOpen] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [editCustomer, setEditCustomer] = useState<C | null>(null);
+  const [hasAnyMismatch, setHasAnyMismatch] = useState(false);
 
   const load = async () => {
     if (!agency) return;
@@ -46,8 +50,38 @@ function Page() {
       query = query.eq("is_deleted", false);
     }
     
-    const { data } = await query.order("name");
-    setRows((data ?? []) as unknown as C[]);
+    const [cRes, lRes] = await Promise.all([
+      query.order("name"),
+      (supabase.from("customer_ledger") as any).select("customer_id, debit, credit").eq("agency_id", agency.id)
+    ]);
+
+    const ledgerMap: Record<string, number> = {};
+    (lRes.data ?? []).forEach((r: any) => {
+      ledgerMap[r.customer_id] = (ledgerMap[r.customer_id] ?? 0) + Number(r.debit || 0) - Number(r.credit || 0);
+    });
+
+    let mismatchFound = false;
+    const mapped = ((cRes.data ?? []) as any[]).map((c) => {
+      const live = ledgerMap[c.id] ?? 0;
+      const cached = Number(c.outstanding_balance || 0);
+      const isMismatch = Math.abs(live - cached) > 0.01;
+      if (isMismatch) mismatchFound = true;
+      return {
+        id: c.id,
+        name: c.name,
+        mobile: c.mobile,
+        village: c.village,
+        consumer_number: c.consumer_number,
+        outstanding: live, // Chronological ledger balance is the ONLY source of truth
+        is_deleted: c.is_deleted,
+        hasMismatch: isMismatch,
+        liveOutstanding: live,
+        dbOutstanding: cached
+      };
+    });
+
+    setHasAnyMismatch(mismatchFound);
+    setRows(mapped);
   };
 
   useEffect(() => { void load(); }, [agency, showArchived]);
@@ -188,6 +222,16 @@ function Page() {
         </div>
       </CardContent></Card>
 
+      {hasAnyMismatch && (
+        <div className="bg-destructive/10 border border-destructive/20 rounded-xl p-4 flex items-start gap-3 text-destructive-dark">
+          <AlertCircle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+          <div className="text-xs space-y-1">
+            <h4 className="font-bold">⚠️ ERP Ledger Variance Warning</h4>
+            <p>One or more customer records have a variance between their chronological Ledger balance and their cached Outstanding balance. The system is showing the authoritative ledger balance. Please contact your database administrator to perform an ERP balance sync.</p>
+          </div>
+        </div>
+      )}
+
       <Card className="shadow-card overflow-hidden">
         <CardContent className="p-0">
           {filtered.length === 0 ? (
@@ -216,8 +260,15 @@ function Page() {
 
                   <div className="flex items-center gap-4">
                     <div className="text-right">
-                      <div className={`text-sm font-bold ${Number(c.outstanding) > 0 ? "text-destructive animate-pulse" : "text-muted-foreground"}`}>
-                        {fmtCurrency(c.outstanding)}
+                      <div className="flex items-center gap-1.5 justify-end">
+                        {c.hasMismatch && (
+                          <span title={`Cache: ${fmtCurrency(c.dbOutstanding ?? 0)} vs Ledger: ${fmtCurrency(c.outstanding)}`} className="cursor-help flex items-center bg-destructive/15 text-destructive text-[8px] font-extrabold uppercase px-1.5 py-0.5 rounded border border-destructive/25 gap-0.5 animate-pulse">
+                            <AlertCircle className="h-2.5 w-2.5" /> Variance
+                          </span>
+                        )}
+                        <div className={`text-sm font-bold ${Number(c.outstanding) > 0 ? "text-destructive" : "text-muted-foreground"}`}>
+                          {fmtCurrency(c.outstanding)}
+                        </div>
                       </div>
                       <div className="text-[9px] uppercase tracking-wider font-semibold text-muted-foreground">{t("customers.outstanding")}</div>
                     </div>

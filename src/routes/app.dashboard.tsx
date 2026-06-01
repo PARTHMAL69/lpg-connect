@@ -74,7 +74,8 @@ function Dash() {
         allSettlesQ,
         monthlySalesQ,
         allCustCount,
-        allBoyCount
+        allBoyCount,
+        ledgerQ
       ] = await Promise.all([
         // Today's aggregates
         (supabase.from("sales") as any).select("gross_amount, commission_amount, payment_mode").eq("agency_id", agency.id).eq("is_deleted", false).eq("sale_date", today),
@@ -96,23 +97,28 @@ function Dash() {
         // Monthly and count aggregates
         (supabase.from("sales") as any).select("gross_amount").eq("agency_id", agency.id).eq("is_deleted", false).gte("sale_date", monthStart).lte("sale_date", today),
         (supabase.from("customers") as any).select("id", { count: "exact" }).eq("agency_id", agency.id).eq("is_deleted", false),
-        (supabase.from("delivery_boys") as any).select("id", { count: "exact" }).eq("agency_id", agency.id).eq("is_deleted", false)
+        (supabase.from("delivery_boys") as any).select("id", { count: "exact" }).eq("agency_id", agency.id).eq("is_deleted", false),
+        
+        // Authoritative ledger sum query
+        (supabase.from("customer_ledger") as any).select("debit, credit").eq("agency_id", agency.id)
       ]);
 
       // Calculate Core Today Metrics
       const grossSales = ((salesQ.data ?? []) as any[]).reduce((a, r) => a + Number(r.gross_amount), 0);
       const commissionPaid = ((salesQ.data ?? []) as any[]).reduce((a, r) => a + Number(r.commission_amount), 0);
       const expenses = ((expQ.data ?? []) as any[]).reduce((a, r) => a + Number(r.amount), 0);
-      const outstanding = ((custQ.data ?? []) as any[]).reduce((a, r) => a + Number(r.outstanding), 0);
+      
+      // Calculate Outstanding Udhari dynamically and authoritatively from the ledger
+      const outstanding = ((ledgerQ.data ?? []) as any[]).reduce((a, r) => a + Number(r.debit || 0) - Number(r.credit || 0), 0);
       const openingCash = Number(cashQ.data?.opening_cash ?? 0);
 
-      // Cash collections = Cash sales + Cash payments received today
-      const cashSales = ((salesQ.data ?? []) as any[]).filter(s => s.payment_mode === "cash").reduce((a, r) => a + Number(r.gross_amount), 0);
+      // Today's Collections = Sum of all Udhari payments collected today (Cash + Digital)
       const cashPayments = ((paysQ.data ?? []) as any[]).filter(p => p.mode === "cash").reduce((a, r) => a + Number(r.amount), 0);
-      const cashCollections = cashSales + cashPayments;
+      const digitalPayments = ((paysQ.data ?? []) as any[]).filter(p => p.mode !== "cash").reduce((a, r) => a + Number(r.amount), 0);
+      const cashCollections = cashPayments + digitalPayments; // Renamed metric internally
 
-      // Cash in Hand
-      const cashInHand = openingCash + cashCollections - expenses - commissionPaid;
+      // Cashbook Turnover matches gross sales today (Business Turnover)
+      const cashInHand = grossSales; // Renamed metric internally
 
       // Pending boy commission aggregates
       const totalCommissionEarned = ((allSalesQ.data ?? []) as any[]).reduce((a, r) => a + Number(r.commission_amount), 0);
@@ -236,10 +242,10 @@ function Dash() {
 
       {/* KPI Stats Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Kpi label="Today's Sales" value={fmtCurrency(metrics.grossSales)} icon={<TrendingUp className="h-4 w-4" />} accent="primary" description="Gross sales today" />
-        <Kpi label="Today's Collections" value={fmtCurrency(metrics.cashCollections)} icon={<HandCoins className="h-4 w-4" />} accent="success" description="Cash collections today" />
+        <Kpi label="Sales Turnover" value={fmtCurrency(metrics.grossSales)} icon={<TrendingUp className="h-4 w-4" />} accent="primary" description="Gross sales today" />
+        <Kpi label="Udhari Collections" value={fmtCurrency(metrics.cashCollections)} icon={<HandCoins className="h-4 w-4" />} accent="success" description="Payments collected today" />
         <Kpi label="Outstanding Udhari" value={fmtCurrency(metrics.outstanding)} icon={<AlertCircle className="h-4 w-4" />} accent="destructive" description="Total pending dues" />
-        <Kpi label="Cash In Hand" value={fmtCurrency(metrics.cashInHand)} icon={<BookOpen className="h-4 w-4" />} accent="primary" description="Expected Closing Cash Drawer" />
+        <Kpi label="Cashbook Turnover" value={fmtCurrency(metrics.cashInHand)} icon={<BookOpen className="h-4 w-4" />} accent="primary" description="Daily business turnover" />
         <Kpi label="Today's Expenses" value={fmtCurrency(metrics.expenses)} icon={<Receipt className="h-4 w-4" />} accent="warning" description="Overheads logged today" />
         <Kpi label="Pending Boy Comm." value={fmtCurrency(metrics.pendingCommission)} icon={<Users className="h-4 w-4" />} accent="muted" description="Unpaid route commissions" />
         <Kpi label="Monthly Revenue" value={fmtCurrency(metrics.monthlyRevenue)} icon={<TrendingUp className="h-4 w-4" />} accent="success" description="Sales turnover this month" />

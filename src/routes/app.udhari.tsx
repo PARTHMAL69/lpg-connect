@@ -34,6 +34,8 @@ interface UdhariCustomer {
   ageDays: number;
   bucket: Bucket;
   buckets: { current: number; b30: number; b60: number; b90: number; b90plus: number };
+  hasMismatch?: boolean;
+  dbOutstanding?: number;
 }
 
 function daysBetween(a: Date, b: Date) {
@@ -69,11 +71,11 @@ function UdhariPage() {
     queryFn: async () => {
       if (!agency?.id) return [];
 
+      // Query ALL active customers instead of only gt("outstanding_balance", 0) to avoid missing records with stale values
       const { data: cData, error: cErr } = await (supabase.from("customers") as any)
         .select("id, name, mobile, village, consumer_number, outstanding_balance")
         .eq("agency_id", agency.id)
-        .eq("is_deleted", false)
-        .gt("outstanding_balance", 0);
+        .eq("is_deleted", false);
       if (cErr) throw cErr;
       const custs = (cData ?? []) as any[];
       if (custs.length === 0) return [];
@@ -124,7 +126,15 @@ function UdhariPage() {
             const age = daysBetween(today, new Date(d.date));
             buckets[bucketForAge(age)] += d.remaining;
           }
-          const outstanding = Number(c.outstanding_balance) || 0;
+
+          // Authoritative customer ledger balance calculation: SUM(debit) - SUM(credit)
+          const totalDebits = entries.reduce((a, r) => a + Number(r.debit || 0), 0);
+          const totalCredits = entries.reduce((a, r) => a + Number(r.credit || 0), 0);
+          const outstanding = totalDebits - totalCredits;
+          
+          const cached = Number(c.outstanding_balance || 0);
+          const isMismatch = Math.abs(outstanding - cached) > 0.01;
+
           const ageDays = oldestUnpaidDate ? daysBetween(today, new Date(oldestUnpaidDate)) : 0;
           return {
             id: c.id,
@@ -138,14 +148,19 @@ function UdhariPage() {
             ageDays,
             bucket: bucketForAge(ageDays),
             buckets,
+            hasMismatch: isMismatch,
+            dbOutstanding: cached
           };
         })
+        .filter((c: any) => c.outstanding > 0) // Only display active debtor accounts with positive ledger balance
         .sort((a, b) => b.ageDays - a.ageDays || b.outstanding - a.outstanding);
     },
     enabled: !!agency?.id,
   });
 
   const villages = Array.from(new Set(customers.map((c) => c.village).filter(Boolean))) as string[];
+
+  const hasAnyMismatch = useMemo(() => customers.some((c: any) => c.hasMismatch), [customers]);
 
   const aging = useMemo(() => {
     const sum = { current: 0, b30: 0, b60: 0, b90: 0, b90plus: 0, total: 0 };
@@ -209,6 +224,16 @@ function UdhariPage() {
   return (
     <div className="space-y-6 animate-fade-in select-none">
       <PageHeader title={t("nav.udhari")} subtitle="Outstanding dues, aging analysis & collection priority" />
+
+      {hasAnyMismatch && (
+        <div className="bg-destructive/10 border border-destructive/20 rounded-xl p-4 flex items-start gap-3 text-destructive-dark">
+          <AlertCircle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+          <div className="text-xs space-y-1">
+            <h4 className="font-bold">⚠️ ERP Ledger Variance Warning</h4>
+            <p>A discrepancy was detected between the chronological customer Ledger balance and the database cached Outstanding balance. The system is showing the authoritative ledger balance. Please contact your database administrator to perform an ERP balance sync.</p>
+          </div>
+        </div>
+      )}
 
       {/* Aging buckets */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
@@ -337,7 +362,14 @@ function UdhariPage() {
                         {c.lastPaymentDate ? fmtDate(c.lastPaymentDate) : <span className="text-destructive font-semibold">Never</span>}
                       </td>
                       <td className="p-4 text-right font-extrabold text-destructive tabular-nums">
-                        {fmtCurrency(c.outstanding)}
+                        <div className="flex items-center gap-1.5 justify-end">
+                          {c.hasMismatch && (
+                            <span title={`Cache: ${fmtCurrency(c.dbOutstanding ?? 0)} vs Ledger: ${fmtCurrency(c.outstanding)}`} className="cursor-help flex items-center bg-destructive/15 text-destructive text-[8px] font-extrabold uppercase px-1.5 py-0.5 rounded border border-destructive/25 gap-0.5 animate-pulse">
+                              <AlertCircle className="h-2.5 w-2.5" /> Variance
+                            </span>
+                          )}
+                          <span>{fmtCurrency(c.outstanding)}</span>
+                        </div>
                       </td>
                       <td className="p-4 text-center pr-6">
                         <div className="flex items-center justify-center gap-2">

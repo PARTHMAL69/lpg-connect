@@ -6,7 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { 
   ArrowLeft, Download, FileText, Trash2, RotateCcw, 
-  ShoppingBag, CreditCard, Receipt, HandCoins, Info, Calendar, Clock, User
+  ShoppingBag, CreditCard, Receipt, HandCoins, Info, Calendar, Clock, User, AlertCircle
 } from "lucide-react";
 import { fmtCurrency, fmtDate } from "@/lib/format";
 import { useAuth } from "@/lib/auth-context";
@@ -290,6 +290,16 @@ function Page() {
     }
   };
 
+  const liveOutstanding = useMemo(() => {
+    return ledger.filter(item => !item.is_deleted).reduce((sum, item) => sum + item.debit - item.credit, 0);
+  }, [ledger]);
+
+  const hasMismatch = useMemo(() => {
+    if (!c) return false;
+    const cached = Number((c as any).outstanding || 0);
+    return Math.abs(liveOutstanding - cached) > 0.01;
+  }, [c, liveOutstanding]);
+
   return (
     <div className="space-y-6 pb-8">
       
@@ -325,6 +335,16 @@ function Page() {
         </div>
       </div>
 
+      {hasMismatch && (
+        <div className="bg-destructive/10 border border-destructive/20 rounded-xl p-4 flex items-start gap-3 text-destructive-dark">
+          <AlertCircle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+          <div className="text-xs space-y-1">
+            <h4 className="font-bold">⚠️ ERP Ledger Variance Alert</h4>
+            <p>This customer's cached Outstanding Balance (<strong>{fmtCurrency(Number((c as any)?.outstanding || 0))}</strong>) has a discrepancy with the chronological Ledger (<strong>{fmtCurrency(liveOutstanding)}</strong>). The statement below is authoritative. Please execute a reconciliation or adjust manually.</p>
+          </div>
+        </div>
+      )}
+
       {/* Customer Info Card */}
       <Card className="shadow-soft border-slate-100 bg-surface/90 backdrop-blur-sm relative overflow-hidden">
         <div className="absolute top-0 left-0 w-1.5 h-full bg-primary" />
@@ -344,9 +364,16 @@ function Page() {
                 <div>Consumer No: <span className="text-foreground font-semibold">{c?.consumer_number ?? "—"}</span></div>
               </div>
             </div>
-            <div className="text-right">
-              <div className={`text-3xl font-extrabold ${Number(c?.outstanding) > 0 ? "text-destructive" : "text-muted-foreground"}`}>
-                {fmtCurrency(c?.outstanding ?? 0)}
+            <div className="text-right space-y-1">
+              <div className="flex items-center gap-1.5 justify-end">
+                {hasMismatch && (
+                  <span title={`Cache: ${fmtCurrency(Number((c as any)?.outstanding || 0))} vs Ledger: ${fmtCurrency(liveOutstanding)}`} className="cursor-help flex items-center bg-destructive/15 text-destructive text-[8px] font-extrabold uppercase px-1.5 py-0.5 rounded border border-destructive/25 gap-0.5 animate-pulse">
+                    <AlertCircle className="h-2.5 w-2.5" /> Variance
+                  </span>
+                )}
+                <div className={`text-3xl font-extrabold ${liveOutstanding > 0 ? "text-destructive" : "text-muted-foreground"}`}>
+                  {fmtCurrency(liveOutstanding)}
+                </div>
               </div>
               <div className="text-[10px] uppercase text-muted-foreground tracking-wider font-bold">Outstanding Dues Balance</div>
             </div>

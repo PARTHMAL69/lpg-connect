@@ -331,56 +331,83 @@ function Page() {
         
         {/* Money Inflow & Outflow details */}
         <div className="lg:col-span-2 space-y-6">
-          
-          {/* Money Received (Collections/Inflow) */}
+            {/* Daily Business Turnover Ledger (Cylinder Sales) */}
+          <Card className="shadow-soft border-primary/20 overflow-hidden">
+            <div className="bg-primary/10 border-b border-primary/20 px-5 py-3 flex items-center justify-between">
+              <h3 className="font-bold text-primary flex items-center gap-2 text-sm uppercase tracking-wider">
+                <ArrowUpRight className="h-5 w-5 text-primary" /> Daily Business Turnover Ledger (Cylinder Sales)
+              </h3>
+              <span className="font-bold text-primary text-sm">{fmtCurrency(aggregates.grossSalesTotal)}</span>
+            </div>
+            <CardContent className="p-0 divide-y text-sm">
+              {dailySales.length === 0 ? (
+                <EmptyState title="No cylinder sales recorded on this date." />
+              ) : (
+                dailySales.map((s) => (
+                  <div key={s.id} className="p-4 flex justify-between items-center hover:bg-muted/10 transition-colors">
+                    <div className="space-y-0.5">
+                      <div className="font-semibold text-foreground">{s.product_name} Sale to {s.customer_name}</div>
+                      <div className="text-xs text-muted-foreground">Qty: {s.quantity} units · Rate: {fmtCurrency(s.total / s.quantity)}</div>
+                    </div>
+                    <div className="text-right">
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase border ${
+                        s.payment_mode === "cash" 
+                          ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" 
+                          : s.payment_mode === "credit"
+                          ? "bg-destructive/10 text-destructive border-destructive/20 animate-pulse"
+                          : s.payment_mode === "paytm"
+                          ? "bg-indigo-500/10 text-indigo-600 border-indigo-500/20"
+                          : "bg-sky-500/10 text-sky-600 border-sky-500/20"
+                      }`}>
+                        {s.payment_mode === "cash" ? "CASH" : s.payment_mode === "credit" ? "UDHARI" : s.payment_mode === "paytm" ? "UPI" : "BANK"}
+                      </span>
+                      <p className="font-bold text-foreground mt-1">{fmtCurrency(s.total)}</p>
+                    </div>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Udhari Dues Collections (Past Dues) */}
           <Card className="shadow-soft border-success/20 overflow-hidden">
             <div className="bg-success/10 border-b border-success/20 px-5 py-3 flex items-center justify-between">
               <h3 className="font-bold text-success-dark flex items-center gap-2 text-sm uppercase tracking-wider">
-                <ArrowUpRight className="h-5 w-5 text-success" /> Money Received (Paisa Aaya)
+                <ArrowUpRight className="h-5 w-5 text-success" /> Udhari Dues Collections (Past Dues)
               </h3>
-              <span className="font-bold text-success-dark text-sm">{fmtCurrency(aggregates.cashSales + aggregates.cashPayments)}</span>
+              <span className="font-bold text-success-dark text-sm">{fmtCurrency(aggregates.paymentsTotal)}</span>
             </div>
             <CardContent className="p-0 divide-y text-sm">
-              {aggregates.cashSalesByProduct.length === 0 && dailyPayments.filter(p => p.payment_mode === "cash").length === 0 ? (
-                <EmptyState title="No cash collections received on this date." />
+              {dailyPayments.length === 0 ? (
+                <EmptyState title="No customer payments collected on this date." />
               ) : (
-                <>
-                  {/* Grouped Cash Product Sales */}
-                  {aggregates.cashSalesByProduct.map((prod) => (
-                    <div key={prod.product_name} className="p-4 flex justify-between items-center hover:bg-muted/10 transition-colors">
-                      <div className="space-y-0.5">
-                        <div className="font-semibold text-foreground">{prod.product_name} Sales</div>
-                        <div className="text-xs text-muted-foreground">Cash cylinder sale · Qty: {prod.quantity} units</div>
-                      </div>
-                      <div className="text-right">
-                        <span className="text-xs font-semibold px-2 py-0.5 rounded bg-success/10 text-success uppercase">CASH</span>
-                        <p className="font-bold text-success-dark mt-1">{fmtCurrency(prod.total)}</p>
-                      </div>
+                dailyPayments.map((p) => (
+                  <div key={p.id} className="p-4 flex justify-between items-center hover:bg-muted/10 transition-colors">
+                    <div className="space-y-0.5">
+                      <div className="font-semibold text-foreground">Collection from {p.customer_name}</div>
+                      <div className="text-xs text-muted-foreground">Outstanding dues payment receipt</div>
                     </div>
-                  ))}
-
-                  {/* Customer Cash collections */}
-                  {dailyPayments.filter(p => p.payment_mode === "cash").map((p) => (
-                    <div key={p.id} className="p-4 flex justify-between items-center hover:bg-muted/10 transition-colors">
-                      <div className="space-y-0.5">
-                        <div className="font-semibold text-foreground">Udhari Collection · {p.customer_name}</div>
-                        <div className="text-xs text-muted-foreground">Outstanding account payment</div>
-                      </div>
-                      <div className="text-right">
-                        <span className="text-xs font-semibold px-2 py-0.5 rounded bg-success/10 text-success uppercase">CASH</span>
-                        <p className="font-bold text-success-dark mt-1">{fmtCurrency(p.amount)}</p>
-                      </div>
+                    <div className="text-right">
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase border ${
+                        p.payment_mode === "cash" 
+                          ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" 
+                          : p.payment_mode === "paytm"
+                          ? "bg-indigo-500/10 text-indigo-600 border-indigo-500/20"
+                          : "bg-sky-500/10 text-sky-600 border-sky-500/20"
+                      }`}>
+                        {p.payment_mode === "cash" ? "CASH" : p.payment_mode === "paytm" ? "UPI" : "BANK"}
+                      </span>
+                      <p className="font-bold text-success-dark mt-1">{fmtCurrency(p.amount)}</p>
                     </div>
-                  ))}
-                </>
+                  </div>
+                ))
               )}
-              {/* Digital Collections Reference Footer */}
-              {(aggregates.digitalSales > 0 || aggregates.digitalPayments > 0) && (
-                <div className="p-4 bg-muted/30 font-semibold text-xs flex justify-between items-center border-t border-dashed">
-                  <span className="text-muted-foreground">UPI & Paytm Reference Inflow (Digital)</span>
-                  <span className="text-foreground">{fmtCurrency(aggregates.digitalSales + aggregates.digitalPayments)}</span>
-                </div>
-              )}
+              <div className="p-4 bg-muted/40 font-semibold text-xs flex justify-between items-center border-t border-dashed leading-relaxed">
+                <span className="text-muted-foreground flex items-start gap-1.5">
+                  <ArrowUpRight className="h-4 w-4 text-success shrink-0 mt-0.5" />
+                  <span><strong>Revenue Recognition Rule:</strong> These payments collected against past Udhari dues reduce the customer's outstanding balance, but they do NOT increase today's daily business turnover stat. This avoids double-counting revenue since turnover is recognized fully upon cylinder sale.</span>
+                </span>
+              </div>
             </CardContent>
           </Card>
 
