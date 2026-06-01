@@ -225,15 +225,7 @@ function UdhariPage() {
     <div className="space-y-6 animate-fade-in select-none">
       <PageHeader title={t("nav.udhari")} subtitle="Outstanding dues, aging analysis & collection priority" />
 
-      {hasAnyMismatch && (
-        <div className="bg-destructive/10 border border-destructive/20 rounded-xl p-4 flex items-start gap-3 text-destructive-dark">
-          <AlertCircle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
-          <div className="text-xs space-y-1">
-            <h4 className="font-bold">⚠️ ERP Ledger Variance Warning</h4>
-            <p>A discrepancy was detected between the chronological customer Ledger balance and the database cached Outstanding balance. The system is showing the authoritative ledger balance. Please contact your database administrator to perform an ERP balance sync.</p>
-          </div>
-        </div>
-      )}
+
 
       {/* Aging buckets */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
@@ -379,11 +371,7 @@ function UdhariPage() {
                       </td>
                       <td className="p-4 text-right font-extrabold text-destructive tabular-nums">
                         <div className="flex items-center gap-1.5 justify-end">
-                          {c.hasMismatch && (
-                            <span title={`Cache: ${fmtCurrency(c.dbOutstanding ?? 0)} vs Ledger: ${fmtCurrency(c.outstanding)}`} className="cursor-help flex items-center bg-destructive/15 text-destructive text-[8px] font-extrabold uppercase px-1.5 py-0.5 rounded border border-destructive/25 gap-0.5 animate-pulse">
-                              <AlertCircle className="h-2.5 w-2.5" /> Variance
-                            </span>
-                          )}
+
                           <span>{fmtCurrency(c.outstanding)}</span>
                         </div>
                       </td>

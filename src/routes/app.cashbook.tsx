@@ -53,7 +53,6 @@ function Page() {
   const { agency } = useAuth();
   const [date, setDate] = useState(todayISO());
   const [opening, setOpening] = useState("0");
-  const [actual, setActual] = useState("");
   const [busy, setBusy] = useState(false);
 
   // Daily records list for Money Received / Money Paid sections
@@ -67,26 +66,24 @@ function Page() {
     // 1. Fetch cash book record for today
     const { data: bookData } = await supabase
       .from("cash_book_days")
-      .select("opening_cash, actual_closing")
+      .select("opening_cash")
       .eq("agency_id", agency.id)
       .eq("book_date", date)
       .maybeSingle();
 
     if (bookData) {
       setOpening(String(bookData.opening_cash ?? 0));
-      setActual(bookData.actual_closing != null ? String(bookData.actual_closing) : "");
     } else {
-      // If no book exists for today, fetch yesterday's actual closing cash as opening cash
+      // If no book exists for today, fetch yesterday's opening cash as opening cash fallback
       const yesterday = new Date(new Date(date).getTime() - 24 * 60 * 60 * 1000).toISOString().split("T")[0];
       const { data: prevBook } = await supabase
         .from("cash_book_days")
-        .select("actual_closing")
+        .select("opening_cash")
         .eq("agency_id", agency.id)
         .eq("book_date", yesterday)
         .maybeSingle();
       
-      setOpening(prevBook?.actual_closing != null ? String(prevBook.actual_closing) : "0");
-      setActual("");
+      setOpening(prevBook?.opening_cash != null ? String(prevBook.opening_cash) : "0");
     }
 
     // 2. Fetch daily sales (non-deleted only)
@@ -195,8 +192,6 @@ function Page() {
     const cashOutflow = expensesTotal; // Sum of all actual cash book expenses
     const expectedClosingCash = openingCash + cashInflow - cashOutflow;
 
-    const difference = actual === "" ? 0 : Number(actual) - expectedClosingCash;
-
     const commissionsKept = 0;
     const boyPayouts = deliveryBoyPayments;
 
@@ -220,10 +215,9 @@ function Page() {
       otherExpenses,
       cashInflow,
       cashOutflow,
-      expectedClosingCash,
-      difference
+      expectedClosingCash
     };
-  }, [dailySales, dailyPayments, dailyExpenses, opening, actual]);
+  }, [dailySales, dailyPayments, dailyExpenses, opening]);
 
   const save = async (e: FormEvent) => {
     e.preventDefault();
@@ -234,7 +228,7 @@ function Page() {
       agency_id: agency.id,
       book_date: date,
       opening_cash: Number(opening || 0),
-      actual_closing: actual === "" ? null : Number(actual),
+      actual_closing: null,
     };
 
     const { error } = await supabase
@@ -244,45 +238,42 @@ function Page() {
     if (error) {
       toast.error(error.message);
     } else {
-      toast.success("Cash book register saved successfully.");
+      toast.success("CashBook register saved successfully.");
       void load();
     }
+    setBusy(false);
   };
 
   const doExport = (kind: "pdf" | "xlsx") => {
     if (kind === "pdf") {
       const cols = ["Section", "Transaction Details", "Mode / Category", "Amount (INR)"];
       const rowsData = [
-        ["Opening Balance", "Opening Cash Drawer", "CASH", fmtCurrency(Number(opening || 0))],
+        ["Opening Balance", "Opening Cash Balance", "CASH", fmtCurrency(Number(opening || 0))],
         ["Inflow (Sales)", `Cash Sales Today (${dailySales.filter(s => s.payment_mode === "cash").length} items)`, "CASH", fmtCurrency(aggregates.cashSales)],
         ["Inflow (Sales)", `Digital Sales (${dailySales.filter(s => s.payment_mode !== "cash" && s.payment_mode !== "credit").length} items)`, "ONLINE / PAYTM", fmtCurrency(aggregates.digitalSales)],
         ["Inflow (Sales)", `Udhari Sales (${dailySales.filter(s => s.payment_mode === "credit").length} items)`, "CREDIT", fmtCurrency(aggregates.creditSales)],
-        ["Inflow (Payments)", `Recovered Udhari Payments (Cash)`, "CASH", fmtCurrency(aggregates.cashPayments)],
-        ["Inflow (Payments)", `Recovered Udhari Payments (Digital)`, "ONLINE / PAYTM", fmtCurrency(aggregates.digitalPayments)],
+        ["Inflow (Payments)", `Outstanding Recoveries (Cash)`, "CASH", fmtCurrency(aggregates.cashPayments)],
+        ["Inflow (Payments)", `Outstanding Recoveries (Digital)`, "ONLINE / PAYTM", fmtCurrency(aggregates.digitalPayments)],
         ["Outflow (Deposits)", `Bank Deposits Today`, "CASH", fmtCurrency(aggregates.bankDeposits)],
         ["Outflow (Transfers)", `UPI/Paytm Transfers Today`, "CASH", fmtCurrency(aggregates.paytmTransfers)],
         ["Outflow (Vehicle)", `Vehicle & Fuel Expenses`, "CASH", fmtCurrency(aggregates.vehicleExpenses)],
-        ["Outflow (Delivery)", `Delivery Boy Commissions & Payouts`, "CASH", fmtCurrency(aggregates.deliveryBoyPayments)],
         ["Outflow (Other)", `Other Operating Expenses`, "CASH", fmtCurrency(aggregates.otherExpenses)],
-        ["Summary", "Expected Closing Cash Drawer", "CALCULATED", fmtCurrency(aggregates.expectedClosingCash)],
-        ["Summary", "Actual Closing Cash Drawer", "AUDITED", actual === "" ? "—" : fmtCurrency(Number(actual))],
-        ["Summary", "Drawer Discrepancy", "STATUS", actual === "" ? "—" : `${fmtCurrency(aggregates.difference)} (${Math.abs(aggregates.difference) < 0.01 ? "Balanced" : "Discrepancy"})`]
+        ["Summary", "Expected Cash Balance", "CALCULATED", fmtCurrency(aggregates.expectedClosingCash)]
       ];
-      exportToPDF(`Cash Register Statement - ${fmtDate(date)}`, cols, rowsData, `cash_register_${date}`);
+      exportToPDF(`CashBook Statement - ${fmtDate(date)}`, cols, rowsData, `cash_register_${date}`);
     } else {
       const data = [
-        { Date: fmtDate(date), Description: "Opening Cash Drawer", Section: "Opening Balance", Mode: "CASH", Inflow: Number(opening || 0), Outflow: 0 },
+        { Date: fmtDate(date), Description: "Opening Cash Balance", Section: "Opening Balance", Mode: "CASH", Inflow: Number(opening || 0), Outflow: 0 },
         { Date: fmtDate(date), Description: "Cash Sales Today", Section: "Inflow", Mode: "CASH", Inflow: aggregates.cashSales, Outflow: 0 },
         { Date: fmtDate(date), Description: "Digital Sales Today", Section: "Inflow", Mode: "DIGITAL", Inflow: aggregates.digitalSales, Outflow: 0 },
         { Date: fmtDate(date), Description: "Udhari Sales Today", Section: "Inflow", Mode: "CREDIT", Inflow: aggregates.creditSales, Outflow: 0 },
-        { Date: fmtDate(date), Description: "Recovered Udhari Payments (Cash)", Section: "Inflow", Mode: "CASH", Inflow: aggregates.cashPayments, Outflow: 0 },
-        { Date: fmtDate(date), Description: "Recovered Udhari Payments (Digital)", Section: "Inflow", Mode: "DIGITAL", Inflow: aggregates.digitalPayments, Outflow: 0 },
+        { Date: fmtDate(date), Description: "Outstanding Recoveries (Cash)", Section: "Inflow", Mode: "CASH", Inflow: aggregates.cashPayments, Outflow: 0 },
+        { Date: fmtDate(date), Description: "Outstanding Recoveries (Digital)", Section: "Inflow", Mode: "DIGITAL", Inflow: aggregates.digitalPayments, Outflow: 0 },
         { Date: fmtDate(date), Description: "Bank Deposits Today", Section: "Outflow", Mode: "DEBIT", Inflow: 0, Outflow: aggregates.bankDeposits },
         { Date: fmtDate(date), Description: "UPI/Paytm Transfers Today", Section: "Outflow", Mode: "DEBIT", Inflow: 0, Outflow: aggregates.paytmTransfers },
         { Date: fmtDate(date), Description: "Vehicle & Fuel Expenses Today", Section: "Outflow", Mode: "DEBIT", Inflow: 0, Outflow: aggregates.vehicleExpenses },
-        { Date: fmtDate(date), Description: "Delivery Boy Commissions & Payouts Today", Section: "Outflow", Mode: "DEBIT", Inflow: 0, Outflow: aggregates.deliveryBoyPayments },
         { Date: fmtDate(date), Description: "Other Operating Expenses Today", Section: "Outflow", Mode: "DEBIT", Inflow: 0, Outflow: aggregates.otherExpenses },
-        { Date: fmtDate(date), Description: "Expected Closing Cash Drawer", Section: "Expected", Mode: "CASH", Inflow: aggregates.expectedClosingCash, Outflow: 0 }
+        { Date: fmtDate(date), Description: "Expected Cash Balance", Section: "Expected", Mode: "CASH", Inflow: aggregates.expectedClosingCash, Outflow: 0 }
       ];
       exportToExcel(data, `cash_register_${date}`, "Cash Book");
     }
@@ -290,7 +281,7 @@ function Page() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title={t("cashbook.title")} actions={
+      <PageHeader title="CashBook" actions={
         <div className="flex items-center gap-2">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -334,14 +325,14 @@ function Page() {
         
         {/* Money Inflow & Outflow details */}
         <div className="lg:col-span-2 space-y-6">
-            {/* Daily Business Register */}
+            {/* Today's Sales */}
           <Card className="shadow-soft border-primary/20 overflow-hidden">
             <div className="bg-primary/10 border-b border-primary/20 px-5 py-3 flex items-center justify-between">
                <h3 className="font-bold text-primary flex items-center gap-2 text-sm uppercase tracking-wider">
-                <ArrowUpRight className="h-5 w-5 text-primary" /> DAILY BUSINESS REGISTER
+                <ArrowUpRight className="h-5 w-5 text-primary" /> Today's Sales
               </h3>
               <div className="text-right">
-                <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider block">Total Business Today</span>
+                <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider block">Today's Sales</span>
                 <span className="font-extrabold text-primary text-base">{fmtCurrency(aggregates.grossSalesTotal)}</span>
               </div>
             </div>
@@ -353,7 +344,6 @@ function Page() {
                   <div key={s.id} className="p-4 flex justify-between items-center hover:bg-muted/10 transition-colors">
                     <div className="space-y-0.5">
                       <div className="font-semibold text-foreground">{s.product_name} Sale to {s.customer_name}</div>
-                      <div className="text-xs text-muted-foreground">Qty: {s.quantity} units · Rate: {fmtCurrency(s.total / s.quantity)}</div>
                     </div>
                     <div className="text-right">
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase border ${
@@ -375,14 +365,14 @@ function Page() {
             </CardContent>
           </Card>
  
-          {/* Outstanding Collections */}
+          {/* Outstanding Recoveries */}
           <Card className="shadow-soft border-success/20 overflow-hidden">
             <div className="bg-success/10 border-b border-success/20 px-5 py-3 flex items-center justify-between">
               <h3 className="font-bold text-success-dark flex items-center gap-2 text-sm uppercase tracking-wider">
-                <ArrowUpRight className="h-5 w-5 text-success" /> OUTSTANDING COLLECTIONS
+                <ArrowUpRight className="h-5 w-5 text-success" /> OUTSTANDING RECOVERIES
               </h3>
               <div className="text-right">
-                <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider block">Recovered Dues Today</span>
+                <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider block">Outstanding Recoveries</span>
                 <span className="font-extrabold text-success-dark text-base">{fmtCurrency(aggregates.paymentsTotal)}</span>
               </div>
             </div>
@@ -394,7 +384,6 @@ function Page() {
                   <div key={p.id} className="p-4 flex justify-between items-center hover:bg-muted/10 transition-colors">
                     <div className="space-y-0.5">
                       <div className="font-semibold text-foreground">Collection from {p.customer_name}</div>
-                      <div className="text-xs text-muted-foreground">Outstanding dues payment receipt</div>
                     </div>
                     <div className="text-right">
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase border ${
@@ -411,20 +400,14 @@ function Page() {
                   </div>
                 ))
               )}
-              <div className="p-4 bg-muted/40 font-semibold text-xs flex justify-between items-center border-t border-dashed leading-relaxed">
-                <span className="text-muted-foreground flex items-start gap-1.5">
-                  <ArrowUpRight className="h-4 w-4 text-success shrink-0 mt-0.5" />
-                  <span><strong>Note:</strong> These recovered payments collected against past Udhari dues reduce the customer's pending dues balance only, and do NOT increase today's sales. This prevents double-counting of revenue.</span>
-                </span>
-              </div>
             </CardContent>
           </Card>
  
-          {/* Business Expenses */}
+          {/* Today's Expenses */}
           <Card className="shadow-soft border-destructive/20 overflow-hidden">
             <div className="bg-destructive/10 border-b border-destructive/20 px-5 py-3 flex items-center justify-between">
               <h3 className="font-bold text-destructive-dark flex items-center gap-2 text-sm uppercase tracking-wider">
-                <ArrowDownRight className="h-5 w-5 text-destructive" /> Business Expenses
+                <ArrowDownRight className="h-5 w-5 text-destructive" /> Today's Expenses
               </h3>
               <span className="font-bold text-destructive-dark text-sm">{fmtCurrency(aggregates.cashOutflow)}</span>
             </div>
@@ -504,11 +487,11 @@ function Page() {
 
         </div>
 
-        {/* Cash Summary Box */}
+        {/* CashBook Summary Box */}
         <div className="space-y-6">
           <Card className="shadow-soft border-primary/20"><CardContent className="p-5">
             <h3 className="font-bold text-sm uppercase tracking-wider text-primary border-b border-primary/20 pb-3 mb-4 flex items-center gap-1.5">
-              <Sparkles className="h-4.5 w-4.5 text-primary shrink-0" /> Cash Summary
+              <Sparkles className="h-4.5 w-4.5 text-primary shrink-0" /> CashBook
             </h3>
 
             <form onSubmit={save} className="space-y-4">
@@ -523,97 +506,35 @@ function Page() {
                 />
               </div>
 
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-muted-foreground uppercase">Physical Cash Count</Label>
-                <Input 
-                  type="number" 
-                  step="0.01"
-                  value={actual} 
-                  onChange={(e) => setActual(e.target.value)} 
-                  className="h-11 font-bold text-lg text-success-dark" 
-                  placeholder="Count physical drawer..." 
-                />
-                <p className="text-[10px] text-muted-foreground">Input the exact physical cash amount present inside the drawer.</p>
-              </div>
-
               <div className="rounded-lg border border-border/80 bg-muted/30 p-4 space-y-2.5 text-xs">
                 <div className="flex justify-between font-medium">
-                  <span className="text-muted-foreground">Opening Cash Balance</span>
-                  <span>{fmtCurrency(Number(opening || 0))}</span>
+                  <span className="text-muted-foreground font-semibold">Opening Cash Balance</span>
+                  <span className="font-bold">{fmtCurrency(Number(opening || 0))}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-success-dark">+ Cash Sales Today (Net)</span>
-                  <span className="font-semibold text-success-dark">{fmtCurrency(aggregates.cashSales)}</span>
+                  <span className="text-success-dark font-medium">+ Cash Sales Received</span>
+                  <span className="font-bold text-success-dark">+{fmtCurrency(aggregates.cashSales)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-success-dark">+ Outstanding Collections (Cash)</span>
-                  <span className="font-semibold text-success-dark">{fmtCurrency(aggregates.cashPayments)}</span>
+                  <span className="text-success-dark font-medium">+ Outstanding Recoveries (Cash)</span>
+                  <span className="font-bold text-success-dark">+{fmtCurrency(aggregates.cashPayments)}</span>
                 </div>
                 <div className="flex justify-between border-t border-dashed pt-1 mt-1">
-                  <span className="text-destructive-dark">- Bank Deposits</span>
-                  <span className="font-semibold text-destructive-dark">-{fmtCurrency(aggregates.bankDeposits)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-destructive-dark">- UPI/Paytm Transfers</span>
-                  <span className="font-semibold text-destructive-dark">-{fmtCurrency(aggregates.paytmTransfers)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-destructive-dark">- Vehicle & Fuel Expenses</span>
-                  <span className="font-semibold text-destructive-dark">-{fmtCurrency(aggregates.vehicleExpenses)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-destructive-dark">- Delivery Staff Payouts</span>
-                  <span className="font-semibold text-destructive-dark">-{fmtCurrency(aggregates.deliveryBoyPayments)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-destructive-dark">- Operating Expenses</span>
-                  <span className="font-semibold text-destructive-dark">-{fmtCurrency(aggregates.otherExpenses)}</span>
+                  <span className="text-destructive-dark font-medium">- Today's Expenses</span>
+                  <span className="font-bold text-destructive-dark">-{fmtCurrency(aggregates.expensesTotal)}</span>
                 </div>
 
                 <div className="border-t border-border/80 pt-2.5 flex justify-between font-bold text-sm">
-                  <span>Expected Cash Balance</span>
-                  <span className="text-primary">{fmtCurrency(aggregates.expectedClosingCash)}</span>
-                </div>
-
-                {actual !== "" && (
-                  <div className={`border-t border-border/80 pt-2.5 flex justify-between font-bold text-sm ${Math.abs(aggregates.difference) < 0.01 ? "text-success-dark" : "text-destructive-dark"}`}>
-                    <span>Cash Discrepancy</span>
-                    <span>
-                      {fmtCurrency(aggregates.difference)} <span className="text-[10px] font-semibold">({Math.abs(aggregates.difference) < 0.01 ? "Balanced" : "Discrepancy"})</span>
-                    </span>
-                  </div>
-                )}
-
-                {/* Informational only */}
-                <div className="flex justify-between text-muted-foreground/80 border-t border-dashed pt-2.5 mt-1">
-                  <span>Commission Deducted Today</span>
-                  <span className="italic font-medium">{fmtCurrency(aggregates.commissionsTotal)}</span>
+                  <span className="text-primary font-bold">Expected Cash Balance</span>
+                  <span className="text-primary font-extrabold">{fmtCurrency(aggregates.expectedClosingCash)}</span>
                 </div>
               </div>
 
               <Button type="submit" disabled={busy} className="w-full h-12 shadow-sm font-bold uppercase tracking-wider text-xs">
-                {busy ? "Closing Day..." : "Close Business Day"}
+                {busy ? "Saving..." : "Save CashBook"}
               </Button>
             </form>
           </CardContent></Card>
-
-          {/* Digital transactions warning side card */}
-          <Card className="shadow-soft bg-gradient-to-b from-primary/5 to-background border-primary/10">
-            <CardContent className="p-4 space-y-3 text-xs leading-relaxed text-muted-foreground">
-              <div className="font-semibold text-primary uppercase text-[10px] tracking-wider">Digital / Non-Cash Summary</div>
-              <div className="flex justify-between">
-                <span>Digital Sales (Online/Paytm):</span>
-                <span className="font-semibold text-foreground">{fmtCurrency(aggregates.digitalSales)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Digital Udhari Payments:</span>
-                <span className="font-semibold text-foreground">{fmtCurrency(aggregates.digitalPayments)}</span>
-              </div>
-              <div className="border-t border-dashed pt-2 mt-1">
-                Digital payments bypass physical drawers entirely and accumulate inside your merchant accounts. Reconcile them strictly against merchant app statements.
-              </div>
-            </CardContent>
-          </Card>
         </div>
 
       </div>

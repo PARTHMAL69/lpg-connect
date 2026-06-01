@@ -268,13 +268,13 @@ function Dash() {
 
       {/* KPI Stats Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Kpi label="Today's Business Sales" value={fmtCurrency(metrics.grossSales)} icon={<TrendingUp className="h-4 w-4" />} accent="primary" description="Total cylinder sales recorded today" tooltip="Total value of all cash, online, and Udhari sales logged today" />
-        <Kpi label="Outstanding Collections" value={fmtCurrency(metrics.cashCollections)} icon={<HandCoins className="h-4 w-4" />} accent="success" description="Payments collected against previous dues" tooltip="Total cash and digital collections received today against previous Udhari/credit dues" />
-        <Kpi label="Customer Outstanding Balance" value={fmtCurrency(metrics.outstanding)} icon={<AlertCircle className="h-4 w-4" />} accent="destructive" description="Total amount pending from customers" tooltip="Authoritative sum of all outstanding credit balances across customer ledgers" />
-        <Kpi label="Available Cash Balance" value={fmtCurrency(metrics.cashInHand)} icon={<BookOpen className="h-4 w-4" />} accent="primary" description="Expected cash currently available" tooltip="Calculated cash inside drawer: Opening Cash + Today's Cash Sales + Today's Cash Recoveries - Today's Expenses" />
+        <Kpi label="Today's Sales" value={fmtCurrency(metrics.grossSales)} icon={<TrendingUp className="h-4 w-4" />} accent="primary" description="Total cylinder sales recorded today" tooltip="Total value of all cash, online, and Udhari sales logged today" />
+        <Kpi label="Today's Collections" value={fmtCurrency(metrics.cashCollections)} icon={<HandCoins className="h-4 w-4" />} accent="success" description="Payments collected against previous dues" tooltip="Total cash and digital collections received today against previous Udhari/credit dues" />
+        <Kpi label="Outstanding Udhari" value={fmtCurrency(metrics.outstanding)} icon={<AlertCircle className="h-4 w-4" />} accent="destructive" description="Total amount pending from customers" tooltip="Sum of all outstanding credit balances across customer ledgers" />
+        <Kpi label="Expected Cash Balance" value={fmtCurrency(metrics.cashInHand)} icon={<BookOpen className="h-4 w-4" />} accent="primary" description="Expected cash currently available" tooltip="Calculated expected cash balance: Opening Cash + Today's Cash Sales + Today's Cash Recoveries - Today's Expenses" />
         <Kpi label="Operating Expenses" value={fmtCurrency(metrics.expenses)} icon={<Receipt className="h-4 w-4" />} accent="warning" description="Business expenses recorded today" tooltip="Total overhead cash withdrawals and boy payouts recorded today" />
-        <Kpi label="Monthly Business Sales" value={fmtCurrency(metrics.monthlyRevenue)} icon={<TrendingUp className="h-4 w-4" />} accent="success" description="Total sales recorded this month" tooltip="Total gross sales recorded in this calendar month" />
-        <Kpi label="Customers & Delivery Staff" value={`${metrics.totalCustomers} Cust / ${metrics.totalDeliveryBoys} Boys`} icon={<Activity className="h-4 w-4" />} accent="muted" description="Active customers and delivery boys" tooltip="Active counts of customer profiles and delivery boys in your agency directory" />
+        <Kpi label="Monthly Sales" value={fmtCurrency(metrics.monthlyRevenue)} icon={<TrendingUp className="h-4 w-4" />} accent="success" description="Total sales recorded this month" tooltip="Total gross sales recorded in this calendar month" />
+        <Kpi label="Customers / Delivery Boys" value={`${metrics.totalCustomers} Cust / ${metrics.totalDeliveryBoys} Boys`} icon={<Activity className="h-4 w-4" />} accent="muted" description="Active customers and delivery boys" tooltip="Active counts of customer profiles and delivery boys in your agency directory" />
       </div>
 
       {/* Quick Action Hub */}

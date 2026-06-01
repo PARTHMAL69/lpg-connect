@@ -222,15 +222,7 @@ function Page() {
         </div>
       </CardContent></Card>
 
-      {hasAnyMismatch && (
-        <div className="bg-destructive/10 border border-destructive/20 rounded-xl p-4 flex items-start gap-3 text-destructive-dark">
-          <AlertCircle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
-          <div className="text-xs space-y-1">
-            <h4 className="font-bold">⚠️ ERP Ledger Variance Warning</h4>
-            <p>One or more customer records have a variance between their chronological Ledger balance and their cached Outstanding balance. The system is showing the authoritative ledger balance. Please contact your database administrator to perform an ERP balance sync.</p>
-          </div>
-        </div>
-      )}
+
 
       <Card className="shadow-card overflow-hidden">
         <CardContent className="p-0">
@@ -261,11 +253,7 @@ function Page() {
                   <div className="flex items-center gap-4">
                     <div className="text-right">
                       <div className="flex items-center gap-1.5 justify-end">
-                        {c.hasMismatch && (
-                          <span title={`Cache: ${fmtCurrency(c.dbOutstanding ?? 0)} vs Ledger: ${fmtCurrency(c.outstanding)}`} className="cursor-help flex items-center bg-destructive/15 text-destructive text-[8px] font-extrabold uppercase px-1.5 py-0.5 rounded border border-destructive/25 gap-0.5 animate-pulse">
-                            <AlertCircle className="h-2.5 w-2.5" /> Variance
-                          </span>
-                        )}
+
                         <div className={`text-sm font-bold ${Number(c.outstanding) > 0 ? "text-destructive" : "text-muted-foreground"}`}>
                           {fmtCurrency(c.outstanding)}
                         </div>

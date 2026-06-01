@@ -366,15 +366,7 @@ function Page() {
         </div>
       </div>
 
-      {hasMismatch && (
-        <div className="bg-destructive/10 border border-destructive/20 rounded-xl p-4 flex items-start gap-3 text-destructive-dark">
-          <AlertCircle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
-          <div className="text-xs space-y-1">
-            <h4 className="font-bold">⚠️ ERP Ledger Variance Alert</h4>
-            <p>This customer's cached Outstanding Balance (<strong>{fmtCurrency(Number((c as any)?.outstanding || 0))}</strong>) has a discrepancy with the chronological Ledger (<strong>{fmtCurrency(liveOutstanding)}</strong>). The statement below is authoritative. Please execute a reconciliation or adjust manually.</p>
-          </div>
-        </div>
-      )}
+
 
       {/* Customer Info Card */}
       <Card className="shadow-soft border-slate-100 bg-surface/90 backdrop-blur-sm relative overflow-hidden">
@@ -397,11 +389,7 @@ function Page() {
             </div>
             <div className="text-right space-y-1">
               <div className="flex items-center gap-1.5 justify-end">
-                {hasMismatch && (
-                  <span title={`Cache: ${fmtCurrency(Number((c as any)?.outstanding || 0))} vs Ledger: ${fmtCurrency(liveOutstanding)}`} className="cursor-help flex items-center bg-destructive/15 text-destructive text-[8px] font-extrabold uppercase px-1.5 py-0.5 rounded border border-destructive/25 gap-0.5 animate-pulse">
-                    <AlertCircle className="h-2.5 w-2.5" /> Variance
-                  </span>
-                )}
+
                 <div className={`text-3xl font-extrabold ${liveOutstanding > 0 ? "text-destructive" : "text-muted-foreground"}`}>
                   {fmtCurrency(liveOutstanding)}
                 </div>
