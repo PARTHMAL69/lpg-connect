@@ -260,7 +260,7 @@ function UdhariPage() {
         <Card>
           <CardContent className="p-5 flex items-center justify-between">
             <div className="space-y-1">
-              <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Customers With Dues</div>
+              <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Customers with Outstanding Balance</div>
               <div className="text-3xl font-extrabold mt-1 tabular-nums">{customers.length}</div>
             </div>
             <div className="h-12 w-12 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center border border-amber-500/20">
@@ -271,7 +271,7 @@ function UdhariPage() {
         <Card>
           <CardContent className="p-5 flex items-center justify-between">
             <div className="space-y-1">
-              <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Overdue (60+ days)</div>
+              <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Long Pending Outstanding</div>
               <div className="text-3xl font-extrabold mt-1 tabular-nums text-orange-600">
                 {fmtCurrency(aging.b90 + aging.b90plus)}
               </div>
@@ -390,10 +390,10 @@ function UdhariPage() {
                       <td className="p-4 text-center pr-6">
                         <div className="flex items-center justify-center gap-2">
                           <Button size="sm" variant="outline" onClick={() => setPayTarget(c)} className="h-9 hover:border-emerald-500 hover:text-emerald-600">
-                            <PlusCircle className="h-4 w-4 mr-1.5" /> Collect
+                            <PlusCircle className="h-4 w-4 mr-1.5" /> Receive Payment
                           </Button>
                           <Button size="sm" variant="outline" onClick={() => navigate({ to: "/app/customers/$id", params: { id: c.id } })} className="h-9">
-                            <Eye className="h-4 w-4 mr-1.5" /> Ledger
+                            <Eye className="h-4 w-4 mr-1.5" /> View Statement
                           </Button>
                         </div>
                       </td>
@@ -406,14 +406,14 @@ function UdhariPage() {
           )}
         </CardContent>
       </Card>
-
+ 
       {/* Payment dialog */}
       <Dialog open={!!payTarget} onOpenChange={(open) => !open && setPayTarget(null)}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <IndianRupee className="h-5 w-5 text-emerald-500" />
-              Collect Payment — {payTarget?.name}
+              Receive Payment — {payTarget?.name}
             </DialogTitle>
           </DialogHeader>
           {payTarget && (

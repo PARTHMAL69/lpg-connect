@@ -140,12 +140,14 @@ function Page() {
 
   // Aggregate values
   const aggregates = useMemo(() => {
-    // 1. Money Received (Paisa Aaya)
+    // 1. Daily Business Register
     // Cash Sales
     const cashSalesList = dailySales.filter((s) => s.payment_mode === "cash");
-    const cashSales = cashSalesList.reduce((a, r) => a + Number(r.total), 0);
+    const cashSalesGross = cashSalesList.reduce((a, r) => a + Number(r.total), 0);
+    const cashCommissions = cashSalesList.reduce((a, r) => a + Number(r.commission_total), 0);
+    const cashSales = cashSalesGross - cashCommissions; // Net cash handed to agency after commission
 
-    // Group cash sales by product name
+    // Group cash sales by product name (Net cash value)
     const cashSalesByProductMap: Record<string, { quantity: number; total: number }> = {};
     cashSalesList.forEach((s) => {
       const pName = s.product_name;
@@ -153,7 +155,7 @@ function Page() {
         cashSalesByProductMap[pName] = { quantity: 0, total: 0 };
       }
       cashSalesByProductMap[pName].quantity += s.quantity || 0;
-      cashSalesByProductMap[pName].total += s.total || 0;
+      cashSalesByProductMap[pName].total += (s.total - s.commission_total) || 0;
     });
 
     const cashSalesByProduct = Object.entries(cashSalesByProductMap).map(([name, stats]) => ({
@@ -164,13 +166,13 @@ function Page() {
 
     const digitalSales = dailySales.filter((s) => s.payment_mode !== "cash" && s.payment_mode !== "credit").reduce((a, r) => a + Number(r.total), 0);
     const creditSales = dailySales.filter((s) => s.payment_mode === "credit").reduce((a, r) => a + Number(r.total), 0);
-    const grossSalesTotal = cashSales + digitalSales + creditSales;
+    const grossSalesTotal = cashSalesGross + digitalSales + creditSales; // Gross business done today
 
     const cashPayments = dailyPayments.filter((p) => p.payment_mode === "cash").reduce((a, r) => a + Number(r.amount), 0);
     const digitalPayments = dailyPayments.filter((p) => p.payment_mode !== "cash").reduce((a, r) => a + Number(r.amount), 0);
     const paymentsTotal = cashPayments + digitalPayments;
 
-    // 2. Money Paid (Paisa Gaya)
+    // 2. Business Expenses (Cash Outflows)
     // Decompose Expenses by Category
     const bankDeposits = dailyExpenses.filter((e) => e.category === "bank_deposit").reduce((a, r) => a + Number(r.amount), 0);
     const paytmTransfers = dailyExpenses.filter((e) => e.category === "paytm_transfer").reduce((a, r) => a + Number(r.amount), 0);
@@ -178,10 +180,8 @@ function Page() {
     // Vehicle Expense = vehicle_expense + fuel + repair + maintenance
     const vehicleExpenses = dailyExpenses.filter((e) => ["vehicle_expense", "fuel", "repair", "maintenance"].includes(e.category)).reduce((a, r) => a + Number(r.amount), 0);
     
-    // Delivery Boy Payments = commissions kept on cash sales + separate boy payouts
-    const commissionsKept = cashSalesList.reduce((a, r) => a + Number(r.commission_total), 0);
-    const boyPayouts = dailyExpenses.filter((e) => e.category === "delivery_boy_payment").reduce((a, r) => a + Number(r.amount), 0);
-    const deliveryBoyPayments = commissionsKept + boyPayouts;
+    // Delivery Boy Payouts (Direct advanced/manual payouts, not commission)
+    const deliveryBoyPayments = dailyExpenses.filter((e) => e.category === "delivery_boy_payment").reduce((a, r) => a + Number(r.amount), 0);
 
     // Other Expenses (e.g. salary, miscellaneous)
     const otherExpenses = dailyExpenses.filter((e) => ["salary", "miscellaneous"].includes(e.category)).reduce((a, r) => a + Number(r.amount), 0);
@@ -189,13 +189,16 @@ function Page() {
     const expensesTotal = dailyExpenses.reduce((a, r) => a + Number(r.amount), 0);
     const commissionsTotal = dailySales.reduce((a, r) => a + Number(r.commission_total), 0);
 
-    // Physical Drawer Expected Cash (Matching Ramdev Gas Agency Diagram exactly)
+    // Expected Cash Balance
     const openingCash = Number(opening || 0);
     const cashInflow = cashSales + cashPayments;
-    const cashOutflow = bankDeposits + paytmTransfers + vehicleExpenses + deliveryBoyPayments + otherExpenses;
+    const cashOutflow = expensesTotal; // Sum of all actual cash book expenses
     const expectedClosingCash = openingCash + cashInflow - cashOutflow;
 
     const difference = actual === "" ? 0 : Number(actual) - expectedClosingCash;
+
+    const commissionsKept = 0;
+    const boyPayouts = deliveryBoyPayments;
 
     return {
       grossSalesTotal,
@@ -331,11 +334,11 @@ function Page() {
         
         {/* Money Inflow & Outflow details */}
         <div className="lg:col-span-2 space-y-6">
-            {/* Today's Sales Register */}
+            {/* Daily Business Register */}
           <Card className="shadow-soft border-primary/20 overflow-hidden">
             <div className="bg-primary/10 border-b border-primary/20 px-5 py-3 flex items-center justify-between">
                <h3 className="font-bold text-primary flex items-center gap-2 text-sm uppercase tracking-wider">
-                <ArrowUpRight className="h-5 w-5 text-primary" /> TODAY'S SALES REGISTER
+                <ArrowUpRight className="h-5 w-5 text-primary" /> DAILY BUSINESS REGISTER
               </h3>
               <div className="text-right">
                 <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider block">Total Business Today</span>
@@ -371,15 +374,15 @@ function Page() {
               )}
             </CardContent>
           </Card>
-
-          {/* Udhari Recoveries */}
+ 
+          {/* Outstanding Collections */}
           <Card className="shadow-soft border-success/20 overflow-hidden">
             <div className="bg-success/10 border-b border-success/20 px-5 py-3 flex items-center justify-between">
               <h3 className="font-bold text-success-dark flex items-center gap-2 text-sm uppercase tracking-wider">
-                <ArrowUpRight className="h-5 w-5 text-success" /> UDHARI RECOVERIES
+                <ArrowUpRight className="h-5 w-5 text-success" /> OUTSTANDING COLLECTIONS
               </h3>
               <div className="text-right">
-                <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider block">Recovered Udhari Payments</span>
+                <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider block">Recovered Dues Today</span>
                 <span className="font-extrabold text-success-dark text-base">{fmtCurrency(aggregates.paymentsTotal)}</span>
               </div>
             </div>
@@ -416,12 +419,12 @@ function Page() {
               </div>
             </CardContent>
           </Card>
-
-          {/* Money Paid (Expenses & Commission / Outflow) */}
+ 
+          {/* Business Expenses */}
           <Card className="shadow-soft border-destructive/20 overflow-hidden">
             <div className="bg-destructive/10 border-b border-destructive/20 px-5 py-3 flex items-center justify-between">
               <h3 className="font-bold text-destructive-dark flex items-center gap-2 text-sm uppercase tracking-wider">
-                <ArrowDownRight className="h-5 w-5 text-destructive" /> Money Paid (Paisa Gaya)
+                <ArrowDownRight className="h-5 w-5 text-destructive" /> Business Expenses
               </h3>
               <span className="font-bold text-destructive-dark text-sm">{fmtCurrency(aggregates.cashOutflow)}</span>
             </div>
@@ -473,8 +476,8 @@ function Page() {
                   {aggregates.deliveryBoyPayments > 0 && (
                     <div className="p-4 flex justify-between items-center hover:bg-muted/10 transition-colors">
                       <div className="space-y-0.5">
-                        <div className="font-semibold text-foreground">Delivery Boy Payments & Commissions</div>
-                        <div className="text-xs text-muted-foreground">Commissions kept directly by boys + separate cash payouts</div>
+                        <div className="font-semibold text-foreground">Delivery Boy Payouts</div>
+                        <div className="text-xs text-muted-foreground">Direct advanced/manual cash advancements & payouts</div>
                       </div>
                       <div className="text-right">
                         <p className="font-bold text-destructive-dark">{fmtCurrency(aggregates.deliveryBoyPayments)}</p>
@@ -501,16 +504,16 @@ function Page() {
 
         </div>
 
-        {/* Cash Drawer Reconciliation Box */}
+        {/* Cash Summary Box */}
         <div className="space-y-6">
           <Card className="shadow-soft border-primary/20"><CardContent className="p-5">
             <h3 className="font-bold text-sm uppercase tracking-wider text-primary border-b border-primary/20 pb-3 mb-4 flex items-center gap-1.5">
-              <Sparkles className="h-4.5 w-4.5 text-primary shrink-0" /> Drawer Reconciliation
+              <Sparkles className="h-4.5 w-4.5 text-primary shrink-0" /> Cash Summary
             </h3>
 
             <form onSubmit={save} className="space-y-4">
               <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-muted-foreground uppercase">Opening Cash Drawer</Label>
+                <Label className="text-xs font-semibold text-muted-foreground uppercase">Opening Cash Balance</Label>
                 <Input 
                   type="number" 
                   step="0.01"
@@ -521,7 +524,7 @@ function Page() {
               </div>
 
               <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-muted-foreground uppercase">Actual Cash Drawer Closing</Label>
+                <Label className="text-xs font-semibold text-muted-foreground uppercase">Physical Cash Count</Label>
                 <Input 
                   type="number" 
                   step="0.01"
@@ -535,55 +538,61 @@ function Page() {
 
               <div className="rounded-lg border border-border/80 bg-muted/30 p-4 space-y-2.5 text-xs">
                 <div className="flex justify-between font-medium">
-                  <span className="text-muted-foreground">Opening Cash Drawer</span>
+                  <span className="text-muted-foreground">Opening Cash Balance</span>
                   <span>{fmtCurrency(Number(opening || 0))}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-success-dark">+ Cash Sales Today</span>
+                  <span className="text-success-dark">+ Cash Sales Today (Net)</span>
                   <span className="font-semibold text-success-dark">{fmtCurrency(aggregates.cashSales)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-success-dark">+ Cash Recoveries Today</span>
+                  <span className="text-success-dark">+ Outstanding Collections (Cash)</span>
                   <span className="font-semibold text-success-dark">{fmtCurrency(aggregates.cashPayments)}</span>
                 </div>
                 <div className="flex justify-between border-t border-dashed pt-1 mt-1">
-                  <span className="text-destructive-dark">- Bank Deposits Today</span>
+                  <span className="text-destructive-dark">- Bank Deposits</span>
                   <span className="font-semibold text-destructive-dark">-{fmtCurrency(aggregates.bankDeposits)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-destructive-dark">- UPI/Paytm Transfers Today</span>
+                  <span className="text-destructive-dark">- UPI/Paytm Transfers</span>
                   <span className="font-semibold text-destructive-dark">-{fmtCurrency(aggregates.paytmTransfers)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-destructive-dark">- Vehicle & Fuel Expenses Today</span>
+                  <span className="text-destructive-dark">- Vehicle & Fuel Expenses</span>
                   <span className="font-semibold text-destructive-dark">-{fmtCurrency(aggregates.vehicleExpenses)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-destructive-dark">- Delivery Boy Commissions & Payouts</span>
+                  <span className="text-destructive-dark">- Delivery Staff Payouts</span>
                   <span className="font-semibold text-destructive-dark">-{fmtCurrency(aggregates.deliveryBoyPayments)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-destructive-dark">- Other Operating Expenses</span>
+                  <span className="text-destructive-dark">- Operating Expenses</span>
                   <span className="font-semibold text-destructive-dark">-{fmtCurrency(aggregates.otherExpenses)}</span>
                 </div>
 
                 <div className="border-t border-border/80 pt-2.5 flex justify-between font-bold text-sm">
-                  <span>Expected Closing Cash Drawer</span>
+                  <span>Expected Cash Balance</span>
                   <span className="text-primary">{fmtCurrency(aggregates.expectedClosingCash)}</span>
                 </div>
 
                 {actual !== "" && (
                   <div className={`border-t border-border/80 pt-2.5 flex justify-between font-bold text-sm ${Math.abs(aggregates.difference) < 0.01 ? "text-success-dark" : "text-destructive-dark"}`}>
-                    <span>Drawer Discrepancy</span>
+                    <span>Cash Discrepancy</span>
                     <span>
                       {fmtCurrency(aggregates.difference)} <span className="text-[10px] font-semibold">({Math.abs(aggregates.difference) < 0.01 ? "Balanced" : "Discrepancy"})</span>
                     </span>
                   </div>
                 )}
+
+                {/* Informational only */}
+                <div className="flex justify-between text-muted-foreground/80 border-t border-dashed pt-2.5 mt-1">
+                  <span>Commission Deducted Today</span>
+                  <span className="italic font-medium">{fmtCurrency(aggregates.commissionsTotal)}</span>
+                </div>
               </div>
 
               <Button type="submit" disabled={busy} className="w-full h-12 shadow-sm font-bold uppercase tracking-wider text-xs">
-                {busy ? "Saving Day..." : "Save Daily Register"}
+                {busy ? "Closing Day..." : "Close Business Day"}
               </Button>
             </form>
           </CardContent></Card>

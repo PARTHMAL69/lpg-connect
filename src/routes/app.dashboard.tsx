@@ -124,13 +124,12 @@ function Dash() {
       const outstanding = ((ledgerQ.data ?? []) as any[]).reduce((a, r) => a + Number(r.debit || 0) - Number(r.credit || 0), 0);
       const openingCash = Number(cashQ.data?.opening_cash ?? 0);
 
-      // Today's cash inflows (Cash Sales + Cash Udhari Recovery payments)
-      const cashSalesToday = ((salesQ.data ?? []) as any[]).filter(s => s.payment_mode === "cash").reduce((a, r) => a + Number(r.gross_amount), 0);
+      // Today's cash inflows (Cash Sales Net of instant delivery commissions + Cash Udhari Recovery payments)
+      const cashSalesTodayNet = ((salesQ.data ?? []) as any[]).filter(s => s.payment_mode === "cash").reduce((a, r) => a + Number(r.gross_amount) - Number(r.commission_amount || 0), 0);
       const cashPaymentsToday = ((paysQ.data ?? []) as any[]).filter(p => p.mode === "cash").reduce((a, r) => a + Number(r.amount), 0);
-      const commissionsKept = ((salesQ.data ?? []) as any[]).filter(s => s.payment_mode === "cash").reduce((a, r) => a + Number(r.commission_amount || 0), 0);
       
-      // Expected Cash Drawer Balance (Cash In Hand) - must match Cashbook formula exactly
-      const cashInHand = openingCash + cashSalesToday + cashPaymentsToday - expenses - commissionsKept;
+      // Expected Cash Drawer Balance (Cash In Hand) - matches Cashbook net-inflow formula exactly
+      const cashInHand = openingCash + cashSalesTodayNet + cashPaymentsToday - expenses;
 
       // Today's total Udhari collections (all payments recovered today: Cash + Digital)
       const cashCollections = ((paysQ.data ?? []) as any[]).reduce((a, r) => a + Number(r.amount), 0);
@@ -269,65 +268,14 @@ function Dash() {
 
       {/* KPI Stats Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Kpi label="Today's Sales" value={fmtCurrency(metrics.grossSales)} icon={<TrendingUp className="h-4 w-4" />} accent="primary" description="Gross sales today" tooltip="Total value of all cash, online, and Udhari sales logged today" />
-        <Kpi label="Today's Udhari Recovery" value={fmtCurrency(metrics.cashCollections)} icon={<HandCoins className="h-4 w-4" />} accent="success" description="Recovered dues today" tooltip="Total cash and digital collections received today against previous Udhari/credit dues" />
-        <Kpi label="Pending Customer Dues" value={fmtCurrency(metrics.outstanding)} icon={<AlertCircle className="h-4 w-4" />} accent="destructive" description="Total pending dues" tooltip="Authoritative sum of all outstanding credit balances across customer ledgers" />
-        <Kpi label="Cash In Hand" value={fmtCurrency(metrics.cashInHand)} icon={<BookOpen className="h-4 w-4" />} accent="primary" description="Expected Cash Drawer" tooltip="Calculated cash inside drawer: Opening Cash + Today's Cash Sales + Today's Cash Recoveries - Today's Expenses" />
-        <Kpi label="Today's Expenses" value={fmtCurrency(metrics.expenses)} icon={<Receipt className="h-4 w-4" />} accent="warning" description="Overheads logged today" tooltip="Total overhead cash withdrawals and boy payouts recorded today" />
-        <Kpi label="Pending Boy Comm." value={fmtCurrency(metrics.pendingCommission)} icon={<Users className="h-4 w-4" />} accent="muted" description="Route commission liability" tooltip="Accumulated route delivery commissions that are pending payment to boys" />
-        <Kpi label="Monthly Sales" value={fmtCurrency(metrics.monthlyRevenue)} icon={<TrendingUp className="h-4 w-4" />} accent="success" description="Sales done this month" tooltip="Total gross sales recorded in this calendar month" />
-        <Kpi label="Business Directory" value={`${metrics.totalCustomers} Cust / ${metrics.totalDeliveryBoys} Boys`} icon={<Activity className="h-4 w-4" />} accent="muted" description="Active ledger rosters" tooltip="Active counts of customer profiles and delivery boys in your agency directory" />
+        <Kpi label="Today's Business Sales" value={fmtCurrency(metrics.grossSales)} icon={<TrendingUp className="h-4 w-4" />} accent="primary" description="Total cylinder sales recorded today" tooltip="Total value of all cash, online, and Udhari sales logged today" />
+        <Kpi label="Outstanding Collections" value={fmtCurrency(metrics.cashCollections)} icon={<HandCoins className="h-4 w-4" />} accent="success" description="Payments collected against previous dues" tooltip="Total cash and digital collections received today against previous Udhari/credit dues" />
+        <Kpi label="Customer Outstanding Balance" value={fmtCurrency(metrics.outstanding)} icon={<AlertCircle className="h-4 w-4" />} accent="destructive" description="Total amount pending from customers" tooltip="Authoritative sum of all outstanding credit balances across customer ledgers" />
+        <Kpi label="Available Cash Balance" value={fmtCurrency(metrics.cashInHand)} icon={<BookOpen className="h-4 w-4" />} accent="primary" description="Expected cash currently available" tooltip="Calculated cash inside drawer: Opening Cash + Today's Cash Sales + Today's Cash Recoveries - Today's Expenses" />
+        <Kpi label="Operating Expenses" value={fmtCurrency(metrics.expenses)} icon={<Receipt className="h-4 w-4" />} accent="warning" description="Business expenses recorded today" tooltip="Total overhead cash withdrawals and boy payouts recorded today" />
+        <Kpi label="Monthly Business Sales" value={fmtCurrency(metrics.monthlyRevenue)} icon={<TrendingUp className="h-4 w-4" />} accent="success" description="Total sales recorded this month" tooltip="Total gross sales recorded in this calendar month" />
+        <Kpi label="Customers & Delivery Staff" value={`${metrics.totalCustomers} Cust / ${metrics.totalDeliveryBoys} Boys`} icon={<Activity className="h-4 w-4" />} accent="muted" description="Active customers and delivery boys" tooltip="Active counts of customer profiles and delivery boys in your agency directory" />
       </div>
-
-      {/* Reconciliation Control Panel (Admin Audit Widget) */}
-      <Card className="shadow-soft border-primary/20 bg-surface/90 overflow-hidden relative">
-        <div className="absolute top-0 left-0 w-1.5 h-full bg-primary" />
-        <CardContent className="p-5">
-          <div className="flex flex-wrap justify-between items-center gap-4 border-b border-primary/10 pb-4 mb-4 select-none">
-            <div>
-              <h3 className="font-extrabold text-sm uppercase tracking-wider text-primary flex items-center gap-2">
-                <AlertCircle className="h-4.5 w-4.5 text-primary animate-pulse" /> Reconciliation Control Panel
-              </h3>
-              <p className="text-xs text-muted-foreground mt-0.5 font-medium">Enterprise balance audit & database sync status</p>
-            </div>
-            <div>
-              {Math.abs(auditMetrics.ledgerOutstanding - auditMetrics.totalOutstanding) < 0.05 ? (
-                <span className="bg-success/15 text-success font-black text-xs px-3 py-1 rounded-full border border-success/35 animate-pulse uppercase tracking-wider flex items-center gap-1.5">
-                  ✅ Balanced
-                </span>
-              ) : (
-                <span className="bg-destructive/15 text-destructive font-black text-xs px-3 py-1 rounded-full border border-destructive/35 animate-pulse uppercase tracking-wider flex items-center gap-1.5">
-                  ❌ Reconciliation Error
-                </span>
-              )}
-            </div>
-          </div>
-          
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
-            <div className="bg-muted/30 p-3 rounded-lg border">
-              <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Total Sales (Invoice Gross)</span>
-              <div className="font-black text-sm text-foreground mt-1 tabular-nums">{fmtCurrency(auditMetrics.totalSales)}</div>
-            </div>
-            <div className="bg-muted/30 p-3 rounded-lg border">
-              <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Total Payments (Collections)</span>
-              <div className="font-black text-sm text-success mt-1 tabular-nums">{fmtCurrency(auditMetrics.totalPayments)}</div>
-            </div>
-            <div className="bg-muted/30 p-3 rounded-lg border">
-              <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Pending Dues (Roster Cache)</span>
-              <div className="font-black text-sm text-destructive mt-1 tabular-nums">{fmtCurrency(auditMetrics.totalOutstanding)}</div>
-            </div>
-            <div className="bg-primary-soft/10 p-3 rounded-lg border border-primary/20">
-              <span className="text-[10px] text-primary uppercase font-bold tracking-wider">Ledger Dues (Authoritative)</span>
-              <div className="font-black text-sm text-primary mt-1 tabular-nums">{fmtCurrency(auditMetrics.ledgerOutstanding)}</div>
-            </div>
-          </div>
-
-          <div className="mt-4 p-3.5 bg-muted/40 rounded-xl border border-dashed text-[11px] text-muted-foreground leading-relaxed flex items-center gap-2 select-none">
-            <Info className="h-4.5 w-4.5 text-primary shrink-0" />
-            <span><strong>System Rule:</strong> Ledger Dues is calculated dynamically as <code>SUM(customer_ledger.debit) - SUM(customer_ledger.credit)</code>. This is the single source of truth. Any mismatch between Roster Cache and Ledger Dues triggers an instant warning banner on active screens.</span>
-          </div>
-        </CardContent>
-      </Card>
 
       {/* Quick Action Hub */}
       <div className="space-y-3">

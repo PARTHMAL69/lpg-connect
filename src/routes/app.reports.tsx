@@ -198,38 +198,27 @@ function Page() {
         ];
       }));
     } else if (kind === "delivery") {
-      const [boysQ, salesQ, settlementsQ, payoutsQ] = await Promise.all([
+      const [boysQ, salesQ] = await Promise.all([
         supabase.from("delivery_boys").select("id, name, default_commission").eq("agency_id", agency.id).eq("is_deleted", false),
-        supabase.from("sales").select("delivery_boy_id, quantity, gross_amount, commission_amount, payment_mode").eq("agency_id", agency.id).eq("is_deleted", false).gte("sale_date", from).lte("sale_date", to),
-        supabase.from("delivery_settlements").select("delivery_boy_id, collection_amount, commission_kept, submitted_amount").eq("agency_id", agency.id).eq("is_deleted", false).gte("settlement_date", from).lte("settlement_date", to),
-        supabase.from("expenses").select("delivery_boy_id, amount").eq("agency_id", agency.id).eq("category", "delivery_boy_payment").eq("is_deleted", false).gte("expense_date", from).lte("expense_date", to)
+        supabase.from("sales").select("delivery_boy_id, quantity, gross_amount, commission_amount, payment_mode").eq("agency_id", agency.id).eq("is_deleted", false).gte("sale_date", from).lte("sale_date", to)
       ]);
 
-      setCols(["Delivery Partner", "Trips (Delivered Qty)", "Commission Earned", "Cash Collections", "Cash Submitted", "Commission Paid", "Pending Commission"]);
+      setCols(["Delivery Partner", "Trips (Delivered Qty)", "Commission Deducted Today", "Gross Cash Collections", "Net Remitted Cash"]);
       setData((boysQ.data ?? []).map((boy) => {
         const boySales = (salesQ.data ?? []).filter(s => s.delivery_boy_id === boy.id);
-        const boySettlements = (settlementsQ.data ?? []).filter(s => s.delivery_boy_id === boy.id);
-        const boyPayouts = (payoutsQ.data ?? []).filter(p => p.delivery_boy_id === boy.id);
 
         const qty = boySales.reduce((sum, s) => sum + Number(s.quantity), 0);
         const earned = boySales.reduce((sum, s) => sum + Number(s.commission_amount), 0);
         const collections = boySales.filter(s => s.payment_mode === 'cash').reduce((sum, s) => sum + Number(s.gross_amount), 0);
         
-        const submitted = boySettlements.reduce((sum, s) => sum + Number(s.submitted_amount), 0);
-        const kept = boySettlements.reduce((sum, s) => sum + Number(s.commission_kept), 0);
-        const payouts = boyPayouts.reduce((sum, p) => sum + Number(p.amount), 0);
-        
-        const paid = kept + payouts;
-        const pending = earned - paid;
+        const netRemitted = collections - earned;
 
         return [
           boy.name,
           qty,
           Number(earned),
           Number(collections),
-          Number(submitted),
-          Number(paid),
-          Number(pending)
+          Number(netRemitted)
         ];
       }));
     } else if (kind === "stock") {

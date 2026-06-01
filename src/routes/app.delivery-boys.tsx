@@ -62,25 +62,9 @@ function Page() {
   // Profile Detail state
   const [selectedBoy, setSelectedBoy] = useState<DeliveryBoy | null>(null);
   const [deliveries, setDeliveries] = useState<DeliveryHistoryItem[]>([]);
-  const [settlements, setSettlements] = useState<SettlementHistoryItem[]>([]);
-  const [payouts, setPayouts] = useState<Array<{ id: string; expense_date: string; amount: number; notes: string | null }>>([]);
   
   const [q, setQ] = useState("");
   const [showArchived, setShowArchived] = useState(false);
-
-  // Settlement state variables
-  const [settlementOpen, setSettlementOpen] = useState(false);
-  const [collectionAmount, setCollectionAmount] = useState("");
-  const [commissionKept, setCommissionKept] = useState("");
-  const [settlementDate, setSettlementDate] = useState("");
-  const [settlementRemarks, setSettlementRemarks] = useState("");
-  const [settling, setSettling] = useState(false);
-
-  // Payout state variables
-  const [payoutOpen, setPayoutOpen] = useState(false);
-  const [payoutAmount, setPayoutAmount] = useState("");
-  const [payoutRemarks, setPayoutRemarks] = useState("");
-  const [paying, setPaying] = useState(false);
 
   // Archive confirmation states
   const [confirmVoidId, setConfirmVoidId] = useState<string | null>(null);
@@ -132,41 +116,6 @@ function Page() {
       payment_mode: d.payment_mode
     }));
     setDeliveries(formattedDeliveries);
-
-    // Load settlements
-    const { data: sData } = await supabase
-      .from("delivery_settlements")
-      .select("id, settlement_date, collection_amount, commission_kept, submitted_amount, status, remarks")
-      .eq("delivery_boy_id", boy.id)
-      .eq("is_deleted", false)
-      .order("settlement_date", { ascending: false });
-    
-    const formattedSettlements = ((sData ?? []) as any[]).map((s) => ({
-      id: s.id,
-      settlement_date: s.settlement_date,
-      collection_amount: Number(s.collection_amount),
-      commission_amount: Number(s.commission_kept),
-      net_submitted: Number(s.submitted_amount),
-      status: s.status,
-      remarks: s.remarks
-    }));
-    setSettlements(formattedSettlements);
-
-    // Load payouts (expenses of type delivery_boy_payment)
-    const { data: pData } = await supabase
-      .from("expenses")
-      .select("id, expense_date, amount, notes")
-      .eq("delivery_boy_id", boy.id)
-      .eq("category", "delivery_boy_payment")
-      .eq("is_deleted", false)
-      .order("expense_date", { ascending: false });
-    
-    setPayouts((pData ?? []).map((p) => ({
-      id: p.id,
-      expense_date: p.expense_date,
-      amount: Number(p.amount),
-      notes: p.notes
-    })));
   };
 
   useEffect(() => {
@@ -260,86 +209,13 @@ function Page() {
     const totalCommissionEarned = deliveries.reduce((acc, d) => acc + d.commission_total, 0);
     const totalNetCollection = deliveries.reduce((acc, d) => acc + d.net_amount, 0);
     
-    // Settlement totals
-    const settledCollections = settlements.reduce((acc, s) => acc + s.collection_amount, 0);
-    const settledCommission = settlements.reduce((acc, s) => acc + s.commission_amount, 0);
-    const settledSubmitted = settlements.reduce((acc, s) => acc + s.net_submitted, 0);
-
-    // Outstanding settlements
-    const outstandingCollections = totalCashCollections - settledCollections;
-    
-    // Payout and pending commissions
-    const payoutTotal = payouts.reduce((acc, p) => acc + p.amount, 0);
-    const paidToBoy = settledCommission + payoutTotal;
-    const pendingCommission = totalCommissionEarned - paidToBoy;
-
     return {
       totalDeliveries,
       totalCashCollections,
       totalCommissionEarned,
-      totalNetCollection,
-      settledCollections,
-      settledCommission,
-      settledSubmitted,
-      outstandingCollections,
-      payoutTotal,
-      paidToBoy,
-      pendingCommission
+      totalNetCollection
     };
-  }, [deliveries, settlements, payouts]);
-
-  const openSettlementForm = () => {
-    const defaultColl = Math.max(0, stats.outstandingCollections);
-    const defaultComm = Math.max(0, stats.totalCommissionEarned - stats.settledCommission);
-    setCollectionAmount(String(defaultColl));
-    setCommissionKept(String(defaultComm));
-    setSettlementDate(new Date().toISOString().substring(0, 10));
-    setSettlementRemarks("");
-    setSettlementOpen(true);
-  };
-
-  const handleSaveSettlement = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!agency || !selectedBoy) return;
-    setSettling(true);
-
-    const coll = Number(collectionAmount);
-    const comm = Number(commissionKept);
-
-    if (isNaN(coll) || coll < 0) {
-      toast.error("Please enter a valid collection amount.");
-      setSettling(false);
-      return;
-    }
-    if (isNaN(comm) || comm < 0) {
-      toast.error("Please enter a valid commission amount.");
-      setSettling(false);
-      return;
-    }
-
-    const { error } = await supabase
-      .from("delivery_settlements")
-      .insert({
-        agency_id: agency.id,
-        delivery_boy_id: selectedBoy.id,
-        settlement_date: settlementDate,
-        collection_amount: coll,
-        commission_kept: comm,
-        submitted_amount: coll - comm,
-        remarks: settlementRemarks || null,
-        status: "completed",
-        created_by: session?.user?.id
-      });
-
-    if (error) {
-      toast.error(error.message);
-    } else {
-      toast.success("Settlement recorded successfully!");
-      setSettlementOpen(false);
-      void loadDetails(selectedBoy);
-    }
-    setSettling(false);
-  };
+  }, [deliveries]);
 
   return (
     <div className="space-y-6">
@@ -597,310 +473,49 @@ function Page() {
               </div>
 
               {/* Stats Overview Grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 gap-3">
                 <Card className="bg-muted/40 p-3 flex flex-col justify-between">
                   <span className="text-xs text-muted-foreground font-medium">Total Delivered</span>
                   <p className="text-lg font-bold mt-1">{stats.totalDeliveries} units</p>
                 </Card>
                 <Card className="bg-muted/40 p-3 flex flex-col justify-between">
-                  <span className="text-xs text-muted-foreground font-medium">Cash Collected</span>
+                  <span className="text-xs text-muted-foreground font-medium">Cash Collected (Gross)</span>
                   <p className="text-lg font-bold text-primary mt-1">{fmtCurrency(stats.totalCashCollections)}</p>
                 </Card>
                 <Card className="bg-muted/40 p-3 flex flex-col justify-between">
-                  <span className="text-xs text-muted-foreground font-medium">Commission Earned</span>
+                  <span className="text-xs text-muted-foreground font-medium">Commission Deducted</span>
                   <p className="text-lg font-bold text-success-dark mt-1">{fmtCurrency(stats.totalCommissionEarned)}</p>
                 </Card>
                 <Card className="bg-muted/40 p-3 flex flex-col justify-between">
-                  <span className="text-xs text-muted-foreground font-medium">Amount Submitted</span>
-                  <p className="text-lg font-bold mt-1">{fmtCurrency(stats.settledSubmitted)}</p>
-                </Card>
-                <Card className="bg-muted/40 p-3 flex flex-col justify-between col-span-2 sm:col-span-1">
-                  <span className="text-xs text-muted-foreground font-medium">Paid to Boy</span>
-                  <p className="text-lg font-bold mt-1 text-emerald-600">{fmtCurrency(stats.paidToBoy)}</p>
-                </Card>
-                <Card className="bg-muted/40 p-3 flex flex-col justify-between col-span-2 sm:col-span-1">
-                  <span className="text-xs text-muted-foreground font-medium">Pending Commission</span>
-                  <p className={`text-lg font-bold mt-1 ${stats.pendingCommission > 0 ? "text-amber-500 font-extrabold" : "text-muted-foreground"}`}>
-                    {fmtCurrency(stats.pendingCommission)}
-                  </p>
-                </Card>
-                <Card className="bg-muted/40 p-3 flex flex-col justify-between col-span-2 sm:col-span-2">
-                  <span className="text-xs text-muted-foreground font-medium">Pending Cash Submission</span>
-                  <p className={`text-lg font-bold mt-1 ${stats.outstandingCollections > 0 ? "text-destructive font-extrabold" : "text-muted-foreground"}`}>
-                    {fmtCurrency(stats.outstandingCollections)}
-                  </p>
+                  <span className="text-xs text-muted-foreground font-medium">Net Remitted Cash</span>
+                  <p className="text-lg font-bold text-emerald-600 mt-1">{fmtCurrency(stats.totalNetCollection)}</p>
                 </Card>
               </div>
 
-              <div className="flex justify-end gap-2">
-                <Button 
-                  onClick={() => {
-                    setPayoutAmount(String(Math.max(0, stats.pendingCommission)));
-                    setPayoutRemarks("");
-                    setPayoutOpen(true);
-                  }} 
-                  variant="outline" 
-                  className="gap-1.5 h-10 px-4 font-semibold text-xs uppercase tracking-wider hover:border-emerald-500 hover:text-emerald-600"
-                >
-                  <DollarSign className="h-4 w-4" /> Pay Delivery Boy
-                </Button>
-
-                {stats.outstandingCollections > 0 && (
-                  <Button onClick={openSettlementForm} className="gap-1.5 h-10 px-4 font-semibold text-xs uppercase tracking-wider bg-success text-success-foreground hover:bg-success/90">
-                    <BadgeCheck className="h-4 w-4" /> Record New Settlement
-                  </Button>
+              {/* Delivery History List */}
+              <div className="space-y-3">
+                <h3 className="font-bold text-sm text-foreground uppercase tracking-wider">Deliveries Log ({deliveries.length})</h3>
+                {deliveries.length === 0 ? <EmptyState title="No deliveries found" /> : (
+                  <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
+                    {deliveries.map((d) => (
+                      <div key={d.id} className="p-3 border rounded-lg bg-card text-xs flex justify-between items-center">
+                        <div>
+                          <div className="font-semibold text-sm">{d.customer_name ?? "—"}</div>
+                          <div className="text-muted-foreground mt-0.5">{fmtDate(d.sale_date)} · {d.product_name} · qty {d.quantity}</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-semibold text-primary">{fmtCurrency(d.total)}</div>
+                          <div className="text-muted-foreground text-[10px] uppercase">Comm Deducted: {fmtCurrency(d.commission_total)}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
-
-              {/* Details Tabs */}
-              <Tabs defaultValue="deliveries">
-                <TabsList className="grid grid-cols-3">
-                  <TabsTrigger value="deliveries">Deliveries ({deliveries.length})</TabsTrigger>
-                  <TabsTrigger value="settlements">Settlements ({settlements.length})</TabsTrigger>
-                  <TabsTrigger value="payouts">Payout Logs ({payouts.length})</TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="deliveries" className="pt-3">
-                  {deliveries.length === 0 ? <EmptyState title="No deliveries found" /> : (
-                    <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
-                      {deliveries.map((d) => (
-                        <div key={d.id} className="p-3 border rounded-lg bg-card text-xs flex justify-between items-center">
-                          <div>
-                            <div className="font-semibold text-sm">{d.customer_name ?? "—"}</div>
-                            <div className="text-muted-foreground mt-0.5">{fmtDate(d.sale_date)} · {d.product_name} · qty {d.quantity}</div>
-                          </div>
-                          <div className="text-right">
-                            <div className="font-semibold text-primary">{fmtCurrency(d.total)}</div>
-                            <div className="text-muted-foreground text-[10px] uppercase">Comm: {fmtCurrency(d.commission_total)}</div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </TabsContent>
-
-                <TabsContent value="settlements" className="pt-3">
-                  {settlements.length === 0 ? <EmptyState title="No settlement logs" /> : (
-                    <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
-                      {settlements.map((s) => (
-                        <div key={s.id} className="p-3 border rounded-lg bg-card text-xs space-y-2">
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <div className="font-semibold text-sm">{fmtDate(s.settlement_date)}</div>
-                              <span className={`inline-block text-[9px] uppercase tracking-wider font-semibold mt-1 px-2 py-0.5 rounded-full ${s.status === "completed" ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}`}>
-                                {s.status}
-                              </span>
-                            </div>
-                            <div className="text-right">
-                              <div className="font-semibold text-foreground">Submitted: {fmtCurrency(s.net_submitted)}</div>
-                              <div className="text-muted-foreground text-[10px] mt-0.5">Comm kept: {fmtCurrency(s.commission_amount)}</div>
-                            </div>
-                          </div>
-                          {s.remarks && (
-                            <p className="text-muted-foreground border-t pt-1.5 text-[11px] italic">Remarks: {s.remarks}</p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </TabsContent>
-
-                <TabsContent value="payouts" className="pt-3">
-                  {payouts.length === 0 ? <EmptyState title="No payout logs found" /> : (
-                    <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
-                      {payouts.map((p) => (
-                        <div key={p.id} className="p-3 border rounded-lg bg-card text-xs space-y-2">
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <div className="font-semibold text-sm">{fmtDate(p.expense_date)}</div>
-                              <span className="inline-block text-[9px] uppercase tracking-wider font-semibold mt-1 px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
-                                Cash Payout
-                              </span>
-                            </div>
-                            <div className="text-right">
-                              <div className="font-semibold text-emerald-600">Amount Paid: {fmtCurrency(p.amount)}</div>
-                            </div>
-                          </div>
-                          {p.notes && (
-                            <p className="text-muted-foreground border-t pt-1.5 text-[11px] italic">Notes: {p.notes}</p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </TabsContent>
-              </Tabs>
             </div>
           )}
         </SheetContent>
       </Sheet>
-
-      {/* Settlement Dialog */}
-      <Dialog open={settlementOpen} onOpenChange={setSettlementOpen}>
-        <DialogContent className="w-full sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Record Delivery Settlement</DialogTitle>
-          </DialogHeader>
-          {selectedBoy && (
-            <form onSubmit={handleSaveSettlement} className="space-y-4 pt-2">
-              <div className="space-y-1">
-                <Label>Delivery Partner</Label>
-                <div className="font-semibold text-sm bg-muted/50 p-2.5 rounded-md border text-foreground">{selectedBoy.name}</div>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="collAmt">Collection Amount (₹)</Label>
-                <Input 
-                  id="collAmt"
-                  type="number" 
-                  required
-                  placeholder="0"
-                  value={collectionAmount} 
-                  onChange={(e) => setCollectionAmount(e.target.value)} 
-                  className="h-11"
-                />
-                <span className="text-[10px] text-muted-foreground font-medium">Pending cash collections: {fmtCurrency(stats.outstandingCollections)}</span>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="commKept">Commission Kept / Deducted (₹)</Label>
-                <Input 
-                  id="commKept"
-                  type="number" 
-                  required
-                  placeholder="0"
-                  value={commissionKept} 
-                  onChange={(e) => setCommissionKept(e.target.value)} 
-                  className="h-11"
-                />
-                <span className="text-[10px] text-muted-foreground font-medium">Estimated commission: {fmtCurrency(Math.max(0, stats.totalCommissionEarned - stats.settledCommission))}</span>
-              </div>
-
-              <div className="space-y-1">
-                <Label>Net Submitted Amount (₹)</Label>
-                <div className="font-bold text-lg bg-success/5 p-3 rounded-md border border-success/30 text-success-dark flex justify-between items-center">
-                  <span>Submitted Cash:</span>
-                  <span>{fmtCurrency(Math.max(0, Number(collectionAmount || 0) - Number(commissionKept || 0)))}</span>
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="settleDate">Settlement Date</Label>
-                <Input 
-                  id="settleDate"
-                  type="date" 
-                  required
-                  value={settlementDate} 
-                  onChange={(e) => setSettlementDate(e.target.value)} 
-                  className="h-11"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="settleRemarks">Remarks / Notes</Label>
-                <Input 
-                  id="settleRemarks"
-                  placeholder="e.g. All cash verified and deposited" 
-                  value={settlementRemarks} 
-                  onChange={(e) => setSettlementRemarks(e.target.value)} 
-                  className="h-11"
-                />
-              </div>
-
-              <DialogFooter className="pt-2 gap-2 sm:gap-0">
-                <Button type="button" variant="outline" onClick={() => setSettlementOpen(false)} className="h-11">
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={settling} className="h-11 font-semibold">
-                  {settling ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                  Confirm & Save
-                </Button>
-              </DialogFooter>
-            </form>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Payout Dialog */}
-      <Dialog open={payoutOpen} onOpenChange={setPayoutOpen}>
-        <DialogContent className="w-full sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Record Separate Commission Payout</DialogTitle>
-          </DialogHeader>
-          {selectedBoy && (
-            <form onSubmit={async (e) => {
-              e.preventDefault();
-              if (!agency || !selectedBoy) return;
-              setPaying(true);
-              const amt = Number(payoutAmount);
-              if (isNaN(amt) || amt <= 0) {
-                toast.error("Please enter a valid payout amount.");
-                setPaying(false);
-                return;
-              }
-              const { error } = await supabase
-                .from("expenses")
-                .insert({
-                  agency_id: agency.id,
-                  expense_date: new Date().toISOString().substring(0, 10),
-                  category: "delivery_boy_payment",
-                  amount: amt,
-                  notes: payoutRemarks || `Commission Payout to ${selectedBoy.name}`,
-                  delivery_boy_id: selectedBoy.id,
-                  created_by: session?.user?.id
-                });
-              if (error) {
-                toast.error(error.message);
-              } else {
-                toast.success(`Paid ${fmtCurrency(amt)} payout successfully.`);
-                setPayoutOpen(false);
-                void loadDetails(selectedBoy);
-              }
-              setPaying(false);
-            }} className="space-y-4 pt-2">
-              <div className="space-y-1">
-                <Label>Delivery Partner</Label>
-                <div className="font-semibold text-sm bg-muted/50 p-2.5 rounded-md border text-foreground">{selectedBoy.name}</div>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="payoutAmt">Payout Amount (₹)</Label>
-                <Input 
-                  id="payoutAmt"
-                  type="number" 
-                  required
-                  placeholder="0.00"
-                  value={payoutAmount} 
-                  onChange={(e) => setPayoutAmount(e.target.value)} 
-                  className="h-11 text-lg font-bold text-emerald-600"
-                />
-                <span className="text-[10px] text-muted-foreground font-medium">Unpaid Pending Commission: {fmtCurrency(stats.pendingCommission)}</span>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="payoutRemarks">Payout Notes / Remarks</Label>
-                <Input 
-                  id="payoutRemarks"
-                  placeholder="e.g. Paid weekly commission incentive" 
-                  value={payoutRemarks} 
-                  onChange={(e) => setPayoutRemarks(e.target.value)} 
-                  className="h-11"
-                />
-              </div>
-
-              <DialogFooter className="pt-2 gap-2 sm:gap-0">
-                <Button type="button" variant="outline" onClick={() => setPayoutOpen(false)} className="h-11">
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={paying} className="h-11 font-semibold bg-emerald-600 hover:bg-emerald-500 text-white">
-                  {paying ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                  Confirm & Pay Out Cash
-                </Button>
-              </DialogFooter>
-            </form>
-          )}
-        </DialogContent>
-      </Dialog>
 
       {/* Confirmation Dialog for Archiving Delivery Boy */}
       <Dialog open={!!confirmVoidId} onOpenChange={(v) => { if (!v) setConfirmVoidId(null); }}>
