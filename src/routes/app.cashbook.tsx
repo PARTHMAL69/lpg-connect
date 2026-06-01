@@ -53,6 +53,8 @@ function Page() {
   const { agency } = useAuth();
   const [date, setDate] = useState(todayISO());
   const [opening, setOpening] = useState("0");
+  const [actual, setActual] = useState("");
+  const [otherReceipts, setOtherReceipts] = useState("0");
   const [busy, setBusy] = useState(false);
 
   // Daily records list for Money Received / Money Paid sections
@@ -66,24 +68,40 @@ function Page() {
     // 1. Fetch cash book record for today
     const { data: bookData } = await supabase
       .from("cash_book_days")
-      .select("opening_cash")
+      .select("opening_cash, actual_closing, notes")
       .eq("agency_id", agency.id)
       .eq("book_date", date)
       .maybeSingle();
 
     if (bookData) {
       setOpening(String(bookData.opening_cash ?? 0));
+      setActual(bookData.actual_closing != null ? String(bookData.actual_closing) : "");
+      
+      let parsedOther = "0";
+      if (bookData.notes) {
+        try {
+          const meta = JSON.parse(bookData.notes);
+          if (meta && typeof meta === "object" && meta.other_cash_receipts != null) {
+            parsedOther = String(meta.other_cash_receipts);
+          }
+        } catch (e) {
+          // ignore parsing error
+        }
+      }
+      setOtherReceipts(parsedOther);
     } else {
-      // If no book exists for today, fetch yesterday's opening cash as opening cash fallback
+      // If no book exists for today, fetch yesterday's actual closing cash as opening cash fallback
       const yesterday = new Date(new Date(date).getTime() - 24 * 60 * 60 * 1000).toISOString().split("T")[0];
       const { data: prevBook } = await supabase
         .from("cash_book_days")
-        .select("opening_cash")
+        .select("actual_closing")
         .eq("agency_id", agency.id)
         .eq("book_date", yesterday)
         .maybeSingle();
       
-      setOpening(prevBook?.opening_cash != null ? String(prevBook.opening_cash) : "0");
+      setOpening(prevBook?.actual_closing != null ? String(prevBook.actual_closing) : "0");
+      setActual("");
+      setOtherReceipts("0");
     }
 
     // 2. Fetch daily sales (non-deleted only)
@@ -137,8 +155,7 @@ function Page() {
 
   // Aggregate values
   const aggregates = useMemo(() => {
-    // 1. Daily Business Register
-    // Cash Sales
+    // 1. Daily Business Register - Cash Sales Received
     const cashSalesList = dailySales.filter((s) => s.payment_mode === "cash");
     const cashSalesGross = cashSalesList.reduce((a, r) => a + Number(r.total), 0);
     const cashCommissions = cashSalesList.reduce((a, r) => a + Number(r.commission_total), 0);
@@ -165,35 +182,29 @@ function Page() {
     const creditSales = dailySales.filter((s) => s.payment_mode === "credit").reduce((a, r) => a + Number(r.total), 0);
     const grossSalesTotal = cashSalesGross + digitalSales + creditSales; // Gross business done today
 
+    // Outstanding Collections Received (CASH only)
     const cashPayments = dailyPayments.filter((p) => p.payment_mode === "cash").reduce((a, r) => a + Number(r.amount), 0);
     const digitalPayments = dailyPayments.filter((p) => p.payment_mode !== "cash").reduce((a, r) => a + Number(r.amount), 0);
     const paymentsTotal = cashPayments + digitalPayments;
 
     // 2. Business Expenses (Cash Outflows)
     // Decompose Expenses by Category
-    const bankDeposits = dailyExpenses.filter((e) => e.category === "bank_deposit").reduce((a, r) => a + Number(r.amount), 0);
-    const paytmTransfers = dailyExpenses.filter((e) => e.category === "paytm_transfer").reduce((a, r) => a + Number(r.amount), 0);
-    
-    // Vehicle Expense = vehicle_expense + fuel + repair + maintenance
+    const bankDeposits = dailyExpenses.filter((e) => ["bank_deposit", "paytm_transfer"].includes(e.category)).reduce((a, r) => a + Number(r.amount), 0);
     const vehicleExpenses = dailyExpenses.filter((e) => ["vehicle_expense", "fuel", "repair", "maintenance"].includes(e.category)).reduce((a, r) => a + Number(r.amount), 0);
-    
-    // Delivery Boy Payouts (Direct advanced/manual payouts, not commission)
     const deliveryBoyPayments = dailyExpenses.filter((e) => e.category === "delivery_boy_payment").reduce((a, r) => a + Number(r.amount), 0);
-
-    // Other Expenses (e.g. salary, miscellaneous)
     const otherExpenses = dailyExpenses.filter((e) => ["salary", "miscellaneous"].includes(e.category)).reduce((a, r) => a + Number(r.amount), 0);
 
     const expensesTotal = dailyExpenses.reduce((a, r) => a + Number(r.amount), 0);
     const commissionsTotal = dailySales.reduce((a, r) => a + Number(r.commission_total), 0);
 
-    // Expected Cash Balance
+    // Expected Closing Cash Box Drawer calculation
     const openingCash = Number(opening || 0);
-    const cashInflow = cashSales + cashPayments;
-    const cashOutflow = expensesTotal; // Sum of all actual cash book expenses
+    const otherCashReceipts = Number(otherReceipts || 0);
+    const cashInflow = cashSales + cashPayments + otherCashReceipts;
+    const cashOutflow = bankDeposits + vehicleExpenses + deliveryBoyPayments + otherExpenses; 
     const expectedClosingCash = openingCash + cashInflow - cashOutflow;
 
-    const commissionsKept = 0;
-    const boyPayouts = deliveryBoyPayments;
+    const difference = actual === "" ? 0 : Number(actual) - expectedClosingCash;
 
     return {
       grossSalesTotal,
@@ -205,19 +216,18 @@ function Page() {
       cashPayments,
       digitalPayments,
       commissionsTotal,
-      commissionsKept,
-      boyPayouts,
-      deliveryBoyPayments,
       expensesTotal,
       bankDeposits,
-      paytmTransfers,
       vehicleExpenses,
+      deliveryBoyPayments,
       otherExpenses,
       cashInflow,
       cashOutflow,
-      expectedClosingCash
+      expectedClosingCash,
+      difference,
+      otherCashReceipts
     };
-  }, [dailySales, dailyPayments, dailyExpenses, opening]);
+  }, [dailySales, dailyPayments, dailyExpenses, opening, actual, otherReceipts]);
 
   const save = async (e: FormEvent) => {
     e.preventDefault();
@@ -228,7 +238,8 @@ function Page() {
       agency_id: agency.id,
       book_date: date,
       opening_cash: Number(opening || 0),
-      actual_closing: null,
+      actual_closing: actual === "" ? null : Number(actual),
+      notes: JSON.stringify({ other_cash_receipts: Number(otherReceipts || 0) })
     };
 
     const { error } = await supabase
@@ -238,7 +249,7 @@ function Page() {
     if (error) {
       toast.error(error.message);
     } else {
-      toast.success("CashBook register saved successfully.");
+      toast.success("Daily Cash Book saved successfully.");
       void load();
     }
     setBusy(false);
@@ -249,39 +260,37 @@ function Page() {
       const cols = ["Section", "Transaction Details", "Mode / Category", "Amount (INR)"];
       const rowsData = [
         ["Opening Balance", "Opening Cash Balance", "CASH", fmtCurrency(Number(opening || 0))],
-        ["Inflow (Sales)", `Cash Sales Today (${dailySales.filter(s => s.payment_mode === "cash").length} items)`, "CASH", fmtCurrency(aggregates.cashSales)],
-        ["Inflow (Sales)", `Digital Sales (${dailySales.filter(s => s.payment_mode !== "cash" && s.payment_mode !== "credit").length} items)`, "ONLINE / PAYTM", fmtCurrency(aggregates.digitalSales)],
-        ["Inflow (Sales)", `Udhari Sales (${dailySales.filter(s => s.payment_mode === "credit").length} items)`, "CREDIT", fmtCurrency(aggregates.creditSales)],
-        ["Inflow (Payments)", `Outstanding Recoveries (Cash)`, "CASH", fmtCurrency(aggregates.cashPayments)],
-        ["Inflow (Payments)", `Outstanding Recoveries (Digital)`, "ONLINE / PAYTM", fmtCurrency(aggregates.digitalPayments)],
-        ["Outflow (Deposits)", `Bank Deposits Today`, "CASH", fmtCurrency(aggregates.bankDeposits)],
-        ["Outflow (Transfers)", `UPI/Paytm Transfers Today`, "CASH", fmtCurrency(aggregates.paytmTransfers)],
-        ["Outflow (Vehicle)", `Vehicle & Fuel Expenses`, "CASH", fmtCurrency(aggregates.vehicleExpenses)],
-        ["Outflow (Other)", `Other Operating Expenses`, "CASH", fmtCurrency(aggregates.otherExpenses)],
-        ["Summary", "Expected Cash Balance", "CALCULATED", fmtCurrency(aggregates.expectedClosingCash)]
+        ["Inflow (Paisa Aaya)", `Cash Sales Received (Net)`, "CASH", fmtCurrency(aggregates.cashSales)],
+        ["Inflow (Paisa Aaya)", `Outstanding Collections Received`, "CASH", fmtCurrency(aggregates.cashPayments)],
+        ["Inflow (Paisa Aaya)", `Other Cash Receipts`, "CASH", fmtCurrency(aggregates.otherCashReceipts)],
+        ["Outflow (Paisa Gaya)", `Bank Deposits`, "CASH", fmtCurrency(aggregates.bankDeposits)],
+        ["Outflow (Paisa Gaya)", `Vehicle Expenses`, "CASH", fmtCurrency(aggregates.vehicleExpenses)],
+        ["Outflow (Paisa Gaya)", `Delivery Expenses`, "CASH", fmtCurrency(aggregates.deliveryBoyPayments)],
+        ["Outflow (Paisa Gaya)", `Other Expenses`, "CASH", fmtCurrency(aggregates.otherExpenses)],
+        ["Summary", "Expected Closing Cash", "CALCULATED", fmtCurrency(aggregates.expectedClosingCash)],
+        ["Summary", "Actual Cash Count", "AUDITED", actual === "" ? "—" : fmtCurrency(Number(actual))],
+        ["Summary", "Difference", "STATUS", actual === "" ? "—" : `${fmtCurrency(aggregates.difference)} (${Math.abs(aggregates.difference) < 0.01 ? "Balanced" : aggregates.difference < 0 ? "Short" : "Excess"})`]
       ];
-      exportToPDF(`CashBook Statement - ${fmtDate(date)}`, cols, rowsData, `cash_register_${date}`);
+      exportToPDF(`Daily Cash Book Statement - ${fmtDate(date)}`, cols, rowsData, `cash_register_${date}`);
     } else {
       const data = [
         { Date: fmtDate(date), Description: "Opening Cash Balance", Section: "Opening Balance", Mode: "CASH", Inflow: Number(opening || 0), Outflow: 0 },
-        { Date: fmtDate(date), Description: "Cash Sales Today", Section: "Inflow", Mode: "CASH", Inflow: aggregates.cashSales, Outflow: 0 },
-        { Date: fmtDate(date), Description: "Digital Sales Today", Section: "Inflow", Mode: "DIGITAL", Inflow: aggregates.digitalSales, Outflow: 0 },
-        { Date: fmtDate(date), Description: "Udhari Sales Today", Section: "Inflow", Mode: "CREDIT", Inflow: aggregates.creditSales, Outflow: 0 },
-        { Date: fmtDate(date), Description: "Outstanding Recoveries (Cash)", Section: "Inflow", Mode: "CASH", Inflow: aggregates.cashPayments, Outflow: 0 },
-        { Date: fmtDate(date), Description: "Outstanding Recoveries (Digital)", Section: "Inflow", Mode: "DIGITAL", Inflow: aggregates.digitalPayments, Outflow: 0 },
+        { Date: fmtDate(date), Description: "Cash Sales Received (Net)", Section: "Inflow", Mode: "CASH", Inflow: aggregates.cashSales, Outflow: 0 },
+        { Date: fmtDate(date), Description: "Outstanding Collections Received (Cash)", Section: "Inflow", Mode: "CASH", Inflow: aggregates.cashPayments, Outflow: 0 },
+        { Date: fmtDate(date), Description: "Other Cash Receipts", Section: "Inflow", Mode: "CASH", Inflow: aggregates.otherCashReceipts, Outflow: 0 },
         { Date: fmtDate(date), Description: "Bank Deposits Today", Section: "Outflow", Mode: "DEBIT", Inflow: 0, Outflow: aggregates.bankDeposits },
-        { Date: fmtDate(date), Description: "UPI/Paytm Transfers Today", Section: "Outflow", Mode: "DEBIT", Inflow: 0, Outflow: aggregates.paytmTransfers },
         { Date: fmtDate(date), Description: "Vehicle & Fuel Expenses Today", Section: "Outflow", Mode: "DEBIT", Inflow: 0, Outflow: aggregates.vehicleExpenses },
-        { Date: fmtDate(date), Description: "Other Operating Expenses Today", Section: "Outflow", Mode: "DEBIT", Inflow: 0, Outflow: aggregates.otherExpenses },
-        { Date: fmtDate(date), Description: "Expected Cash Balance", Section: "Expected", Mode: "CASH", Inflow: aggregates.expectedClosingCash, Outflow: 0 }
+        { Date: fmtDate(date), Description: "Delivery Expenses Today", Section: "Outflow", Mode: "DEBIT", Inflow: 0, Outflow: aggregates.deliveryBoyPayments },
+        { Date: fmtDate(date), Description: "Other Expenses Today", Section: "Outflow", Mode: "DEBIT", Inflow: 0, Outflow: aggregates.otherExpenses },
+        { Date: fmtDate(date), Description: "Expected Closing Cash", Section: "Expected", Mode: "CASH", Inflow: aggregates.expectedClosingCash, Outflow: 0 }
       ];
-      exportToExcel(data, `cash_register_${date}`, "Cash Book");
+      exportToExcel(data, `cash_register_${date}`, "Daily Cash Book");
     }
   };
 
   return (
     <div className="space-y-6">
-      <PageHeader title="CashBook" actions={
+      <PageHeader title="Daily Cash Book" actions={
         <div className="flex items-center gap-2">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -324,179 +333,190 @@ function Page() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         
         {/* Money Inflow & Outflow details */}
-        <div className="lg:col-span-2 space-y-6">
-            {/* Today's Sales */}
-          <Card className="shadow-soft border-primary/20 overflow-hidden">
-            <div className="bg-primary/10 border-b border-primary/20 px-5 py-3 flex items-center justify-between">
-               <h3 className="font-bold text-primary flex items-center gap-2 text-sm uppercase tracking-wider">
-                <ArrowUpRight className="h-5 w-5 text-primary" /> Today's Sales
-              </h3>
-              <div className="text-right">
-                <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider block">Today's Sales</span>
-                <span className="font-extrabold text-primary text-base">{fmtCurrency(aggregates.grossSalesTotal)}</span>
-              </div>
+        <div className="lg:col-span-2 space-y-8">
+            
+          {/* Section: MONEY RECEIVED (Paisa Aaya) */}
+          <div className="space-y-4">
+            <h2 className="text-xs font-bold uppercase tracking-widest text-emerald-600 bg-emerald-500/10 px-3 py-1.5 rounded-md inline-block">
+              MONEY RECEIVED (Paisa Aaya)
+            </h2>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Cash Sales Received Card */}
+              <Card className="shadow-soft border-primary/20 overflow-hidden">
+                <div className="bg-primary/10 border-b border-primary/20 px-4 py-3 flex items-center justify-between">
+                  <h3 className="font-bold text-primary flex items-center gap-1.5 text-xs uppercase tracking-wider">
+                    <ArrowUpRight className="h-4 w-4 text-primary" /> Cash Sales Received
+                  </h3>
+                  <span className="font-extrabold text-primary text-sm">{fmtCurrency(aggregates.cashSales)}</span>
+                </div>
+                <CardContent className="p-0 divide-y text-xs max-h-64 overflow-y-auto">
+                  {dailySales.filter(s => s.payment_mode === "cash").length === 0 ? (
+                    <EmptyState title="No cash cylinder sales recorded." />
+                  ) : (
+                    dailySales.filter(s => s.payment_mode === "cash").map((s) => (
+                      <div key={s.id} className="p-3 flex justify-between items-center hover:bg-muted/10 transition-colors">
+                        <div>
+                          <div className="font-semibold text-foreground">{s.product_name} Cylinder</div>
+                          <div className="text-[10px] text-muted-foreground mt-0.5">To: {s.customer_name} · Qty: {s.quantity}</div>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-bold text-foreground">{fmtCurrency(s.total - s.commission_total)}</p>
+                          {s.commission_total > 0 && (
+                            <p className="text-[9px] text-muted-foreground font-medium">Net (Commission -{fmtCurrency(s.commission_total)})</p>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Outstanding Collections Received Card */}
+              <Card className="shadow-soft border-success/20 overflow-hidden">
+                <div className="bg-success/10 border-b border-success/20 px-4 py-3 flex items-center justify-between">
+                  <h3 className="font-bold text-success-dark flex items-center gap-1.5 text-xs uppercase tracking-wider">
+                    <ArrowUpRight className="h-4 w-4 text-success" /> Outstanding Collections
+                  </h3>
+                  <span className="font-extrabold text-success-dark text-sm">{fmtCurrency(aggregates.cashPayments)}</span>
+                </div>
+                <CardContent className="p-0 divide-y text-xs max-h-64 overflow-y-auto">
+                  {dailyPayments.filter(p => p.payment_mode === "cash").length === 0 ? (
+                    <EmptyState title="No cash customer payments collected." />
+                  ) : (
+                    dailyPayments.filter(p => p.payment_mode === "cash").map((p) => (
+                      <div key={p.id} className="p-3 flex justify-between items-center hover:bg-muted/10 transition-colors">
+                        <div>
+                          <div className="font-semibold text-foreground">Recovery Payment</div>
+                          <div className="text-[10px] text-muted-foreground mt-0.5">From: {p.customer_name}</div>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-bold text-success-dark">{fmtCurrency(p.amount)}</p>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </CardContent>
+              </Card>
             </div>
-            <CardContent className="p-0 divide-y text-sm">
-              {dailySales.length === 0 ? (
-                <EmptyState title="No cylinder sales recorded on this date." />
-              ) : (
-                dailySales.map((s) => (
-                  <div key={s.id} className="p-4 flex justify-between items-center hover:bg-muted/10 transition-colors">
-                    <div className="space-y-0.5">
-                      <div className="font-semibold text-foreground">{s.product_name} Sale to {s.customer_name}</div>
-                    </div>
-                    <div className="text-right">
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase border ${
-                        s.payment_mode === "cash" 
-                          ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" 
-                          : s.payment_mode === "credit"
-                          ? "bg-destructive/10 text-destructive border-destructive/20 animate-pulse"
-                          : s.payment_mode === "paytm"
-                          ? "bg-indigo-500/10 text-indigo-600 border-indigo-500/20"
-                          : "bg-sky-500/10 text-sky-600 border-sky-500/20"
-                      }`}>
-                        {s.payment_mode === "cash" ? "CASH" : s.payment_mode === "credit" ? "UDHARI" : s.payment_mode === "paytm" ? "UPI" : "BANK"}
-                      </span>
-                      <p className="font-bold text-foreground mt-1">{fmtCurrency(s.total)}</p>
-                    </div>
+          </div>
+
+          {/* Section: MONEY PAID (Paisa Gaya) */}
+          <div className="space-y-4">
+            <h2 className="text-xs font-bold uppercase tracking-widest text-red-600 bg-red-500/10 px-3 py-1.5 rounded-md inline-block">
+              MONEY PAID (Paisa Gaya)
+            </h2>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Bank Deposits & Paytm Transfers Outflows */}
+              <Card className="shadow-soft border-destructive/20 overflow-hidden">
+                <div className="bg-destructive/10 border-b border-destructive/20 px-4 py-3 flex items-center justify-between">
+                  <h3 className="font-bold text-destructive-dark flex items-center gap-1.5 text-xs uppercase tracking-wider">
+                    <ArrowDownRight className="h-4 w-4 text-destructive" /> Bank Deposits
+                  </h3>
+                  <span className="font-bold text-destructive-dark text-sm">{fmtCurrency(aggregates.bankDeposits)}</span>
+                </div>
+                <CardContent className="p-4 text-xs space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground">Bank/Online Cash Deposits</span>
+                    <span className="font-semibold">{fmtCurrency(dailyExpenses.filter(e => e.category === "bank_deposit").reduce((a,r)=>a+r.amount, 0))}</span>
                   </div>
-                ))
-              )}
-            </CardContent>
-          </Card>
- 
-          {/* Outstanding Recoveries */}
-          <Card className="shadow-soft border-success/20 overflow-hidden">
-            <div className="bg-success/10 border-b border-success/20 px-5 py-3 flex items-center justify-between">
-              <h3 className="font-bold text-success-dark flex items-center gap-2 text-sm uppercase tracking-wider">
-                <ArrowUpRight className="h-5 w-5 text-success" /> OUTSTANDING RECOVERIES
-              </h3>
-              <div className="text-right">
-                <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider block">Outstanding Recoveries</span>
-                <span className="font-extrabold text-success-dark text-base">{fmtCurrency(aggregates.paymentsTotal)}</span>
-              </div>
-            </div>
-            <CardContent className="p-0 divide-y text-sm">
-              {dailyPayments.length === 0 ? (
-                <EmptyState title="No customer payments collected on this date." />
-              ) : (
-                dailyPayments.map((p) => (
-                  <div key={p.id} className="p-4 flex justify-between items-center hover:bg-muted/10 transition-colors">
-                    <div className="space-y-0.5">
-                      <div className="font-semibold text-foreground">Collection from {p.customer_name}</div>
-                    </div>
-                    <div className="text-right">
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase border ${
-                        p.payment_mode === "cash" 
-                          ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" 
-                          : p.payment_mode === "paytm"
-                          ? "bg-indigo-500/10 text-indigo-600 border-indigo-500/20"
-                          : "bg-sky-500/10 text-sky-600 border-sky-500/20"
-                      }`}>
-                        {p.payment_mode === "cash" ? "CASH" : p.payment_mode === "paytm" ? "UPI" : "BANK"}
-                      </span>
-                      <p className="font-bold text-success-dark mt-1">{fmtCurrency(p.amount)}</p>
-                    </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground">Paytm Wallet Transfers</span>
+                    <span className="font-semibold">{fmtCurrency(dailyExpenses.filter(e => e.category === "paytm_transfer").reduce((a,r)=>a+r.amount, 0))}</span>
                   </div>
-                ))
-              )}
-            </CardContent>
-          </Card>
- 
-          {/* Today's Expenses */}
-          <Card className="shadow-soft border-destructive/20 overflow-hidden">
-            <div className="bg-destructive/10 border-b border-destructive/20 px-5 py-3 flex items-center justify-between">
-              <h3 className="font-bold text-destructive-dark flex items-center gap-2 text-sm uppercase tracking-wider">
-                <ArrowDownRight className="h-5 w-5 text-destructive" /> Today's Expenses
-              </h3>
-              <span className="font-bold text-destructive-dark text-sm">{fmtCurrency(aggregates.cashOutflow)}</span>
+                </CardContent>
+              </Card>
+
+              {/* Vehicle Expenses Card */}
+              <Card className="shadow-soft border-destructive/20 overflow-hidden">
+                <div className="bg-destructive/10 border-b border-destructive/20 px-4 py-3 flex items-center justify-between">
+                  <h3 className="font-bold text-destructive-dark flex items-center gap-1.5 text-xs uppercase tracking-wider">
+                    <ArrowDownRight className="h-4 w-4 text-destructive" /> Vehicle Expenses
+                  </h3>
+                  <span className="font-bold text-destructive-dark text-sm">{fmtCurrency(aggregates.vehicleExpenses)}</span>
+                </div>
+                <CardContent className="p-4 text-xs space-y-2 max-h-32 overflow-y-auto">
+                  {dailyExpenses.filter(e => ["vehicle_expense", "fuel", "repair", "maintenance"].includes(e.category)).length === 0 ? (
+                    <div className="text-muted-foreground py-2 text-center select-none">No vehicle expenses logged.</div>
+                  ) : (
+                    dailyExpenses.filter(e => ["vehicle_expense", "fuel", "repair", "maintenance"].includes(e.category)).map((e) => (
+                      <div key={e.id} className="flex justify-between items-start">
+                        <div>
+                          <span className="font-medium text-foreground capitalize">{e.category.replace("_", " ")}</span>
+                          {e.notes && <p className="text-[10px] text-muted-foreground">{e.notes}</p>}
+                        </div>
+                        <span className="font-semibold text-destructive-dark">{fmtCurrency(e.amount)}</span>
+                      </div>
+                    ))
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Delivery Expenses Card */}
+              <Card className="shadow-soft border-destructive/20 overflow-hidden">
+                <div className="bg-destructive/10 border-b border-destructive/20 px-4 py-3 flex items-center justify-between">
+                  <h3 className="font-bold text-destructive-dark flex items-center gap-1.5 text-xs uppercase tracking-wider">
+                    <ArrowDownRight className="h-4 w-4 text-destructive" /> Delivery Expenses
+                  </h3>
+                  <span className="font-bold text-destructive-dark text-sm">{fmtCurrency(aggregates.deliveryBoyPayments)}</span>
+                </div>
+                <CardContent className="p-4 text-xs space-y-2 max-h-32 overflow-y-auto">
+                  {dailyExpenses.filter(e => e.category === "delivery_boy_payment").length === 0 ? (
+                    <div className="text-muted-foreground py-2 text-center select-none">No direct delivery staff payments.</div>
+                  ) : (
+                    dailyExpenses.filter(e => e.category === "delivery_boy_payment").map((e) => (
+                      <div key={e.id} className="flex justify-between items-start">
+                        <div>
+                          <span className="font-medium text-foreground">Delivery Staff Payout</span>
+                          {e.notes && <p className="text-[10px] text-muted-foreground">{e.notes}</p>}
+                        </div>
+                        <span className="font-semibold text-destructive-dark">{fmtCurrency(e.amount)}</span>
+                      </div>
+                    ))
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Other Expenses Card */}
+              <Card className="shadow-soft border-destructive/20 overflow-hidden">
+                <div className="bg-destructive/10 border-b border-destructive/20 px-4 py-3 flex items-center justify-between">
+                  <h3 className="font-bold text-destructive-dark flex items-center gap-1.5 text-xs uppercase tracking-wider">
+                    <ArrowDownRight className="h-4 w-4 text-destructive" /> Other Expenses
+                  </h3>
+                  <span className="font-bold text-destructive-dark text-sm">{fmtCurrency(aggregates.otherExpenses)}</span>
+                </div>
+                <CardContent className="p-4 text-xs space-y-2 max-h-32 overflow-y-auto">
+                  {dailyExpenses.filter(e => ["salary", "miscellaneous"].includes(e.category)).length === 0 ? (
+                    <div className="text-muted-foreground py-2 text-center select-none">No salary or office expenses logged.</div>
+                  ) : (
+                    dailyExpenses.filter(e => ["salary", "miscellaneous"].includes(e.category)).map((e) => (
+                      <div key={e.id} className="flex justify-between items-start">
+                        <div>
+                          <span className="font-medium text-foreground capitalize">{e.category}</span>
+                          {e.notes && <p className="text-[10px] text-muted-foreground">{e.notes}</p>}
+                        </div>
+                        <span className="font-semibold text-destructive-dark">{fmtCurrency(e.amount)}</span>
+                      </div>
+                    ))
+                  )}
+                </CardContent>
+              </Card>
             </div>
-            <CardContent className="p-0 divide-y text-sm">
-              {aggregates.cashOutflow === 0 ? (
-                <EmptyState title="No cash outflows paid on this date." />
-              ) : (
-                <>
-                  {/* Bank Deposits */}
-                  {aggregates.bankDeposits > 0 && (
-                    <div className="p-4 flex justify-between items-center hover:bg-muted/10 transition-colors">
-                      <div className="space-y-0.5">
-                        <div className="font-semibold text-foreground">Bank Deposits</div>
-                        <div className="text-xs text-muted-foreground">Cash deposited into bank accounts</div>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-bold text-destructive-dark">{fmtCurrency(aggregates.bankDeposits)}</p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Paytm Transfers */}
-                  {aggregates.paytmTransfers > 0 && (
-                    <div className="p-4 flex justify-between items-center hover:bg-muted/10 transition-colors">
-                      <div className="space-y-0.5">
-                        <div className="font-semibold text-foreground">Paytm Transfers</div>
-                        <div className="text-xs text-muted-foreground">Cash transferred to Paytm business wallets</div>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-bold text-destructive-dark">{fmtCurrency(aggregates.paytmTransfers)}</p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Vehicle Expenses */}
-                  {aggregates.vehicleExpenses > 0 && (
-                    <div className="p-4 flex justify-between items-center hover:bg-muted/10 transition-colors">
-                      <div className="space-y-0.5">
-                        <div className="font-semibold text-foreground">Vehicle Expenses</div>
-                        <div className="text-xs text-muted-foreground">Diesel/fuel, repair, vehicle driver & maintenance</div>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-bold text-destructive-dark">{fmtCurrency(aggregates.vehicleExpenses)}</p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Delivery Boy Payments */}
-                  {aggregates.deliveryBoyPayments > 0 && (
-                    <div className="p-4 flex justify-between items-center hover:bg-muted/10 transition-colors">
-                      <div className="space-y-0.5">
-                        <div className="font-semibold text-foreground">Delivery Boy Payouts</div>
-                        <div className="text-xs text-muted-foreground">Direct advanced/manual cash advancements & payouts</div>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-bold text-destructive-dark">{fmtCurrency(aggregates.deliveryBoyPayments)}</p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Other Expenses */}
-                  {aggregates.otherExpenses > 0 && (
-                    <div className="p-4 flex justify-between items-center hover:bg-muted/10 transition-colors">
-                      <div className="space-y-0.5">
-                        <div className="font-semibold text-foreground">Other / Salary Expenses</div>
-                        <div className="text-xs text-muted-foreground">Operator salaries, office rent, and miscellaneous charges</div>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-bold text-destructive-dark">{fmtCurrency(aggregates.otherExpenses)}</p>
-                      </div>
-                    </div>
-                  )}
-                </>
-              )}
-            </CardContent>
-          </Card>
+          </div>
 
         </div>
 
-        {/* CashBook Summary Box */}
+        {/* Daily Cash Book Summary Box */}
         <div className="space-y-6">
           <Card className="shadow-soft border-primary/20"><CardContent className="p-5">
             <h3 className="font-bold text-sm uppercase tracking-wider text-primary border-b border-primary/20 pb-3 mb-4 flex items-center gap-1.5">
-              <Sparkles className="h-4.5 w-4.5 text-primary shrink-0" /> CashBook
+              <Sparkles className="h-4.5 w-4.5 text-primary shrink-0" /> Daily Cash Book
             </h3>
 
             <form onSubmit={save} className="space-y-4">
               <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-muted-foreground uppercase">Opening Cash Balance</Label>
+                <Label className="text-xs font-semibold text-muted-foreground uppercase">Opening Cash</Label>
                 <Input 
                   type="number" 
                   step="0.01"
@@ -506,32 +526,114 @@ function Page() {
                 />
               </div>
 
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-muted-foreground uppercase">Other Cash Receipts</Label>
+                <Input 
+                  type="number" 
+                  step="0.01"
+                  value={otherReceipts} 
+                  onChange={(e) => setOtherReceipts(e.target.value)} 
+                  className="h-11 font-bold text-lg text-primary" 
+                  placeholder="Enter manual cash receipts..."
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-muted-foreground uppercase">Actual Cash Count</Label>
+                <Input 
+                  type="number" 
+                  step="0.01"
+                  value={actual} 
+                  onChange={(e) => setActual(e.target.value)} 
+                  className="h-11 font-bold text-lg text-success-dark" 
+                  placeholder="Enter physical cash count..." 
+                />
+              </div>
+
               <div className="rounded-lg border border-border/80 bg-muted/30 p-4 space-y-2.5 text-xs">
+                <div className="font-semibold text-primary uppercase text-[10px] tracking-wider border-b pb-1.5 mb-1.5">Expected Closing Cash</div>
+                
                 <div className="flex justify-between font-medium">
-                  <span className="text-muted-foreground font-semibold">Opening Cash Balance</span>
-                  <span className="font-bold">{fmtCurrency(Number(opening || 0))}</span>
+                  <span className="text-muted-foreground">Opening Cash</span>
+                  <span>{fmtCurrency(Number(opening || 0))}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-success-dark font-medium">+ Cash Sales Received</span>
-                  <span className="font-bold text-success-dark">+{fmtCurrency(aggregates.cashSales)}</span>
+                  <span className="text-success-dark">+ Cash Sales</span>
+                  <span className="font-semibold text-success-dark">+{fmtCurrency(aggregates.cashSales)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-success-dark font-medium">+ Outstanding Recoveries (Cash)</span>
-                  <span className="font-bold text-success-dark">+{fmtCurrency(aggregates.cashPayments)}</span>
+                  <span className="text-success-dark">+ Outstanding Collections</span>
+                  <span className="font-semibold text-success-dark">+{fmtCurrency(aggregates.cashPayments)}</span>
                 </div>
-                <div className="flex justify-between border-t border-dashed pt-1 mt-1">
-                  <span className="text-destructive-dark font-medium">- Today's Expenses</span>
-                  <span className="font-bold text-destructive-dark">-{fmtCurrency(aggregates.expensesTotal)}</span>
+                <div className="flex justify-between">
+                  <span className="text-success-dark">+ Other Cash Receipts</span>
+                  <span className="font-semibold text-success-dark">+{fmtCurrency(aggregates.otherCashReceipts)}</span>
+                </div>
+                
+                <div className="border-t border-dashed my-1.5" />
+                
+                <div className="flex justify-between">
+                  <span className="text-destructive-dark">- Bank Deposits</span>
+                  <span className="font-semibold text-destructive-dark">-{fmtCurrency(aggregates.bankDeposits)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-destructive-dark">- Vehicle Expenses</span>
+                  <span className="font-semibold text-destructive-dark">-{fmtCurrency(aggregates.vehicleExpenses)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-destructive-dark">- Delivery Expenses</span>
+                  <span className="font-semibold text-destructive-dark">-{fmtCurrency(aggregates.deliveryBoyPayments)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-destructive-dark">- Other Expenses</span>
+                  <span className="font-semibold text-destructive-dark">-{fmtCurrency(aggregates.otherExpenses)}</span>
                 </div>
 
                 <div className="border-t border-border/80 pt-2.5 flex justify-between font-bold text-sm">
-                  <span className="text-primary font-bold">Expected Cash Balance</span>
+                  <span>Expected Closing Cash</span>
                   <span className="text-primary font-extrabold">{fmtCurrency(aggregates.expectedClosingCash)}</span>
                 </div>
+
+                {actual !== "" && (
+                  <>
+                    <div className="border-t border-dashed my-1.5" />
+                    
+                    <div className="flex justify-between font-medium">
+                      <span className="text-muted-foreground">Actual Cash Count</span>
+                      <span className="font-bold text-foreground">{fmtCurrency(Number(actual))}</span>
+                    </div>
+                    
+                    <div className={`flex justify-between font-bold text-sm ${
+                      Math.abs(aggregates.difference) < 0.01 
+                        ? "text-success-dark" 
+                        : "text-destructive-dark"
+                    }`}>
+                      <span>Difference</span>
+                      <span>{fmtCurrency(aggregates.difference)}</span>
+                    </div>
+
+                    <div className="flex justify-between items-center pt-1.5">
+                      <span className="text-xs font-bold text-muted-foreground">Reconciliation Status</span>
+                      <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded border ${
+                        Math.abs(aggregates.difference) < 0.01 
+                          ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" 
+                          : aggregates.difference < 0
+                          ? "bg-red-500/10 text-red-600 border-red-500/20"
+                          : "bg-blue-500/10 text-blue-600 border-blue-500/20"
+                      }`}>
+                        {Math.abs(aggregates.difference) < 0.01 
+                          ? "Balanced" 
+                          : aggregates.difference < 0
+                          ? "Short"
+                          : "Excess"}
+                      </span>
+                    </div>
+                  </>
+                )}
               </div>
 
               <Button type="submit" disabled={busy} className="w-full h-12 shadow-sm font-bold uppercase tracking-wider text-xs">
-                {busy ? "Saving..." : "Save CashBook"}
+                {busy ? "Saving..." : "Save Daily Cash Book"}
               </Button>
             </form>
           </CardContent></Card>

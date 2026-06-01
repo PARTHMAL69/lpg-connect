@@ -162,7 +162,7 @@ function Page() {
     } else if (kind === "cashbook") {
       const [cashQ, salesQ, paysQ, expQ] = await Promise.all([
         supabase.from("cash_book_days").select("book_date, opening_cash, actual_closing, notes").eq("agency_id", agency.id).gte("book_date", from).lte("book_date", to),
-        supabase.from("sales").select("sale_date, gross_amount").eq("agency_id", agency.id).eq("payment_mode", "cash").eq("is_deleted", false).gte("sale_date", from).lte("sale_date", to),
+        supabase.from("sales").select("sale_date, gross_amount, commission_amount").eq("agency_id", agency.id).eq("payment_mode", "cash").eq("is_deleted", false).gte("sale_date", from).lte("sale_date", to),
         supabase.from("payments").select("payment_date, amount").eq("agency_id", agency.id).eq("mode", "cash").eq("is_deleted", false).gte("payment_date", from).lte("payment_date", to),
         supabase.from("expenses").select("expense_date, amount").eq("agency_id", agency.id).eq("is_deleted", false).gte("expense_date", from).lte("expense_date", to)
       ]);
@@ -174,15 +174,25 @@ function Page() {
         ...(expQ.data ?? []).map(e => e.expense_date)
       ])).sort().reverse();
 
-      setCols(["Date", "Opening Cash", "Cash Sales", "Cash Payments Recd", "Expenses Paid", "Expected closing", "Actual closing", "Shortage/Surplus"]);
+      setCols(["Date", "Opening Cash", "Cash Sales (Net)", "Cash Payments Recd", "Other Receipts", "Expenses Paid", "Expected closing", "Actual closing", "Shortage/Surplus"]);
       setData(dates.map((dateStr) => {
         const cashRow = (cashQ.data ?? []).find(c => c.book_date === dateStr);
-        const cashSalesSum = (salesQ.data ?? []).filter(s => s.sale_date === dateStr).reduce((s, x) => s + Number(x.gross_amount), 0);
+        const cashSalesSum = (salesQ.data ?? []).filter(s => s.sale_date === dateStr).reduce((s, x) => s + Number(x.gross_amount) - Number(x.commission_amount || 0), 0);
         const cashPaymentsSum = (paysQ.data ?? []).filter(p => p.payment_date === dateStr).reduce((s, x) => s + Number(x.amount), 0);
         const expensesSum = (expQ.data ?? []).filter(e => e.expense_date === dateStr).reduce((s, x) => s + Number(x.amount), 0);
 
+        let otherReceipts = 0;
+        if (cashRow?.notes) {
+          try {
+            const meta = JSON.parse(cashRow.notes);
+            if (meta && typeof meta === "object" && meta.other_cash_receipts != null) {
+              otherReceipts = Number(meta.other_cash_receipts);
+            }
+          } catch (e) {}
+        }
+
         const opening = Number(cashRow?.opening_cash ?? 0);
-        const expected = opening + cashSalesSum + cashPaymentsSum - expensesSum;
+        const expected = opening + cashSalesSum + cashPaymentsSum + otherReceipts - expensesSum;
         const actual = cashRow?.actual_closing != null ? Number(cashRow.actual_closing) : expected;
         const diff = actual - expected;
 
@@ -191,6 +201,7 @@ function Page() {
           Number(opening),
           Number(cashSalesSum),
           Number(cashPaymentsSum),
+          Number(otherReceipts),
           Number(expensesSum),
           Number(expected),
           Number(actual),
