@@ -179,6 +179,9 @@ function Page() {
 
       if (error) throw error;
       
+      // Explicitly delete from customer_ledger to bypass database trigger bugs
+      await supabase.from("customer_ledger").delete().eq("sale_id", confirmVoidId);
+
       // Compensate customer ledger and outstanding balance
       if (voidedSale?.customer_id) {
         await reconcileCustomerOutstanding(voidedSale.customer_id);
@@ -211,9 +214,32 @@ function Page() {
 
       if (error) throw error;
       
-      // Compensate customer ledger and outstanding balance
-      if (restoredSale?.customer_id) {
-        await compensateSaleLedger(id, restoredSale.total, restoredSale.customer_id);
+      // Reconstruct customer ledger entry using syncSaleLedger for absolute correctness
+      if (restoredSale?.customer_id && agency) {
+        let isSplit = false;
+        let creditAmount = 0;
+        if (restoredSale.notes) {
+          try {
+            const meta = JSON.parse(restoredSale.notes);
+            if (meta && typeof meta === "object") {
+              if (meta.is_split) {
+                isSplit = true;
+                creditAmount = Number(meta.credit_amount || 0);
+              }
+            }
+          } catch (e) {}
+        }
+        await syncSaleLedger(
+          id,
+          restoredSale.customer_id,
+          isSplit,
+          creditAmount,
+          restoredSale.total,
+          restoredSale.txn_no || null,
+          restoredSale.sale_date,
+          agency.id,
+          restoredSale.payment_mode
+        );
       }
 
       // Re-apply stock deduction
@@ -452,7 +478,7 @@ function Page() {
 
       {/* Sale Details & System Audit Trail Modal */}
       <Dialog open={showDetails} onOpenChange={setShowDetails}>
-        <DialogContent className="max-w-lg bg-surface/95 border border-slate-100 shadow-xl rounded-2xl p-6">
+        <DialogContent className="max-w-lg bg-white border border-slate-100 shadow-xl rounded-2xl p-6">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold tracking-tight text-foreground flex items-center gap-2">
               <Info className="h-5 w-5 text-primary" /> Sale Invoice Details
@@ -612,7 +638,7 @@ function Page() {
 
       {/* Confirmation overlay for Void Sale */}
       <Dialog open={!!confirmVoidId} onOpenChange={(v) => { if (!v) setConfirmVoidId(null); }}>
-        <DialogContent className="max-w-sm bg-surface/95 border border-slate-100 shadow-xl rounded-2xl p-6">
+        <DialogContent className="max-w-sm bg-white border border-slate-100 shadow-xl rounded-2xl p-6">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold text-destructive flex items-center gap-2">
               ⚠️ Cancel Sale Invoice?
@@ -653,6 +679,7 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
   const [splitCash, setSplitCash] = useState("0");
   const [splitOnline, setSplitOnline] = useState("0");
   const [splitCredit, setSplitCredit] = useState("0");
+  const [prepaidQty, setPrepaidQty] = useState("0");
 
   const [busy, setBusy] = useState(false);
 
@@ -691,7 +718,10 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
     }
   }, [boy, editSale]);
 
-  const total = Number(f.quantity || 0) * Number(f.rate || 0);
+  const qty = Number(f.quantity || 0);
+  const prep = Number(prepaidQty || 0);
+  const billedQty = Math.max(0, qty - prep);
+  const total = billedQty * Number(f.rate || 0);
 
   useEffect(() => {
     if (editSale) {
@@ -700,15 +730,21 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
       let onlineAmt = "0";
       let creditAmt = "0";
       let remarks = editSale.notes ?? "";
+      let prepQty = "0";
 
       if (editSale.notes) {
         try {
           const meta = JSON.parse(editSale.notes);
-          if (meta && typeof meta === "object" && meta.is_split) {
-            split = true;
-            cashAmt = String(meta.cash_amount ?? 0);
-            onlineAmt = String(meta.online_amount ?? 0);
-            creditAmt = String(meta.credit_amount ?? 0);
+          if (meta && typeof meta === "object") {
+            if (meta.is_split) {
+              split = true;
+              cashAmt = String(meta.cash_amount ?? 0);
+              onlineAmt = String(meta.online_amount ?? 0);
+              creditAmt = String(meta.credit_amount ?? 0);
+            }
+            if (meta.website_prepaid_qty != null) {
+              prepQty = String(meta.website_prepaid_qty);
+            }
             remarks = meta.remarks ?? "";
           }
         } catch (e) {}
@@ -718,6 +754,7 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
       setSplitCash(cashAmt);
       setSplitOnline(onlineAmt);
       setSplitCredit(creditAmt);
+      setPrepaidQty(prepQty);
 
       setF({
         sale_date: editSale.sale_date,
@@ -735,6 +772,7 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
       setSplitCash("0");
       setSplitOnline("0");
       setSplitCredit("0");
+      setPrepaidQty("0");
       setF({
         sale_date: todayISO(), customer_id: "", product_id: "", quantity: "1", rate: "",
         payment_mode: "cash", delivery_boy_id: "", commission_rate: "0", notes: "",
@@ -768,18 +806,23 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
 
     setBusy(true);
 
+    const prep = Number(prepaidQty || 0);
     const finalDeliveryBoyId = isCncProduct ? null : (f.delivery_boy_id || null);
     const finalCommissionRate = isCncProduct ? 0 : Number(f.commission_rate || 0);
     const finalCommissionAmount = finalCommissionRate * Number(f.quantity || 0);
     const finalNetAmount = total - finalCommissionAmount;
 
-    const splitDetails = isSplit ? {
-      is_split: true,
-      cash_amount: Number(splitCash || 0),
-      online_amount: Number(splitOnline || 0),
-      credit_amount: Number(splitCredit || 0),
-      remarks: f.notes || null
-    } : null;
+    const metaDetails: any = {};
+    if (isSplit) {
+      metaDetails.is_split = true;
+      metaDetails.cash_amount = Number(splitCash || 0);
+      metaDetails.online_amount = Number(splitOnline || 0);
+      metaDetails.credit_amount = Number(splitCredit || 0);
+    }
+    if (prep > 0) {
+      metaDetails.website_prepaid_qty = prep;
+    }
+    metaDetails.remarks = f.notes || null;
 
     const payload = {
       agency_id: agency.id, 
@@ -794,7 +837,7 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
       commission_rate: finalCommissionRate,
       commission_amount: finalCommissionAmount,
       net_amount: finalNetAmount,
-      notes: isSplit ? JSON.stringify(splitDetails) : (f.notes || null),
+      notes: (isSplit || prep > 0) ? JSON.stringify(metaDetails) : (f.notes || null),
       updated_by: session?.user?.id
     };
 
@@ -813,7 +856,8 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
             payload.gross_amount,
             editSale.txn_no || null,
             payload.sale_date,
-            agency.id
+            agency.id,
+            payload.payment_mode
           );
         }
         if (editSale.customer_id && editSale.customer_id !== payload.customer_id) {
@@ -839,7 +883,8 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
             payload.gross_amount,
             null,
             payload.sale_date,
-            agency.id
+            agency.id,
+            payload.payment_mode
           );
         }
 
@@ -915,6 +960,20 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
             <SelectItem value="split">Split Payment (Mix Cash/Online/Udhari)</SelectItem>
           </SelectContent>
         </Select>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label>Online Website Orders (Qty Already Paid Online)</Label>
+        <Input 
+          type="number" 
+          min="0" 
+          max={f.quantity} 
+          step="0.01" 
+          value={prepaidQty} 
+          onChange={(e) => setPrepaidQty(e.target.value)} 
+          className="h-11 font-bold text-sm" 
+          placeholder="Enter quantity already pre-paid on website..." 
+        />
       </div>
 
       {isSplit && (

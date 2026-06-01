@@ -565,7 +565,7 @@ function Page() {
 
       {/* Product Details & System Audit Trail Modal */}
       <Dialog open={showDetails} onOpenChange={setShowDetails}>
-        <DialogContent className="max-w-md bg-surface/95 border border-slate-100 shadow-xl rounded-2xl p-6">
+        <DialogContent className="max-w-md bg-white border border-slate-100 shadow-xl rounded-2xl p-6">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold tracking-tight text-foreground flex items-center gap-2">
               <Info className="h-5 w-5 text-primary" /> Product Registry Details
@@ -703,7 +703,7 @@ function Page() {
 
       {/* Confirmation Dialog for Archive Product */}
       <Dialog open={!!confirmArchiveId} onOpenChange={(v) => { if (!v) setConfirmArchiveId(null); }}>
-        <DialogContent className="max-w-sm bg-surface/95 border border-slate-100 shadow-xl rounded-2xl p-6">
+        <DialogContent className="max-w-sm bg-white border border-slate-100 shadow-xl rounded-2xl p-6">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold text-destructive flex items-center gap-2">
               ⚠️ Archive Product?

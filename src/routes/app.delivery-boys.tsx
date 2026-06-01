@@ -519,7 +519,7 @@ function Page() {
 
       {/* Confirmation Dialog for Archiving Delivery Boy */}
       <Dialog open={!!confirmVoidId} onOpenChange={(v) => { if (!v) setConfirmVoidId(null); }}>
-        <DialogContent className="max-w-sm bg-surface/95 border border-slate-100 shadow-xl rounded-2xl p-6">
+        <DialogContent className="max-w-sm bg-white border border-slate-100 shadow-xl rounded-2xl p-6">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold text-destructive flex items-center gap-2">
               ⚠️ Archive Delivery Boy?

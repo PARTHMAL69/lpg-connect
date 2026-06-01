@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { fmtCurrency, fmtDate } from "@/lib/format";
 import { useAuth } from "@/lib/auth-context";
-import { reconcileCustomerOutstanding, compensateSaleLedger } from "@/lib/accounting";
+import { reconcileCustomerOutstanding, compensateSaleLedger, syncSaleLedger } from "@/lib/accounting";
 import { toast } from "sonner";
 import { exportToExcel, exportToPDF } from "@/lib/exports";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -49,6 +49,7 @@ interface LedgerItem {
   commission_rate?: number;
   net_amount?: number;
   product_name?: string;
+  gross_amount?: number;
 }
 
 export const Route = createFileRoute("/app/customers/$id")({ component: () => <RequireAgencyUser><Page/></RequireAgencyUser> });
@@ -107,30 +108,50 @@ function Page() {
 
   // Compute merged chronological ledger
   const ledger = useMemo<LedgerItem[]>(() => {
-    const sItems: LedgerItem[] = sales.map((s) => ({
-      id: s.id,
-      date: s.sale_date,
-      type: "sale",
-      description: `${s.product?.name ?? "Cylinder"} (${s.payment_mode})`,
-      debit: Number(s.gross_amount),
-      credit: s.payment_mode !== "credit" ? Number(s.gross_amount) : 0,
-      paymentMode: s.payment_mode,
-      is_deleted: s.is_deleted,
-      balance: 0,
-      notes: s.notes,
-      created_at: s.created_at,
-      created_by: s.created_by,
-      updated_at: s.updated_at,
-      updated_by: s.updated_by,
-      deleted_at: s.deleted_at,
-      deleted_by: s.deleted_by,
-      quantity: s.quantity,
-      rate: s.rate,
-      commission_amount: s.commission_amount,
-      commission_rate: s.commission_rate,
-      net_amount: s.net_amount,
-      product_name: s.product?.name,
-    }));
+    const sItems: LedgerItem[] = sales.map((s) => {
+      let isSplitSale = false;
+      let debitAmt = Number(s.gross_amount);
+      let creditAmt = s.payment_mode !== "credit" ? Number(s.gross_amount) : 0;
+
+      if (s.notes) {
+        try {
+          const meta = JSON.parse(s.notes);
+          if (meta && typeof meta === "object" && meta.is_split) {
+            isSplitSale = true;
+            debitAmt = Number(meta.credit_amount || 0); // Only debit the Udhari portion!
+            creditAmt = 0; // Cash/online portions are pre-paid instantly
+          }
+        } catch (e) {}
+      }
+
+      return {
+        id: s.id,
+        date: s.sale_date,
+        type: "sale",
+        description: isSplitSale 
+          ? `${s.product?.name ?? "Cylinder"} (Split: Cash/Online/Udhari)` 
+          : `${s.product?.name ?? "Cylinder"} (${s.payment_mode})`,
+        debit: debitAmt,
+        credit: creditAmt,
+        paymentMode: s.payment_mode,
+        is_deleted: s.is_deleted,
+        balance: 0,
+        notes: s.notes,
+        created_at: s.created_at,
+        created_by: s.created_by,
+        updated_at: s.updated_at,
+        updated_by: s.updated_by,
+        deleted_at: s.deleted_at,
+        deleted_by: s.deleted_by,
+        quantity: s.quantity,
+        rate: s.rate,
+        commission_amount: s.commission_amount,
+        commission_rate: s.commission_rate,
+        net_amount: s.net_amount,
+        product_name: s.product?.name,
+        gross_amount: Number(s.gross_amount),
+      };
+    });
 
     const pItems: LedgerItem[] = pays.map((p) => ({
       id: p.id,
@@ -161,8 +182,8 @@ function Page() {
     let runningBalance = 0;
     return filtered.map((item) => {
       if (!item.is_deleted) {
-        if (item.type === "sale" && item.paymentMode === "credit") {
-          runningBalance += item.debit;
+        if (item.type === "sale") {
+          runningBalance += item.debit - item.credit;
         } else if (item.type === "payment") {
           runningBalance -= item.credit;
         }
@@ -226,8 +247,31 @@ function Page() {
 
       if (error) throw error;
 
-      if (item.type === "sale") {
-        await compensateSaleLedger(item.id, Number(item.debit), id);
+      if (item.type === "sale" && agency) {
+        let isSplit = false;
+        let creditAmount = 0;
+        if (item.notes) {
+          try {
+            const meta = JSON.parse(item.notes);
+            if (meta && typeof meta === "object") {
+              if (meta.is_split) {
+                isSplit = true;
+                creditAmount = Number(meta.credit_amount || 0);
+              }
+            }
+          } catch (e) {}
+        }
+        await syncSaleLedger(
+          item.id,
+          id,
+          isSplit,
+          creditAmount,
+          item.gross_amount ?? Number(item.debit),
+          null,
+          item.date,
+          agency.id,
+          item.paymentMode
+        );
       } else {
         await reconcileCustomerOutstanding(id);
       }
@@ -250,6 +294,10 @@ function Page() {
       }).eq("id", item.id);
 
       if (error) throw error;
+
+      if (item.type === "sale") {
+        await supabase.from("customer_ledger").delete().eq("sale_id", item.id);
+      }
 
       await reconcileCustomerOutstanding(id);
 
@@ -575,13 +623,28 @@ function Page() {
                     <div 
                       key={s.id} 
                       onClick={() => {
+                        let isSplitSale = false;
+                        let debitAmt = Number(s.gross_amount);
+                        let creditAmt = s.payment_mode !== "credit" ? Number(s.gross_amount) : 0;
+                        if (s.notes) {
+                          try {
+                            const meta = JSON.parse(s.notes);
+                            if (meta && typeof meta === "object" && meta.is_split) {
+                              isSplitSale = true;
+                              debitAmt = Number(meta.credit_amount || 0);
+                              creditAmt = 0;
+                            }
+                          } catch (e) {}
+                        }
                         const item: LedgerItem = {
                           id: s.id,
                           date: s.sale_date,
                           type: "sale",
-                          description: `${s.product?.name ?? "Cylinder"} (${s.payment_mode})`,
-                          debit: Number(s.gross_amount),
-                          credit: s.payment_mode !== "credit" ? Number(s.gross_amount) : 0,
+                          description: isSplitSale 
+                            ? `${s.product?.name ?? "Cylinder"} (Split: Cash/Online/Udhari)` 
+                            : `${s.product?.name ?? "Cylinder"} (${s.payment_mode})`,
+                          debit: debitAmt,
+                          credit: creditAmt,
                           paymentMode: s.payment_mode,
                           is_deleted: s.is_deleted,
                           balance: 0,
@@ -598,6 +661,7 @@ function Page() {
                           commission_rate: s.commission_rate,
                           net_amount: s.net_amount,
                           product_name: s.product?.name,
+                          gross_amount: Number(s.gross_amount),
                         };
                         setSelectedItem(item);
                         setShowDetailsModal(true);
@@ -692,7 +756,7 @@ function Page() {
 
       {/* Collect Payment Dialog (Modal) */}
       <Dialog open={showPaymentModal} onOpenChange={setShowPaymentModal}>
-        <DialogContent className="max-w-md bg-surface/95 border border-slate-100 shadow-xl rounded-2xl p-6">
+        <DialogContent className="max-w-md bg-white border border-slate-100 shadow-xl rounded-2xl p-6">
           <DialogHeader>
             <DialogTitle className="text-xl font-bold tracking-tight text-foreground flex items-center gap-2">
               <HandCoins className="h-5 w-5 text-success" /> Receive Ledger Payment
@@ -777,7 +841,7 @@ function Page() {
 
       {/* Transaction Details & Audit Trail Dialog */}
       <Dialog open={showDetailsModal} onOpenChange={setShowDetailsModal}>
-        <DialogContent className="max-w-lg bg-surface/95 border border-slate-100 shadow-xl rounded-2xl p-6">
+        <DialogContent className="max-w-lg bg-white border border-slate-100 shadow-xl rounded-2xl p-6">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold tracking-tight text-foreground flex items-center gap-2">
               <Info className="h-5 w-5 text-primary" /> Transaction Details
@@ -834,7 +898,21 @@ function Page() {
                         {selectedItem.quantity} unit(s) @ {fmtCurrency(selectedItem.rate ?? 0)}
                       </div>
 
-                      <div className="text-muted-foreground">Gross Invoice Total</div>
+                      {selectedItem.gross_amount !== undefined && (
+                        <>
+                          <div className="text-muted-foreground">Gross Invoice Total</div>
+                          <div className="font-bold text-foreground text-right">{fmtCurrency(selectedItem.gross_amount)}</div>
+                        </>
+                      )}
+
+                      <div className="text-muted-foreground">
+                        {(selectedItem.paymentMode === "split" || (selectedItem.notes && (() => {
+                          try {
+                            const m = JSON.parse(selectedItem.notes);
+                            return m && m.is_split;
+                          } catch(e) { return false; }
+                        })())) ? "Udhari (Credit) Portion" : "Outstanding (Debit) Added"}
+                      </div>
                       <div className="font-black text-destructive text-right">{fmtCurrency(selectedItem.debit)}</div>
 
                       <div className="text-muted-foreground">Commission kept (Boy)</div>

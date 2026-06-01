@@ -69,7 +69,8 @@ export async function syncSaleLedger(
   grossAmount: number,
   txnNo: string | null,
   saleDate: string,
-  agencyId: string
+  agencyId: string,
+  paymentMode: string
 ): Promise<void> {
   if (!saleId || !customerId) return;
   try {
@@ -81,7 +82,7 @@ export async function syncSaleLedger(
     if (delErr) throw delErr;
 
     // 2. Determine correct debit value: split credit amount or standard gross amount
-    const debitVal = isSplit ? creditAmount : grossAmount;
+    const debitVal = isSplit ? creditAmount : (paymentMode === "credit" ? grossAmount : 0);
 
     // 3. Insert new customer ledger record if debit value is greater than 0
     if (debitVal > 0) {
