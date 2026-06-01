@@ -87,11 +87,20 @@ const en = {
     receivePayment: "Receive Payment",
     addExpense: "Add Expense",
     addCustomer: "Add Customer",
+    newExpense: "New Expense",
+    newCustomer: "New Customer",
     totalAgencies: "Total Agencies",
     activeAgencies: "Active Agencies",
     disabledAgencies: "Disabled Agencies",
     recentAgencies: "Recent Agencies",
   },
+  reports: {
+    title: "Reports",
+    from: "From",
+    to: "To",
+    run: "Run Report",
+  },
+
   product: {
     title: "Products",
     rate: "Rate",
