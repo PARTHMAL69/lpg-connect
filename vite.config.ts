@@ -50,11 +50,6 @@ export default defineConfig(({ command, mode }) => {
         ? [
             nitro({
               preset: "vercel",
-              output: {
-                dir: "dist",
-                serverDir: "dist/server",
-                publicDir: "dist/client",
-              },
             }),
           ]
         : []),
