@@ -136,14 +136,33 @@ function Dash() {
       }
 
       // Today's cash inflows (Cash Sales Net of instant delivery commissions + Cash Udhari Recovery payments)
-      const cashSalesTodayNet = ((salesQ.data ?? []) as any[]).filter(s => s.payment_mode === "cash").reduce((a, r) => a + Number(r.gross_amount) - Number(r.commission_amount || 0), 0);
+      let cashSalesTodayNet = 0;
+      ((salesQ.data ?? []) as any[]).forEach((s) => {
+        let isSplitSale = false;
+        let cashAmt = 0;
+        if (s.notes) {
+          try {
+            const meta = JSON.parse(s.notes);
+            if (meta && typeof meta === "object" && meta.is_split) {
+              isSplitSale = true;
+              cashAmt = Number(meta.cash_amount || 0);
+            }
+          } catch (e) {}
+        }
+        if (!isSplitSale) {
+          cashAmt = s.payment_mode === "cash" ? Number(s.gross_amount || 0) : 0;
+        }
+        const comm = Number(s.commission_amount || 0);
+        cashSalesTodayNet += Math.max(0, cashAmt - comm);
+      });
+
       const cashPaymentsToday = ((paysQ.data ?? []) as any[]).filter(p => p.mode === "cash").reduce((a, r) => a + Number(r.amount), 0);
       
       // Expected Cash Drawer Balance (Cash In Hand) - matches Cashbook net-inflow formula exactly
       const cashInHand = openingCash + cashSalesTodayNet + cashPaymentsToday + otherReceiptsToday - expenses;
 
-      // Today's total Cash Udhari collections strictly (only cash recoveries count as Cashbook recoveries inflow)
-      const cashCollections = cashPaymentsToday;
+      // Today's total Cash Received (Cash sales net of commission + Cash recoveries + other receipts)
+      const cashCollections = cashSalesTodayNet + cashPaymentsToday + otherReceiptsToday;
 
       // Pending boy commission aggregates
       const totalCommissionEarned = ((allSalesQ.data ?? []) as any[]).reduce((a, r) => a + Number(r.commission_amount), 0);
@@ -280,12 +299,9 @@ function Dash() {
       {/* KPI Stats Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <Kpi label="Today's Sales" value={fmtCurrency(metrics.grossSales)} icon={<TrendingUp className="h-4 w-4" />} accent="primary" description="Total cylinder sales logged today" tooltip="Total value of all cash, online, and Udhari sales logged today" />
-        <Kpi label="Today's Cash Received" value={fmtCurrency(metrics.cashCollections)} icon={<HandCoins className="h-4 w-4" />} accent="success" description="Cash collections against outstanding dues" tooltip="Total physical cash collections received today against previous customer outstanding dues" />
+        <Kpi label="Today's Cash Received" value={fmtCurrency(metrics.cashCollections)} icon={<HandCoins className="h-4 w-4" />} accent="success" description="Total cash received today" tooltip="Total cash received today from sales, recoveries, and other receipts, net of commission" />
         <Kpi label="Outstanding Customer Dues" value={fmtCurrency(metrics.outstanding)} icon={<AlertCircle className="h-4 w-4" />} accent="destructive" description="Total customer outstanding balance" tooltip="Dynamic sum of all customer outstanding ledger balances" />
-        <Kpi label="Expected Closing Cash" value={fmtCurrency(metrics.cashInHand)} icon={<BookOpen className="h-4 w-4" />} accent="primary" description="Expected physical cash box balance" tooltip="Calculated expected cash box drawer balance today" />
         <Kpi label="Today's Expenses" value={fmtCurrency(metrics.expenses)} icon={<Receipt className="h-4 w-4" />} accent="warning" description="Operating cash expenses logged today" tooltip="Total operating expenses and cash payouts paid today" />
-        <Kpi label="Monthly Sales" value={fmtCurrency(metrics.monthlyRevenue)} icon={<TrendingUp className="h-4 w-4" />} accent="success" description="Total sales logged this calendar month" tooltip="Total gross sales recorded in this calendar month" />
-        <Kpi label="Customers / Delivery Boys" value={`${metrics.totalCustomers} Cust / ${metrics.totalDeliveryBoys} Boys`} icon={<Activity className="h-4 w-4" />} accent="muted" description="Active distributorship profiles" tooltip="Active counts of customer profiles and delivery boys" />
       </div>
 
       {/* Quick Action Hub */}

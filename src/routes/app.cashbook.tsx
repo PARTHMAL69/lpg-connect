@@ -25,6 +25,7 @@ interface CashSaleItem {
   total: number;
   payment_mode: string;
   commission_total: number;
+  notes: string | null;
 }
 
 interface CashPaymentItem {
@@ -107,7 +108,7 @@ function Page() {
     // 2. Fetch daily sales (non-deleted only)
     const { data: sData } = await supabase
       .from("sales")
-      .select("id, sale_date, quantity, gross_amount, commission_amount, payment_mode, customer:customers(name), product:products(name)")
+      .select("id, sale_date, quantity, gross_amount, commission_amount, payment_mode, notes, customer:customers(name), product:products(name)")
       .eq("agency_id", agency.id)
       .eq("sale_date", date)
       .eq("is_deleted", false);
@@ -119,7 +120,8 @@ function Page() {
       quantity: Number(s.quantity),
       total: Number(s.gross_amount),
       payment_mode: s.payment_mode,
-      commission_total: Number(s.commission_amount || 0)
+      commission_total: Number(s.commission_amount || 0),
+      notes: s.notes
     }));
     setDailySales(formattedSales);
 
@@ -155,11 +157,36 @@ function Page() {
 
   // Aggregate values
   const aggregates = useMemo(() => {
+    // Extract the cash portion and net cash for each sale (handling split payments)
+    const salesWithCash = dailySales.map((s) => {
+      let isSplitSale = false;
+      let cashAmt = 0;
+      if (s.notes) {
+        try {
+          const meta = JSON.parse(s.notes);
+          if (meta && typeof meta === "object" && meta.is_split) {
+            isSplitSale = true;
+            cashAmt = Number(meta.cash_amount || 0);
+          }
+        } catch (e) {}
+      }
+
+      if (!isSplitSale) {
+        cashAmt = s.payment_mode === "cash" ? s.total : 0;
+      }
+
+      const netCash = Math.max(0, cashAmt - s.commission_total);
+      return {
+        ...s,
+        isSplitSale,
+        cashAmt,
+        netCash
+      };
+    });
+
     // 1. Daily Business Register - Cash Sales Received
-    const cashSalesList = dailySales.filter((s) => s.payment_mode === "cash");
-    const cashSalesGross = cashSalesList.reduce((a, r) => a + Number(r.total), 0);
-    const cashCommissions = cashSalesList.reduce((a, r) => a + Number(r.commission_total), 0);
-    const cashSales = cashSalesGross - cashCommissions; // Net cash handed to agency after commission
+    const cashSalesList = salesWithCash.filter((s) => s.cashAmt > 0);
+    const cashSales = cashSalesList.reduce((a, r) => a + r.netCash, 0);
 
     // Group cash sales by product name (Net cash value)
     const cashSalesByProductMap: Record<string, { quantity: number; total: number }> = {};
@@ -169,7 +196,7 @@ function Page() {
         cashSalesByProductMap[pName] = { quantity: 0, total: 0 };
       }
       cashSalesByProductMap[pName].quantity += s.quantity || 0;
-      cashSalesByProductMap[pName].total += (s.total - s.commission_total) || 0;
+      cashSalesByProductMap[pName].total += s.netCash || 0;
     });
 
     const cashSalesByProduct = Object.entries(cashSalesByProductMap).map(([name, stats]) => ({
@@ -178,9 +205,45 @@ function Page() {
       total: stats.total,
     }));
 
-    const digitalSales = dailySales.filter((s) => s.payment_mode !== "cash" && s.payment_mode !== "credit").reduce((a, r) => a + Number(r.total), 0);
-    const creditSales = dailySales.filter((s) => s.payment_mode === "credit").reduce((a, r) => a + Number(r.total), 0);
-    const grossSalesTotal = cashSalesGross + digitalSales + creditSales; // Gross business done today
+    // Calculate digital sales (handles split online portions)
+    const digitalSales = dailySales.reduce((a, s) => {
+      let isSplitSale = false;
+      let onlineAmt = 0;
+      if (s.notes) {
+        try {
+          const meta = JSON.parse(s.notes);
+          if (meta && typeof meta === "object" && meta.is_split) {
+            isSplitSale = true;
+            onlineAmt = Number(meta.online_amount || 0);
+          }
+        } catch (e) {}
+      }
+      if (!isSplitSale) {
+        return a + (s.payment_mode !== "cash" && s.payment_mode !== "credit" ? s.total : 0);
+      }
+      return a + onlineAmt;
+    }, 0);
+
+    // Calculate credit/udhari sales (handles split credit portions)
+    const creditSales = dailySales.reduce((a, s) => {
+      let isSplitSale = false;
+      let creditAmt = 0;
+      if (s.notes) {
+        try {
+          const meta = JSON.parse(s.notes);
+          if (meta && typeof meta === "object" && meta.is_split) {
+            isSplitSale = true;
+            creditAmt = Number(meta.credit_amount || 0);
+          }
+        } catch (e) {}
+      }
+      if (!isSplitSale) {
+        return a + (s.payment_mode === "credit" ? s.total : 0);
+      }
+      return a + creditAmt;
+    }, 0);
+
+    const grossSalesTotal = dailySales.reduce((a, r) => a + r.total, 0); // Gross business done today
 
     // Outstanding Collections Received (CASH only)
     const cashPayments = dailyPayments.filter((p) => p.payment_mode === "cash").reduce((a, r) => a + Number(r.amount), 0);
@@ -209,6 +272,7 @@ function Page() {
     return {
       grossSalesTotal,
       cashSales,
+      cashSalesList,
       cashSalesByProduct,
       digitalSales,
       creditSales,
@@ -351,17 +415,20 @@ function Page() {
                   <span className="font-extrabold text-primary text-sm">{fmtCurrency(aggregates.cashSales)}</span>
                 </div>
                 <CardContent className="p-0 divide-y text-xs max-h-64 overflow-y-auto">
-                  {dailySales.filter(s => s.payment_mode === "cash").length === 0 ? (
+                  {aggregates.cashSalesList.length === 0 ? (
                     <EmptyState title="No cash cylinder sales recorded." />
                   ) : (
-                    dailySales.filter(s => s.payment_mode === "cash").map((s) => (
+                    aggregates.cashSalesList.map((s) => (
                       <div key={s.id} className="p-3 flex justify-between items-center hover:bg-muted/10 transition-colors">
                         <div>
                           <div className="font-semibold text-foreground">{s.product_name} Cylinder</div>
-                          <div className="text-[10px] text-muted-foreground mt-0.5">To: {s.customer_name} · Qty: {s.quantity}</div>
+                          <div className="text-[10px] text-muted-foreground mt-0.5">
+                            To: {s.customer_name} · Qty: {s.quantity}
+                            {s.isSplitSale && <span className="ml-1 text-primary font-bold">(Split)</span>}
+                          </div>
                         </div>
                         <div className="text-right">
-                          <p className="font-bold text-foreground">{fmtCurrency(s.total - s.commission_total)}</p>
+                          <p className="font-bold text-foreground">{fmtCurrency(s.netCash)}</p>
                           {s.commission_total > 0 && (
                             <p className="text-[9px] text-muted-foreground font-medium">Net (Commission -{fmtCurrency(s.commission_total)})</p>
                           )}

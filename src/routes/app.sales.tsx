@@ -18,7 +18,7 @@ import {
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { fmtCurrency, fmtDate, todayISO } from "@/lib/format";
-import { reconcileCustomerOutstanding, compensateSaleLedger } from "@/lib/accounting";
+import { reconcileCustomerOutstanding, compensateSaleLedger, syncSaleLedger } from "@/lib/accounting";
 import { recordSaleDeduction, reverseSaleDeduction } from "@/lib/stock-store";
 import { Combobox } from "@/components/ui/combobox";
 import { Switch } from "@/components/ui/switch";
@@ -46,6 +46,7 @@ interface Row {
   commission_total: number;
   net_amount: number;
   notes: string | null;
+  txn_no: string | null;
   is_deleted: boolean;
   created_at: string;
   created_by: string | null;
@@ -118,6 +119,7 @@ function Page() {
         commission_total: Number(s.commission_amount),
         net_amount: Number(s.net_amount),
         notes: s.notes,
+        txn_no: s.txn_no,
         is_deleted: s.is_deleted,
         created_at: s.created_at,
         created_by: s.created_by,
@@ -647,6 +649,11 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
     payment_mode: "cash", delivery_boy_id: "", commission_rate: "0", notes: "",
   });
 
+  const [isSplit, setIsSplit] = useState(false);
+  const [splitCash, setSplitCash] = useState("0");
+  const [splitOnline, setSplitOnline] = useState("0");
+  const [splitCredit, setSplitCredit] = useState("0");
+
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -663,29 +670,15 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
     })();
   }, [agency]);
 
-  useEffect(() => {
-    if (editSale) {
-      setF({
-        sale_date: editSale.sale_date,
-        customer_id: editSale.customer_id ?? "",
-        product_id: editSale.product_id ?? "",
-        quantity: String(editSale.quantity),
-        rate: String(editSale.rate),
-        payment_mode: editSale.payment_mode,
-        delivery_boy_id: editSale.delivery_boy_id ?? "",
-        commission_rate: String(editSale.commission_rate),
-        notes: editSale.notes ?? "",
-      });
-    } else {
-      setF({
-        sale_date: todayISO(), customer_id: "", product_id: "", quantity: "1", rate: "",
-        payment_mode: "cash", delivery_boy_id: "", commission_rate: "0", notes: "",
-      });
-    }
-  }, [editSale]);
-
   const product = useMemo(() => products.find((p) => p.id === f.product_id), [products, f.product_id]);
-  useEffect(() => { 
+  
+  // CNC check based on product name
+  const isCncProduct = useMemo(() => {
+    if (!product) return false;
+    return product.name.toLowerCase().includes("cnc");
+  }, [product]);
+
+  useEffect(() => {
     if (product && !editSale) {
       setF((s) => ({ ...s, rate: String(product.rate) })); 
     }
@@ -700,10 +693,93 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
 
   const total = Number(f.quantity || 0) * Number(f.rate || 0);
 
+  useEffect(() => {
+    if (editSale) {
+      let split = false;
+      let cashAmt = "0";
+      let onlineAmt = "0";
+      let creditAmt = "0";
+      let remarks = editSale.notes ?? "";
+
+      if (editSale.notes) {
+        try {
+          const meta = JSON.parse(editSale.notes);
+          if (meta && typeof meta === "object" && meta.is_split) {
+            split = true;
+            cashAmt = String(meta.cash_amount ?? 0);
+            onlineAmt = String(meta.online_amount ?? 0);
+            creditAmt = String(meta.credit_amount ?? 0);
+            remarks = meta.remarks ?? "";
+          }
+        } catch (e) {}
+      }
+
+      setIsSplit(split);
+      setSplitCash(cashAmt);
+      setSplitOnline(onlineAmt);
+      setSplitCredit(creditAmt);
+
+      setF({
+        sale_date: editSale.sale_date,
+        customer_id: editSale.customer_id ?? "",
+        product_id: editSale.product_id ?? "",
+        quantity: String(editSale.quantity),
+        rate: String(editSale.rate),
+        payment_mode: split ? "split" : editSale.payment_mode,
+        delivery_boy_id: editSale.delivery_boy_id ?? "",
+        commission_rate: String(editSale.commission_rate),
+        notes: remarks,
+      });
+    } else {
+      setIsSplit(false);
+      setSplitCash("0");
+      setSplitOnline("0");
+      setSplitCredit("0");
+      setF({
+        sale_date: todayISO(), customer_id: "", product_id: "", quantity: "1", rate: "",
+        payment_mode: "cash", delivery_boy_id: "", commission_rate: "0", notes: "",
+      });
+    }
+  }, [editSale]);
+
+  const splitSum = Number(splitCash || 0) + Number(splitOnline || 0) + Number(splitCredit || 0);
+  const isSplitValid = Math.abs(splitSum - total) < 0.01;
+
+  const handlePaymentModeChange = (val: string) => {
+    setF((prev) => ({ ...prev, payment_mode: val }));
+    if (val === "split") {
+      setIsSplit(true);
+      setSplitCash(String(total));
+      setSplitOnline("0");
+      setSplitCredit("0");
+    } else {
+      setIsSplit(false);
+    }
+  };
+
   const submit = async (e: FormEvent) => {
     e.preventDefault(); 
     if (!agency || !f.product_id) return; 
+    
+    if (isSplit && !isSplitValid) {
+      toast.error(`Split payment total must equal the invoice amount: ${fmtCurrency(total)}`);
+      return;
+    }
+
     setBusy(true);
+
+    const finalDeliveryBoyId = isCncProduct ? null : (f.delivery_boy_id || null);
+    const finalCommissionRate = isCncProduct ? 0 : Number(f.commission_rate || 0);
+    const finalCommissionAmount = finalCommissionRate * Number(f.quantity || 0);
+    const finalNetAmount = total - finalCommissionAmount;
+
+    const splitDetails = isSplit ? {
+      is_split: true,
+      cash_amount: Number(splitCash || 0),
+      online_amount: Number(splitOnline || 0),
+      credit_amount: Number(splitCredit || 0),
+      remarks: f.notes || null
+    } : null;
 
     const payload = {
       agency_id: agency.id, 
@@ -713,12 +789,12 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
       quantity: Number(f.quantity), 
       rate: Number(f.rate), 
       gross_amount: total, 
-      payment_mode: f.payment_mode,
-      delivery_boy_id: f.delivery_boy_id || null,
-      commission_rate: Number(f.commission_rate || 0),
-      commission_amount: Number(f.commission_rate || 0) * Number(f.quantity || 0), 
-      net_amount: total - (Number(f.commission_rate || 0) * Number(f.quantity || 0)),
-      notes: f.notes || null,
+      payment_mode: isSplit ? (Number(splitCredit || 0) > 0 ? "credit" : "cash") : f.payment_mode,
+      delivery_boy_id: finalDeliveryBoyId,
+      commission_rate: finalCommissionRate,
+      commission_amount: finalCommissionAmount,
+      net_amount: finalNetAmount,
+      notes: isSplit ? JSON.stringify(splitDetails) : (f.notes || null),
       updated_by: session?.user?.id
     };
 
@@ -727,9 +803,18 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
         const { error } = await (supabase.from("sales") as any).update(payload).eq("id", editSale.id);
         if (error) throw error;
 
-        // Reconcile and compensate
+        // Reconcile outstanding dynamically using the custom ledger sync
         if (payload.customer_id) {
-          await compensateSaleLedger(editSale.id, payload.gross_amount, payload.customer_id);
+          await syncSaleLedger(
+            editSale.id,
+            payload.customer_id,
+            isSplit,
+            Number(splitCredit || 0),
+            payload.gross_amount,
+            editSale.txn_no || null,
+            payload.sale_date,
+            agency.id
+          );
         }
         if (editSale.customer_id && editSale.customer_id !== payload.customer_id) {
           await reconcileCustomerOutstanding(editSale.customer_id);
@@ -744,9 +829,18 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
         
         if (error) throw error;
 
-        // Reconcile and compensate
+        // Reconcile outstanding dynamically using the custom ledger sync
         if (data?.id && payload.customer_id) {
-          await compensateSaleLedger(data.id, payload.gross_amount, payload.customer_id);
+          await syncSaleLedger(
+            data.id,
+            payload.customer_id,
+            isSplit,
+            Number(splitCredit || 0),
+            payload.gross_amount,
+            null,
+            payload.sale_date,
+            agency.id
+          );
         }
 
         // Apply stock store deduction
@@ -807,14 +901,9 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
         </div>
       </div>
 
-      <div className="rounded-md bg-primary-soft p-3.5 flex items-center justify-between">
-        <span className="text-sm font-medium text-primary-foreground/80">{t("common.total")}</span>
-        <span className="text-lg font-bold text-primary">{fmtCurrency(total)}</span>
-      </div>
-
       <div className="space-y-1.5">
         <Label>{t("sales.paymentMode")}</Label>
-        <Select value={f.payment_mode} onValueChange={(v) => setF({...f, payment_mode: v})}>
+        <Select value={f.payment_mode} onValueChange={handlePaymentModeChange}>
           <SelectTrigger className="h-11">
             <SelectValue />
           </SelectTrigger>
@@ -823,33 +912,93 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
             <SelectItem value="online">{t("sales.online")}</SelectItem>
             <SelectItem value="paytm">{t("sales.paytm")}</SelectItem>
             <SelectItem value="credit">{t("sales.credit")}</SelectItem>
+            <SelectItem value="split">Split Payment (Mix Cash/Online/Udhari)</SelectItem>
           </SelectContent>
         </Select>
       </div>
 
-      <div className="space-y-1.5">
-        <Label>{t("sales.deliveryBoy")}</Label>
-        <Select value={f.delivery_boy_id} onValueChange={(v) => setF({...f, delivery_boy_id: v})}>
-          <SelectTrigger className="h-11">
-            <SelectValue placeholder="—" />
-          </SelectTrigger>
-          <SelectContent>
-            {boys.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
-      </div>
+      {isSplit && (
+        <Card className="p-4 bg-muted/40 border border-slate-100 space-y-3 rounded-lg">
+          <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Split Payment Breakdown</h4>
+          
+          <div className="grid grid-cols-3 gap-2">
+            <div className="space-y-1">
+              <Label className="text-[10px] uppercase font-bold text-muted-foreground">Cash (₹)</Label>
+              <Input type="number" step="0.01" value={splitCash} onChange={(e) => setSplitCash(e.target.value)} className="h-10 text-xs font-bold" />
+            </div>
+            
+            <div className="space-y-1">
+              <Label className="text-[10px] uppercase font-bold text-muted-foreground">Online (₹)</Label>
+              <Input type="number" step="0.01" value={splitOnline} onChange={(e) => setSplitOnline(e.target.value)} className="h-10 text-xs font-bold" />
+            </div>
 
-      <div className="space-y-1.5">
-        <Label>{t("sales.commissionRate")}</Label>
-        <Input type="number" value={f.commission_rate} onChange={(e) => setF({...f, commission_rate: e.target.value})} className="h-11" />
-      </div>
+            <div className="space-y-1">
+              <Label className="text-[10px] uppercase font-bold text-muted-foreground">Udhari (₹)</Label>
+              <Input type="number" step="0.01" value={splitCredit} onChange={(e) => setSplitCredit(e.target.value)} className="h-10 text-xs font-bold" />
+            </div>
+          </div>
+
+          <div className="flex justify-between items-center text-[10px] font-bold mt-1">
+            <span className="text-muted-foreground">Sum: {fmtCurrency(splitSum)} / Target: {fmtCurrency(total)}</span>
+            <span className={isSplitValid ? "text-success" : "text-destructive"}>
+              {isSplitValid ? "✓ Perfect match" : `✗ Discrepancy: ${fmtCurrency(Math.abs(total - splitSum))}`}
+            </span>
+          </div>
+        </Card>
+      )}
+
+      {/* CNC Auto logic: hide delivery boy and commission rate completely */}
+      {!isCncProduct && (
+        <>
+          <div className="space-y-1.5">
+            <Label>{t("sales.deliveryBoy")}</Label>
+            <Select value={f.delivery_boy_id} onValueChange={(v) => setF({...f, delivery_boy_id: v})}>
+              <SelectTrigger className="h-11">
+                <SelectValue placeholder="—" />
+              </SelectTrigger>
+              <SelectContent>
+                {boys.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>{t("sales.commissionRate")}</Label>
+            <Input type="number" value={f.commission_rate} onChange={(e) => setF({...f, commission_rate: e.target.value})} className="h-11" />
+          </div>
+        </>
+      )}
 
       <div className="space-y-1.5">
         <Label>{t("common.notes")}</Label>
-        <Textarea value={f.notes} onChange={(e) => setF({...f, notes: e.target.value})} />
+        <Textarea value={f.notes} onChange={(e) => setF({...f, notes: e.target.value})} placeholder="Optional transaction notes..." />
       </div>
 
-      <Button type="submit" disabled={busy} className="w-full h-12 font-semibold mt-4">
+      {/* Summary card showing Total, Boy commission, and Total without commission */}
+      <Card className="bg-primary-soft p-4 space-y-2 border border-primary/20 rounded-lg">
+        <div className="flex justify-between items-center text-xs font-semibold text-primary-foreground/90">
+          <span>total</span>
+          <span className="font-extrabold text-sm">{fmtCurrency(total)}</span>
+        </div>
+        
+        {!isCncProduct && f.delivery_boy_id && (
+          <>
+            <div className="flex justify-between items-center text-xs font-semibold text-destructive-dark/95">
+              <span>delivery boy commission</span>
+              <span className="font-extrabold text-sm">-{fmtCurrency(Number(f.commission_rate || 0) * Number(f.quantity || 0))}</span>
+            </div>
+            
+            <div className="border-t border-dashed border-primary/20 my-1.5" />
+            
+            <div className="flex justify-between items-center text-sm font-bold text-primary">
+              <span>total without commission</span>
+              <span className="font-black text-base">{fmtCurrency(total - (Number(f.commission_rate || 0) * Number(f.quantity || 0)))}</span>
+            </div>
+          </>
+        )}
+      </Card>
+
+      <Button type="submit" disabled={busy || (isSplit && !isSplitValid)} className="w-full h-12 font-semibold mt-4">
         {busy ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
         {editSale ? "Save Changes" : "Record Invoice"}
       </Button>

@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -380,8 +380,10 @@ function UdhariPage() {
                           <Button size="sm" variant="outline" onClick={() => setPayTarget(c)} className="h-9 hover:border-emerald-500 hover:text-emerald-600">
                             <PlusCircle className="h-4 w-4 mr-1.5" /> Receive Payment
                           </Button>
-                          <Button size="sm" variant="outline" onClick={() => navigate({ to: "/app/customers/$id", params: { id: c.id } })} className="h-9">
-                            <Eye className="h-4 w-4 mr-1.5" /> View Statement
+                          <Button size="sm" variant="outline" asChild className="h-9">
+                            <Link to="/app/customers/$id" params={{ id: c.id }}>
+                              <Eye className="h-4 w-4 mr-1.5" /> View Statement
+                            </Link>
                           </Button>
                         </div>
                       </td>

@@ -56,3 +56,53 @@ export async function compensateSaleLedger(saleId: string, grossAmount: number, 
     console.error(`[Reconciliation] Error compensating sale ledger for sale ${saleId}:`, err);
   }
 }
+
+/**
+ * Synchronizes the customer ledger for a sale, fully supporting split payments.
+ * It deletes existing ledger entries for this sale and inserts the correct credit portion.
+ */
+export async function syncSaleLedger(
+  saleId: string,
+  customerId: string | null,
+  isSplit: boolean,
+  creditAmount: number,
+  grossAmount: number,
+  txnNo: string | null,
+  saleDate: string,
+  agencyId: string
+): Promise<void> {
+  if (!saleId || !customerId) return;
+  try {
+    // 1. Delete any existing customer ledger records for this sale
+    const { error: delErr } = await supabase
+      .from("customer_ledger")
+      .delete()
+      .eq("sale_id", saleId);
+    if (delErr) throw delErr;
+
+    // 2. Determine correct debit value: split credit amount or standard gross amount
+    const debitVal = isSplit ? creditAmount : grossAmount;
+
+    // 3. Insert new customer ledger record if debit value is greater than 0
+    if (debitVal > 0) {
+      const { error: insErr } = await supabase
+        .from("customer_ledger")
+        .insert({
+          agency_id: agencyId,
+          customer_id: customerId,
+          entry_date: saleDate,
+          kind: "sale_credit",
+          reference: txnNo,
+          description: isSplit ? `Split Sale (Credit Portion)` : `Credit sale`,
+          debit: debitVal,
+          sale_id: saleId
+        });
+      if (insErr) throw insErr;
+    }
+
+    // 4. Reconcile the customer outstanding balance
+    await reconcileCustomerOutstanding(customerId);
+  } catch (err) {
+    console.error(`[Reconciliation] Error syncing sale ledger for sale ${saleId}:`, err);
+  }
+}

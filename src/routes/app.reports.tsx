@@ -42,7 +42,7 @@ function Page() {
     if (!agency) return;
     if (kind === "daily_summary") {
       const [salesQ, paysQ, expQ, cashQ] = await Promise.all([
-        supabase.from("sales").select("sale_date, gross_amount, payment_mode").eq("agency_id", agency.id).eq("is_deleted", false).gte("sale_date", from).lte("sale_date", to),
+        supabase.from("sales").select("sale_date, gross_amount, commission_amount, payment_mode, notes").eq("agency_id", agency.id).eq("is_deleted", false).gte("sale_date", from).lte("sale_date", to),
         supabase.from("payments").select("payment_date, amount, mode").eq("agency_id", agency.id).eq("is_deleted", false).gte("payment_date", from).lte("payment_date", to),
         supabase.from("expenses").select("expense_date, amount").eq("agency_id", agency.id).eq("is_deleted", false).gte("expense_date", from).lte("expense_date", to),
         supabase.from("cash_book_days").select("book_date, opening_cash").eq("agency_id", agency.id).gte("book_date", from).lte("book_date", to)
@@ -57,20 +57,50 @@ function Page() {
 
       setCols(["Date", "Gross Sales (₹)", "Cash Collections (₹)", "Online/Paytm (₹)", "Expenses Paid (₹)", "Expected Cash Drawer (₹)"]);
       setData(dates.map((dateStr) => {
-        const salesOnDate = (salesQ.data ?? []).filter(s => s.sale_date === dateStr);
-        const paysOnDate = (paysQ.data ?? []).filter(p => p.payment_date === dateStr);
-        const expOnDate = (expQ.data ?? []).filter(e => e.expense_date === dateStr);
-        const cashOnDate = (cashQ.data ?? []).find(c => c.book_date === dateStr);
+        const salesOnDate = (salesQ.data ?? []).filter((s: any) => s.sale_date === dateStr);
+        const paysOnDate = (paysQ.data ?? []).filter((p: any) => p.payment_date === dateStr);
+        const expOnDate = (expQ.data ?? []).filter((e: any) => e.expense_date === dateStr);
+        const cashOnDate = (cashQ.data ?? []).find((c: any) => c.book_date === dateStr);
 
-        const grossSales = salesOnDate.reduce((sum, s) => sum + Number(s.gross_amount), 0);
-        const cashSales = salesOnDate.filter(s => s.payment_mode === 'cash').reduce((sum, s) => sum + Number(s.gross_amount), 0);
-        const cashPayments = paysOnDate.filter(p => p.mode === 'cash').reduce((sum, p) => sum + Number(p.amount), 0);
+        let cashSalesSum = 0;
+        let onlineSalesSum = 0;
+        let grossSales = 0;
+
+        salesOnDate.forEach((s: any) => {
+          grossSales += Number(s.gross_amount || 0);
+
+          let isSplitSale = false;
+          let cashAmt = 0;
+          let onlineAmt = 0;
+          if (s.notes) {
+            try {
+              const meta = JSON.parse(s.notes);
+              if (meta && typeof meta === "object" && meta.is_split) {
+                isSplitSale = true;
+                cashAmt = Number(meta.cash_amount || 0);
+                onlineAmt = Number(meta.online_amount || 0);
+              }
+            } catch (e) {}
+          }
+
+          if (!isSplitSale) {
+            if (s.payment_mode === "cash") {
+              cashAmt = Number(s.gross_amount || 0);
+            } else if (s.payment_mode !== "credit") {
+              onlineAmt = Number(s.gross_amount || 0);
+            }
+          }
+
+          const comm = Number(s.commission_amount || 0);
+          cashSalesSum += Math.max(0, cashAmt - comm);
+          onlineSalesSum += onlineAmt;
+        });
+
+        const cashPayments = paysOnDate.filter((p: any) => p.mode === 'cash').reduce((sum: number, p: any) => sum + Number(p.amount), 0);
+        const cashCollections = cashSalesSum + cashPayments;
+        const nonCashCollections = onlineSalesSum + paysOnDate.filter((p: any) => p.mode !== 'cash').reduce((sum: number, p: any) => sum + Number(p.amount), 0);
         
-        const cashCollections = cashSales + cashPayments;
-        const nonCashCollections = paysOnDate.filter(p => p.mode !== 'cash').reduce((sum, p) => sum + Number(p.amount), 0) + 
-                             salesOnDate.filter(s => s.payment_mode !== 'cash' && s.payment_mode !== 'credit').reduce((sum, s) => sum + Number(s.gross_amount), 0);
-        
-        const expenses = expOnDate.reduce((sum, e) => sum + Number(e.amount), 0);
+        const expenses = expOnDate.reduce((sum: number, e: any) => sum + Number(e.amount), 0);
         const openingCash = Number(cashOnDate?.opening_cash ?? 0);
         const expectedCash = openingCash + cashCollections - expenses;
 
@@ -162,7 +192,7 @@ function Page() {
     } else if (kind === "cashbook") {
       const [cashQ, salesQ, paysQ, expQ] = await Promise.all([
         supabase.from("cash_book_days").select("book_date, opening_cash, actual_closing, notes").eq("agency_id", agency.id).gte("book_date", from).lte("book_date", to),
-        supabase.from("sales").select("sale_date, gross_amount, commission_amount").eq("agency_id", agency.id).eq("payment_mode", "cash").eq("is_deleted", false).gte("sale_date", from).lte("sale_date", to),
+        supabase.from("sales").select("sale_date, gross_amount, commission_amount, payment_mode, notes").eq("agency_id", agency.id).eq("is_deleted", false).gte("sale_date", from).lte("sale_date", to),
         supabase.from("payments").select("payment_date, amount").eq("agency_id", agency.id).eq("mode", "cash").eq("is_deleted", false).gte("payment_date", from).lte("payment_date", to),
         supabase.from("expenses").select("expense_date, amount").eq("agency_id", agency.id).eq("is_deleted", false).gte("expense_date", from).lte("expense_date", to)
       ]);
@@ -177,7 +207,27 @@ function Page() {
       setCols(["Date", "Opening Cash", "Cash Sales (Net)", "Cash Payments Recd", "Other Receipts", "Expenses Paid", "Expected closing", "Actual closing", "Shortage/Surplus"]);
       setData(dates.map((dateStr) => {
         const cashRow = (cashQ.data ?? []).find(c => c.book_date === dateStr);
-        const cashSalesSum = (salesQ.data ?? []).filter(s => s.sale_date === dateStr).reduce((s, x) => s + Number(x.gross_amount) - Number(x.commission_amount || 0), 0);
+        let cashSalesSum = 0;
+        (salesQ.data ?? []).filter(s => s.sale_date === dateStr).forEach((s) => {
+          let isSplitSale = false;
+          let cashAmt = 0;
+          if (s.notes) {
+            try {
+              const meta = JSON.parse(s.notes);
+              if (meta && typeof meta === "object" && meta.is_split) {
+                isSplitSale = true;
+                cashAmt = Number(meta.cash_amount || 0);
+              }
+            } catch (e) {}
+          }
+          if (!isSplitSale) {
+            if (s.payment_mode === "cash") {
+              cashAmt = Number(s.gross_amount || 0);
+            }
+          }
+          const comm = Number(s.commission_amount || 0);
+          cashSalesSum += Math.max(0, cashAmt - comm);
+        });
         const cashPaymentsSum = (paysQ.data ?? []).filter(p => p.payment_date === dateStr).reduce((s, x) => s + Number(x.amount), 0);
         const expensesSum = (expQ.data ?? []).filter(e => e.expense_date === dateStr).reduce((s, x) => s + Number(x.amount), 0);
 
@@ -211,7 +261,7 @@ function Page() {
     } else if (kind === "delivery") {
       const [boysQ, salesQ] = await Promise.all([
         supabase.from("delivery_boys").select("id, name, default_commission").eq("agency_id", agency.id).eq("is_deleted", false),
-        supabase.from("sales").select("delivery_boy_id, quantity, gross_amount, commission_amount, payment_mode").eq("agency_id", agency.id).eq("is_deleted", false).gte("sale_date", from).lte("sale_date", to)
+        supabase.from("sales").select("delivery_boy_id, quantity, gross_amount, commission_amount, payment_mode, notes").eq("agency_id", agency.id).eq("is_deleted", false).gte("sale_date", from).lte("sale_date", to)
       ]);
 
       setCols(["Delivery Partner", "Trips (Delivered Qty)", "Commission Deducted Today", "Gross Cash Collections", "Net Remitted Cash"]);
@@ -220,7 +270,23 @@ function Page() {
 
         const qty = boySales.reduce((sum, s) => sum + Number(s.quantity), 0);
         const earned = boySales.reduce((sum, s) => sum + Number(s.commission_amount), 0);
-        const collections = boySales.filter(s => s.payment_mode === 'cash').reduce((sum, s) => sum + Number(s.gross_amount), 0);
+        const collections = boySales.reduce((sum, s) => {
+          let isSplitSale = false;
+          let cashAmt = 0;
+          if (s.notes) {
+            try {
+              const meta = JSON.parse(s.notes);
+              if (meta && typeof meta === "object" && meta.is_split) {
+                isSplitSale = true;
+                cashAmt = Number(meta.cash_amount || 0);
+              }
+            } catch (e) {}
+          }
+          if (!isSplitSale) {
+            cashAmt = s.payment_mode === "cash" ? Number(s.gross_amount || 0) : 0;
+          }
+          return sum + cashAmt;
+        }, 0);
         
         const netRemitted = collections - earned;
 
@@ -270,23 +336,58 @@ function Page() {
       ] = await Promise.all([
         supabase.from("sales").select("id, sale_date, gross_amount, payment_mode, notes, product:products(name)").eq("customer_id", selectedCustomerId).eq("is_deleted", false).gte("sale_date", from).lte("sale_date", to),
         supabase.from("payments").select("id, payment_date, amount, mode, remarks").eq("customer_id", selectedCustomerId).eq("is_deleted", false).gte("payment_date", from).lte("payment_date", to),
-        supabase.from("sales").select("gross_amount").eq("customer_id", selectedCustomerId).eq("payment_mode", "credit").eq("is_deleted", false).lt("sale_date", from),
+        supabase.from("sales").select("gross_amount, notes, payment_mode").eq("customer_id", selectedCustomerId).eq("is_deleted", false).lt("sale_date", from),
         supabase.from("payments").select("amount").eq("customer_id", selectedCustomerId).eq("is_deleted", false).lt("payment_date", from)
       ]);
 
-      const prevSalesSum = (prevSales ?? []).reduce((sum, s) => sum + Number(s.gross_amount), 0);
+      const prevSalesSum = (prevSales ?? []).reduce((sum, s) => {
+        let isSplitSale = false;
+        let creditAmt = 0;
+        if (s.notes) {
+          try {
+            const meta = JSON.parse(s.notes);
+            if (meta && typeof meta === "object" && meta.is_split) {
+              isSplitSale = true;
+              creditAmt = Number(meta.credit_amount || 0);
+            }
+          } catch (e) {}
+        }
+        if (!isSplitSale) {
+          creditAmt = s.payment_mode === "credit" ? Number(s.gross_amount || 0) : 0;
+        }
+        return sum + creditAmt;
+      }, 0);
       const prevPaymentsSum = (prevPayments ?? []).reduce((sum, p) => sum + Number(p.amount), 0);
       const openingBalance = prevSalesSum - prevPaymentsSum;
 
-      const sItems = ((sData ?? []) as any[]).map((s) => ({
-        date: s.sale_date,
-        type: "Sale",
-        ref: s.id.substring(0, 8).toUpperCase(),
-        desc: `${s.product?.name ?? "Cylinder"} (${s.payment_mode})`,
-        debit: Number(s.gross_amount),
-        credit: s.payment_mode !== 'credit' ? Number(s.gross_amount) : 0,
-        notes: s.notes ?? "Sale recorded"
-      }));
+      const sItems = ((sData ?? []) as any[]).map((s) => {
+        let isSplitSale = false;
+        let debitAmt = Number(s.gross_amount);
+        let creditAmt = s.payment_mode !== 'credit' ? Number(s.gross_amount) : 0;
+
+        if (s.notes) {
+          try {
+            const meta = JSON.parse(s.notes);
+            if (meta && typeof meta === "object" && meta.is_split) {
+              isSplitSale = true;
+              debitAmt = Number(meta.credit_amount || 0);
+              creditAmt = 0;
+            }
+          } catch (e) {}
+        }
+
+        return {
+          date: s.sale_date,
+          type: "Sale",
+          ref: s.id.substring(0, 8).toUpperCase(),
+          desc: isSplitSale 
+            ? `${s.product?.name ?? "Cylinder"} (Split: Cash/Online/Udhari)` 
+            : `${s.product?.name ?? "Cylinder"} (${s.payment_mode})`,
+          debit: debitAmt,
+          credit: creditAmt,
+          notes: s.notes ?? "Sale recorded"
+        };
+      });
 
       const pItems = ((pData ?? []) as any[]).map((p) => ({
         date: p.payment_date,
