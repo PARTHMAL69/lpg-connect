@@ -524,11 +524,16 @@ function PaymentForm({ editPayment, customers, onDone }: PaymentFormProps) {
           <Input 
             type="number" 
             step="0.01"
+            min="0.01"
             required 
             value={amount} 
             onChange={(e) => setAmount(e.target.value)} 
+            onBlur={(e) => {
+              const val = Math.max(0.01, parseFloat(e.target.value) || 0.01);
+              setAmount(String(val));
+            }}
             placeholder="0.00"
-            className="h-11 mt-1" 
+            className="h-11 mt-1 font-bold text-sm" 
           />
         </div>
         <div className="space-y-1.5">

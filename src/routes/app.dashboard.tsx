@@ -87,7 +87,7 @@ function Dash() {
         allPaymentsQ
       ] = await Promise.all([
         // Today's aggregates
-        (supabase.from("sales") as any).select("gross_amount, commission_amount, payment_mode").eq("agency_id", agency.id).eq("is_deleted", false).eq("sale_date", today),
+        (supabase.from("sales") as any).select("gross_amount, commission_amount, payment_mode, notes").eq("agency_id", agency.id).eq("is_deleted", false).eq("sale_date", today),
         (supabase.from("payments") as any).select("amount, mode").eq("agency_id", agency.id).eq("is_deleted", false).eq("payment_date", today),
         (supabase.from("expenses") as any).select("amount").eq("agency_id", agency.id).eq("is_deleted", false).eq("expense_date", today),
         (supabase.from("customers") as any).select("id, name, outstanding:outstanding_balance").eq("agency_id", agency.id).eq("is_deleted", false),

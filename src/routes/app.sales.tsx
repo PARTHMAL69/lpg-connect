@@ -718,10 +718,10 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
     }
   }, [boy, editSale]);
 
-  const qty = Number(f.quantity || 0);
-  const prep = Number(prepaidQty || 0);
+  const qty = Math.max(0, Math.round(Number(f.quantity || 0)));
+  const prep = Math.max(0, Math.round(Number(prepaidQty || 0)));
   const billedQty = Math.max(0, qty - prep);
-  const total = billedQty * Number(f.rate || 0);
+  const total = billedQty * Math.max(0, Number(f.rate || 0));
 
   useEffect(() => {
     if (editSale) {
@@ -938,11 +938,34 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <Label>{t("common.quantity")}</Label>
-          <Input type="number" required min="0.01" step="0.01" value={f.quantity} onChange={(e) => setF({...f, quantity: e.target.value})} className="h-11" />
+          <Input 
+            type="number" 
+            required 
+            min="1" 
+            step="1" 
+            value={f.quantity} 
+            onChange={(e) => setF({...f, quantity: e.target.value})} 
+            onBlur={(e) => {
+              const val = Math.max(1, Math.round(Number(e.target.value) || 1));
+              setF({...f, quantity: String(val)});
+            }}
+            className="h-11 font-bold text-sm" 
+          />
         </div>
         <div className="space-y-1.5">
           <Label>{t("common.rate")}</Label>
-          <Input type="number" required value={f.rate} onChange={(e) => setF({...f, rate: e.target.value})} className="h-11" />
+          <Input 
+            type="number" 
+            required 
+            min="0"
+            value={f.rate} 
+            onChange={(e) => setF({...f, rate: e.target.value})} 
+            onBlur={(e) => {
+              const val = Math.max(0, parseFloat(e.target.value) || 0);
+              setF({...f, rate: String(val)});
+            }}
+            className="h-11 font-bold text-sm" 
+          />
         </div>
       </div>
 
@@ -968,9 +991,14 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
           type="number" 
           min="0" 
           max={f.quantity} 
-          step="0.01" 
+          step="1" 
           value={prepaidQty} 
           onChange={(e) => setPrepaidQty(e.target.value)} 
+          onBlur={(e) => {
+            const qVal = Math.max(1, Math.round(Number(f.quantity) || 1));
+            const val = Math.max(0, Math.min(qVal, Math.round(Number(e.target.value) || 0)));
+            setPrepaidQty(String(val));
+          }}
           className="h-11 font-bold text-sm" 
           placeholder="Enter quantity already pre-paid on website..." 
         />

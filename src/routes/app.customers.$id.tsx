@@ -508,102 +508,128 @@ function Page() {
 
         {/* Ledger Statement view */}
         {tab === "ledger" && (
-          <Card className="shadow-soft overflow-hidden">
-            <CardContent className="p-0">
-              {loading ? (
-                <div className="p-12 text-center text-xs text-muted-foreground animate-pulse">Loading transaction statements...</div>
-              ) : ledger.length === 0 ? (
-                <div className="p-12 text-center text-sm text-muted-foreground flex flex-col items-center justify-center gap-2">
-                  <Receipt className="h-10 w-10 text-muted-foreground/45" />
-                  <p>No ledger transactions found for this customer.</p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-slate-50 border-b border-slate-100 select-none">
-                      <tr>
-                        <th className="text-left px-5 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wider w-32">Date</th>
-                        <th className="text-left px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wider w-24">Ref No</th>
-                        <th className="text-left px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wider">Description</th>
-                        <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wider w-28">Debit (+)</th>
-                        <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wider w-28">Credit (-)</th>
-                        <th className="text-right px-5 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wider w-32">Running Balance</th>
-                        <th className="text-left px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wider w-24">Cashier</th>
-                        <th className="text-center px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wider w-20">Actions</th>
-                      </tr>
-                    </thead>
-
-                    <tbody className="divide-y divide-border/60">
-                      {ledger.map((r) => (
-                        <tr 
-                          key={r.id} 
-                          onClick={() => {
-                            setSelectedItem(r);
-                            setShowDetailsModal(true);
-                          }}
-                          className={`hover:bg-accent/15 transition-colors cursor-pointer ${r.is_deleted ? "bg-slate-50/50 text-muted-foreground" : ""}`}
-                        >
-                          <td className="px-5 py-3.5 whitespace-nowrap text-xs font-semibold text-muted-foreground">
-                            {fmtDate(r.date)}
-                          </td>
-                          <td className="px-4 py-3.5 whitespace-nowrap text-xs font-mono font-bold uppercase text-muted-foreground">
-                            {r.id.substring(0, 8)}
-                          </td>
-                          <td className="px-4 py-3.5">
-                            <div className={`font-bold ${r.is_deleted ? "text-muted-foreground line-through" : "text-foreground"}`}>
-                              {r.description}
-                            </div>
-                            {r.notes && (
-                              <div className="text-[10px] text-muted-foreground mt-0.5 truncate max-w-xs">{r.notes}</div>
-                            )}
-                            {r.is_deleted && (
-                              <span className="inline-block text-[8px] tracking-wider uppercase font-extrabold px-1.5 py-0.5 rounded bg-destructive/10 text-destructive mt-1">
-                                Voided
+          <div className="space-y-3 select-none">
+            {loading ? (
+              <div className="p-12 text-center text-xs text-muted-foreground animate-pulse">Loading transaction statements...</div>
+            ) : ledger.length === 0 ? (
+              <Card className="shadow-soft p-12 text-center text-sm text-muted-foreground flex flex-col items-center justify-center gap-2 border border-slate-100">
+                <Receipt className="h-10 w-10 text-muted-foreground/45" />
+                <p>No ledger transactions found for this customer.</p>
+              </Card>
+            ) : (
+              <div className="grid grid-cols-1 gap-3">
+                {ledger.map((r) => {
+                  const isSale = r.type === "sale";
+                  const isVoided = r.is_deleted;
+                  
+                  return (
+                    <Card 
+                      key={r.id} 
+                      onClick={() => {
+                        setSelectedItem(r);
+                        setShowDetailsModal(true);
+                      }}
+                      className={`shadow-soft border border-slate-100 hover:border-primary/20 transition-all cursor-pointer relative overflow-hidden bg-white p-4 ${isVoided ? "opacity-75 bg-slate-50/50" : ""}`}
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div className="flex items-start gap-3.5">
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                            isVoided ? "bg-slate-200 text-slate-400" : (isSale ? "bg-primary-soft text-primary" : "bg-success-soft text-success")
+                          }`}>
+                            {isSale ? <ShoppingBag className="h-5 w-5" /> : <HandCoins className="h-5 w-5" />}
+                          </div>
+                          
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className={`font-bold text-sm tracking-tight ${isVoided ? "text-muted-foreground line-through" : "text-foreground"}`}>
+                                {isSale ? (r.product_name ?? "Refill Cylinder") : "Collection Payment"}
                               </span>
+                              
+                              {/* Payment Mode Badge */}
+                              <span className={`text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full border ${
+                                isVoided ? "bg-slate-100 text-slate-400 border-slate-200" :
+                                (r.paymentMode === "credit" || r.paymentMode === "udhari" ? "bg-red-50 text-red-600 border-red-200" :
+                                 r.paymentMode === "split" ? "bg-blue-50 text-blue-600 border-blue-200" :
+                                 "bg-emerald-50 text-emerald-600 border-emerald-200")
+                              }`}>
+                                {r.paymentMode}
+                              </span>
+
+                              {isVoided && (
+                                <span className="bg-destructive/10 text-destructive border border-destructive/20 text-[8px] font-black uppercase px-1.5 py-0.5 rounded">
+                                  Voided
+                                </span>
+                              )}
+                            </div>
+                            
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground font-semibold">
+                              <span className="text-foreground/80">{fmtDate(r.date)}</span>
+                              <span>·</span>
+                              <span className="font-mono font-bold uppercase">{r.id.substring(0, 8)}</span>
+                              {isSale && r.quantity && (
+                                <>
+                                  <span>·</span>
+                                  <span>Qty: <strong className="text-foreground">{r.quantity}</strong></span>
+                                  <span>·</span>
+                                  <span>Rate: <strong className="text-foreground">{fmtCurrency(r.rate ?? 0)}</strong></span>
+                                </>
+                              )}
+                            </div>
+
+                            {r.notes && (
+                              <p className="text-xs text-muted-foreground italic mt-1 font-medium max-w-md truncate">
+                                “{r.notes}”
+                              </p>
                             )}
-                          </td>
-                          <td className="px-4 py-3.5 text-right font-bold text-destructive">
-                            {r.debit > 0 ? fmtCurrency(r.debit) : "—"}
-                          </td>
-                          <td className="px-4 py-3.5 text-right font-bold text-success">
-                            {r.credit > 0 ? fmtCurrency(r.credit) : "—"}
-                          </td>
-                          <td className="px-5 py-3.5 text-right font-black text-foreground">
-                            {r.is_deleted ? "—" : fmtCurrency(r.balance)}
-                          </td>
-                          <td className="px-4 py-3.5 whitespace-nowrap text-xs font-mono font-semibold text-muted-foreground">
-                            {r.created_by ? `UID:${r.created_by.substring(0, 5)}` : "System"}
-                          </td>
-                          <td className="px-4 py-3.5 text-center" onClick={(e) => e.stopPropagation()}>
-                            {r.is_deleted ? (
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between sm:justify-end gap-6 border-t sm:border-t-0 pt-3 sm:pt-0">
+                          {/* Amount Panel */}
+                          <div className="text-left sm:text-right space-y-0.5">
+                            <div className={`text-base font-black tracking-tight ${
+                              isVoided ? "text-slate-400 line-through" : (isSale ? "text-destructive" : "text-success")
+                            }`}>
+                              {isSale ? "+" : "-"}{fmtCurrency(isSale ? r.debit : r.credit)}
+                            </div>
+                            
+                            {!isVoided && (
+                              <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">
+                                Bal: {fmtCurrency(r.balance)}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Quick Actions Panel */}
+                          <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                            {isVoided ? (
                               <Button 
                                 variant="ghost" 
                                 size="sm" 
                                 onClick={() => restoreTransaction(r)} 
-                                className="h-8 px-2 text-success hover:bg-success/10 font-bold text-xs"
+                                className="h-9 px-3 gap-1 text-success hover:bg-success/5 font-bold text-xs rounded-lg"
                               >
-                                <RotateCcw className="h-3.5 w-3.5" />
+                                <RotateCcw className="h-3.5 w-3.5" /> Restore
                               </Button>
                             ) : (
                               <Button 
                                 variant="ghost" 
                                 size="sm" 
                                 onClick={() => archiveTransaction(r)} 
-                                className="h-8 w-8 p-0 text-destructive hover:bg-destructive/10"
+                                className="h-9 w-9 p-0 text-destructive hover:bg-destructive/5 rounded-lg"
                               >
-                                <Trash2 className="h-3.5 w-3.5" />
+                                <Trash2 className="h-4 w-4" />
                               </Button>
                             )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-
-                  </table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                          </div>
+                        </div>
+                      </div>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         )}
 
         {/* Purchase History */}

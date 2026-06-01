@@ -399,7 +399,7 @@ function UdhariPage() {
  
       {/* Payment dialog */}
       <Dialog open={!!payTarget} onOpenChange={(open) => !open && setPayTarget(null)}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md bg-white border border-slate-100 shadow-xl rounded-2xl p-6">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <IndianRupee className="h-5 w-5 text-emerald-500" />
@@ -418,9 +418,21 @@ function UdhariPage() {
 
               <div className="space-y-1.5">
                 <Label htmlFor="amount">Payment Amount (INR)</Label>
-                <Input id="amount" type="number" step="0.01" required placeholder="e.g. 1000"
-                  value={payAmount} onChange={(e) => setPayAmount(e.target.value)}
-                  className="h-11 font-bold text-lg" />
+                <Input 
+                  id="amount" 
+                  type="number" 
+                  step="0.01" 
+                  min="0.01"
+                  required 
+                  placeholder="e.g. 1000"
+                  value={payAmount} 
+                  onChange={(e) => setPayAmount(e.target.value)}
+                  onBlur={(e) => {
+                    const val = Math.max(0.01, parseFloat(e.target.value) || 0.01);
+                    setPayAmount(String(val));
+                  }}
+                  className="h-11 font-bold text-lg" 
+                />
               </div>
 
               <div className="space-y-1.5">
