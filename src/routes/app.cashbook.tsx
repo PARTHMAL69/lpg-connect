@@ -111,7 +111,7 @@ function Page() {
     // 3. Fetch daily payment collections (non-deleted only)
     const { data: pData } = await (supabase
       .from("payments") as any)
-      .select("id, amount, payment_mode, customer:customers(name)")
+      .select("id, amount, mode, customer:customers(name)")
       .eq("agency_id", agency.id)
       .eq("payment_date", date)
       .eq("is_deleted", false);
@@ -120,7 +120,7 @@ function Page() {
       id: p.id,
       customer_name: p.customer?.name ?? "—",
       amount: Number(p.amount),
-      payment_mode: p.payment_mode
+      payment_mode: p.mode
     }));
     setDailyPayments(formattedPayments);
 
@@ -331,11 +331,11 @@ function Page() {
         
         {/* Money Inflow & Outflow details */}
         <div className="lg:col-span-2 space-y-6">
-            {/* Today's Sales Register - MONEY RECEIVED (PAISA AAYA) */}
+            {/* Today's Sales Register */}
           <Card className="shadow-soft border-primary/20 overflow-hidden">
             <div className="bg-primary/10 border-b border-primary/20 px-5 py-3 flex items-center justify-between">
-              <h3 className="font-bold text-primary flex items-center gap-2 text-sm uppercase tracking-wider">
-                <ArrowUpRight className="h-5 w-5 text-primary" /> MONEY RECEIVED (PAISA AAYA)
+               <h3 className="font-bold text-primary flex items-center gap-2 text-sm uppercase tracking-wider">
+                <ArrowUpRight className="h-5 w-5 text-primary" /> TODAY'S SALES REGISTER
               </h3>
               <div className="text-right">
                 <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider block">Total Business Today</span>

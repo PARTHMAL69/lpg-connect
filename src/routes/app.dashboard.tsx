@@ -127,9 +127,10 @@ function Dash() {
       // Today's cash inflows (Cash Sales + Cash Udhari Recovery payments)
       const cashSalesToday = ((salesQ.data ?? []) as any[]).filter(s => s.payment_mode === "cash").reduce((a, r) => a + Number(r.gross_amount), 0);
       const cashPaymentsToday = ((paysQ.data ?? []) as any[]).filter(p => p.mode === "cash").reduce((a, r) => a + Number(r.amount), 0);
+      const commissionsKept = ((salesQ.data ?? []) as any[]).filter(s => s.payment_mode === "cash").reduce((a, r) => a + Number(r.commission_amount || 0), 0);
       
-      // Expected Cash Drawer Balance (Cash In Hand)
-      const cashInHand = openingCash + cashSalesToday + cashPaymentsToday - expenses;
+      // Expected Cash Drawer Balance (Cash In Hand) - must match Cashbook formula exactly
+      const cashInHand = openingCash + cashSalesToday + cashPaymentsToday - expenses - commissionsKept;
 
       // Today's total Udhari collections (all payments recovered today: Cash + Digital)
       const cashCollections = ((paysQ.data ?? []) as any[]).reduce((a, r) => a + Number(r.amount), 0);
