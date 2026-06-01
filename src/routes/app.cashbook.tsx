@@ -166,13 +166,13 @@ function Page() {
           const meta = JSON.parse(s.notes);
           if (meta && typeof meta === "object" && meta.is_split) {
             isSplitSale = true;
-            cashAmt = Number(meta.cash_amount || 0);
+            cashAmt = Number(meta.cash_amount || 0) + Number(meta.online_amount || 0);
           }
         } catch (e) {}
       }
 
       if (!isSplitSale) {
-        cashAmt = s.payment_mode === "cash" ? s.total : 0;
+        cashAmt = s.payment_mode !== "credit" ? s.total : 0;
       }
 
       const netCash = Math.max(0, cashAmt - s.commission_total);
@@ -245,10 +245,10 @@ function Page() {
 
     const grossSalesTotal = dailySales.reduce((a, r) => a + r.total, 0); // Gross business done today
 
-    // Outstanding Collections Received (CASH only)
-    const cashPayments = dailyPayments.filter((p) => p.payment_mode === "cash").reduce((a, r) => a + Number(r.amount), 0);
-    const digitalPayments = dailyPayments.filter((p) => p.payment_mode !== "cash").reduce((a, r) => a + Number(r.amount), 0);
-    const paymentsTotal = cashPayments + digitalPayments;
+    // Outstanding Collections Received (All modes: Cash, Online, Paytm)
+    const cashPayments = dailyPayments.reduce((a, r) => a + Number(r.amount), 0);
+    const digitalPayments = 0; // all integrated into cashbook expected closing
+    const paymentsTotal = cashPayments;
 
     // 2. Business Expenses (Cash Outflows)
     // Decompose Expenses by Category
@@ -416,14 +416,14 @@ function Page() {
                 </div>
                 <CardContent className="p-0 divide-y text-xs max-h-64 overflow-y-auto">
                   {aggregates.cashSalesList.length === 0 ? (
-                    <EmptyState title="No cash cylinder sales recorded." />
+                    <EmptyState title="No cylinder sales recorded." />
                   ) : (
                     aggregates.cashSalesList.map((s) => (
                       <div key={s.id} className="p-3 flex justify-between items-center hover:bg-muted/10 transition-colors">
                         <div>
                           <div className="font-semibold text-foreground">{s.product_name} Cylinder</div>
                           <div className="text-[10px] text-muted-foreground mt-0.5">
-                            To: {s.customer_name} · Qty: {s.quantity}
+                            To: {s.customer_name} · Qty: {s.quantity} · Mode: {s.payment_mode.toUpperCase()}
                             {s.isSplitSale && <span className="ml-1 text-primary font-bold">(Split)</span>}
                           </div>
                         </div>
@@ -448,13 +448,13 @@ function Page() {
                   <span className="font-extrabold text-success-dark text-sm">{fmtCurrency(aggregates.cashPayments)}</span>
                 </div>
                 <CardContent className="p-0 divide-y text-xs max-h-64 overflow-y-auto">
-                  {dailyPayments.filter(p => p.payment_mode === "cash").length === 0 ? (
-                    <EmptyState title="No cash customer payments collected." />
+                  {dailyPayments.length === 0 ? (
+                    <EmptyState title="No customer payments collected." />
                   ) : (
-                    dailyPayments.filter(p => p.payment_mode === "cash").map((p) => (
+                    dailyPayments.map((p) => (
                       <div key={p.id} className="p-3 flex justify-between items-center hover:bg-muted/10 transition-colors">
                         <div>
-                          <div className="font-semibold text-foreground">Recovery Payment</div>
+                          <div className="font-semibold text-foreground">Recovery Payment ({p.payment_mode.toUpperCase()})</div>
                           <div className="text-[10px] text-muted-foreground mt-0.5">From: {p.customer_name}</div>
                         </div>
                         <div className="text-right">

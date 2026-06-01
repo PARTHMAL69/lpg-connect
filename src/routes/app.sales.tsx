@@ -976,9 +976,9 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
 
       {/* Summary card showing Total, Boy commission, and Total without commission */}
       <Card className="bg-primary-soft p-4 space-y-2 border border-primary/20 rounded-lg">
-        <div className="flex justify-between items-center text-xs font-semibold text-primary-foreground/90">
-          <span>total</span>
-          <span className="font-extrabold text-sm">{fmtCurrency(total)}</span>
+        <div className="flex justify-between items-center text-sm font-bold text-primary">
+          <span>Total Gross</span>
+          <span className="font-extrabold text-base">{fmtCurrency(total)}</span>
         </div>
         
         {!isCncProduct && f.delivery_boy_id && (
