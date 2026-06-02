@@ -41,6 +41,9 @@ interface ExpenseRow {
   created_by: string | null;
   updated_at: string | null;
   updated_by: string | null;
+  display_category?: string;
+  display_notes?: string;
+  custom_category_name?: string;
 }
 
 const CATS = [
@@ -49,10 +52,9 @@ const CATS = [
   "fuel",
   "repair",
   "maintenance",
-  "paytm_transfer",
   "salary",
   "delivery_boy_payment",
-  "miscellaneous"
+  "other"
 ] as const;
 
 const catLabels: Record<string, string> = {
@@ -61,10 +63,9 @@ const catLabels: Record<string, string> = {
   fuel: "Fuel",
   repair: "Repair",
   maintenance: "Maintenance",
-  paytm_transfer: "Paytm Transfer",
   salary: "Salary",
   delivery_boy_payment: "Delivery Boy Payment",
-  miscellaneous: "Miscellaneous"
+  other: "Other"
 };
 
 function Page() {
@@ -110,7 +111,26 @@ function Page() {
       if (error) throw error;
       
       setBoys(boysData ?? []);
-      setRows((expData ?? []) as unknown as ExpenseRow[]);
+      const mapped = (expData ?? []).map((exp: any) => {
+        let displayCategory = exp.category;
+        let displayNotes = exp.notes ?? "";
+        let customCategoryName = "";
+        if (exp.notes && exp.notes.startsWith("[OTHER_CAT:")) {
+          const match = exp.notes.match(/^\[OTHER_CAT:([^\]]+)\]/);
+          if (match) {
+            customCategoryName = match[1];
+            displayCategory = "other";
+            displayNotes = exp.notes.replace(/^\[OTHER_CAT:[^\]]+\]\s*/, "");
+          }
+        }
+        return {
+          ...exp,
+          display_category: displayCategory,
+          display_notes: displayNotes,
+          custom_category_name: customCategoryName
+        };
+      });
+      setRows(mapped as unknown as ExpenseRow[]);
     } catch (err: any) {
       toast.error(err.message);
     } finally {
@@ -125,8 +145,8 @@ function Page() {
   // Dynamic filter memo
   const filtered = useMemo(() => {
     return rows.filter((r) => {
-      const notesText = r.notes ?? "";
-      const catLabelText = catLabels[r.category] ?? r.category;
+      const notesText = r.display_notes ?? "";
+      const catLabelText = r.custom_category_name || catLabels[r.display_category ?? r.category] || r.category;
       
       const matchesSearch = !q.trim() || 
         notesText.toLowerCase().includes(q.toLowerCase()) ||
@@ -136,7 +156,7 @@ function Page() {
       const matchesStart = !startDate || r.expense_date >= startDate;
       const matchesEnd = !endDate || r.expense_date <= endDate;
       
-      const matchesCat = filterCat === "all" || r.category === filterCat;
+      const matchesCat = filterCat === "all" || r.display_category === filterCat;
       
       return matchesSearch && matchesStart && matchesEnd && matchesCat;
     });
@@ -191,18 +211,18 @@ function Page() {
       const cols = ["Date", "Category", "Amount", "Remarks / Notes", "Status"];
       const data = filtered.map((r) => [
         fmtDate(r.expense_date),
-        catLabels[r.category] ?? r.category.toUpperCase(),
+        r.custom_category_name || catLabels[r.display_category ?? r.category] || r.category.toUpperCase(),
         fmtCurrency(r.amount),
-        r.notes ?? "—",
+        r.display_notes ?? "—",
         r.is_deleted ? "Voided" : "Active"
       ]);
       exportToPDF("Overhead Expenses Log", cols, data, "expenses_ledger");
     } else {
       const data = filtered.map((r) => ({
         Date: fmtDate(r.expense_date),
-        Category: catLabels[r.category] ?? r.category,
+        Category: r.custom_category_name || catLabels[r.display_category ?? r.category] || r.category,
         "Amount (INR)": Number(r.amount),
-        Notes: r.notes ?? "—",
+        Notes: r.display_notes ?? "—",
         "Is Voided": r.is_deleted ? "Yes" : "No"
       }));
       exportToExcel(data, "expenses_ledger", "Overhead Expenses");
@@ -331,11 +351,11 @@ function Page() {
                     <td className="p-4 font-semibold whitespace-nowrap">{fmtDate(r.expense_date)}</td>
                     <td className="p-4 font-bold">
                       <span className="inline-block px-2.5 py-1 rounded bg-muted font-medium text-xs">
-                        {catLabels[r.category] ?? r.category}
+                        {r.custom_category_name || catLabels[r.display_category ?? r.category] || r.category}
                         {r.category === "delivery_boy_payment" && r.delivery_boy_id && ` (${boys.find(b => b.id === r.delivery_boy_id)?.name ?? "Boy " + r.delivery_boy_id.substring(0, 8)})`}
                       </span>
                     </td>
-                    <td className="p-4 text-muted-foreground text-xs italic truncate max-w-xs">{r.notes ?? "—"}</td>
+                    <td className="p-4 text-muted-foreground text-xs italic truncate max-w-xs">{r.display_notes ?? "—"}</td>
                     <td className="p-4 text-right font-black text-destructive whitespace-nowrap">
                       - {fmtCurrency(r.amount)}
                     </td>
@@ -432,7 +452,7 @@ function Page() {
                   <div className="font-semibold text-foreground text-right">{fmtDate(selectedExpense.expense_date)}</div>
 
                   <div className="text-muted-foreground">Category</div>
-                  <div className="font-bold text-foreground text-right">{catLabels[selectedExpense.category] ?? selectedExpense.category}</div>
+                  <div className="font-bold text-foreground text-right">{selectedExpense.custom_category_name || catLabels[selectedExpense.display_category ?? selectedExpense.category] || selectedExpense.category}</div>
 
                   {selectedExpense.category === "delivery_boy_payment" && selectedExpense.delivery_boy_id && (
                     <>
@@ -444,7 +464,7 @@ function Page() {
                   )}
 
                   <div className="text-muted-foreground">Remarks / Notes</div>
-                  <div className="font-medium text-foreground text-right italic truncate max-w-xs">{selectedExpense.notes ?? "—"}</div>
+                  <div className="font-medium text-foreground text-right italic truncate max-w-xs">{selectedExpense.display_notes ?? selectedExpense.notes ?? "—"}</div>
                 </div>
               </div>
 
@@ -574,9 +594,16 @@ function ExpenseForm({ editExpense, onDone }: FormProps) {
   const { t } = useTranslation();
   const { agency, session } = useAuth();
   const [expense_date, setExpenseDate] = useState(editExpense?.expense_date ?? todayISO());
-  const [category, setCategory] = useState(editExpense?.category ?? "miscellaneous");
+  
+  // Detect if editing an "other" category expense
+  const initCategory = editExpense?.display_category ?? editExpense?.category ?? "bank_deposit";
+  const initCustomName = editExpense?.custom_category_name ?? "";
+  const initNotes = editExpense?.display_notes ?? editExpense?.notes ?? "";
+  
+  const [category, setCategory] = useState(initCategory);
+  const [customCategoryName, setCustomCategoryName] = useState(initCustomName);
   const [amount, setAmount] = useState(editExpense?.amount ? String(editExpense.amount) : "");
-  const [notes, setNotes] = useState(editExpense?.notes ?? "");
+  const [notes, setNotes] = useState(initNotes);
   const [delivery_boy_id, setDeliveryBoyId] = useState(editExpense?.delivery_boy_id ?? "");
   const [boys, setBoys] = useState<Array<{ id: string; name: string }>>([]);
   const [busy, setBusy] = useState(false);
@@ -613,19 +640,31 @@ function ExpenseForm({ editExpense, onDone }: FormProps) {
       return;
     }
 
+    const isOther = category === "other";
+    if (isOther && !customCategoryName.trim()) {
+      toast.error("Please enter the expense type name.");
+      setBusy(false);
+      return;
+    }
+
+    // Map "other" -> "miscellaneous" in DB, prefix notes with [OTHER_CAT:name]
+    const dbCategory = isOther ? "miscellaneous" : category;
+    const dbNotes = isOther 
+      ? `[OTHER_CAT:${customCategoryName.trim()}]${notes ? " " + notes : ""}`
+      : (notes || null);
+
     const payload = {
       agency_id: agency.id,
       expense_date,
-      category: category as any,
+      category: dbCategory as any,
       amount: val,
-      notes: notes || null,
+      notes: dbNotes,
       delivery_boy_id: isBoyPayment ? delivery_boy_id : null,
       updated_by: session?.user?.id
     };
 
     try {
       if (editExpense) {
-        // Edit
         const { error } = await supabase
           .from("expenses")
           .update(payload)
@@ -635,7 +674,6 @@ function ExpenseForm({ editExpense, onDone }: FormProps) {
         toast.success("Expense record updated successfully.");
         onDone();
       } else {
-        // Create
         const { error } = await supabase
           .from("expenses")
           .insert({
@@ -669,7 +707,7 @@ function ExpenseForm({ editExpense, onDone }: FormProps) {
 
       <div className="space-y-1.5">
         <Label>{t("expenses.category")}</Label>
-        <Select value={category} onValueChange={(v) => { setCategory(v); if (v !== "delivery_boy_payment") setDeliveryBoyId(""); }}>
+        <Select value={category} onValueChange={(v) => { setCategory(v); if (v !== "delivery_boy_payment") setDeliveryBoyId(""); if (v !== "other") setCustomCategoryName(""); }}>
           <SelectTrigger className="h-11"><SelectValue /></SelectTrigger>
           <SelectContent>
             {CATS.map((c) => (
@@ -678,6 +716,20 @@ function ExpenseForm({ editExpense, onDone }: FormProps) {
           </SelectContent>
         </Select>
       </div>
+
+      {category === "other" && (
+        <div className="space-y-1.5 animate-fade-in">
+          <Label>Expense Type Name</Label>
+          <Input 
+            required
+            type="text"
+            placeholder="e.g. Tea, Parcel, Gadi Expense..."
+            value={customCategoryName}
+            onChange={(e) => setCustomCategoryName(e.target.value)}
+            className="h-11 font-medium"
+          />
+        </div>
+      )}
 
       {category === "delivery_boy_payment" && (
         <div className="space-y-1.5 animate-fade-in">

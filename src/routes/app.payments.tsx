@@ -33,6 +33,8 @@ interface PaymentRow {
   deleted_at: string | null;
   deleted_by: string | null;
   customer: { name: string } | null;
+  notes?: string | null;
+  display_notes?: string | null;
 }
 
 function Page() {
@@ -93,7 +95,20 @@ function Page() {
     if (error) {
       toast.error(error.message);
     } else {
-      setRows((data ?? []) as unknown as PaymentRow[]);
+      const formatted = (data ?? []).map((p: any) => {
+        let mode = p.payment_mode; // payment_mode was mapped from mode in select
+        let displayNotes = p.notes ?? ""; // notes was mapped from remarks in select
+        if (p.notes && p.notes.startsWith("[CHEQUE]")) {
+          mode = "cheque";
+          displayNotes = p.notes.replace(/^\[CHEQUE\]\s*/, "");
+        }
+        return {
+          ...p,
+          payment_mode: mode,
+          display_notes: displayNotes
+        };
+      });
+      setRows(formatted as unknown as PaymentRow[]);
     }
   };
 
@@ -433,6 +448,7 @@ function PaymentForm({ editPayment, customers, onDone }: PaymentFormProps) {
   const [amount, setAmount] = useState(editPayment?.amount ? String(editPayment.amount) : "");
   const [payment_mode, setPaymentMode] = useState(editPayment?.payment_mode ?? "cash");
   const [payment_date, setPaymentDate] = useState(editPayment?.payment_date ?? todayISO());
+  const [remarks, setRemarks] = useState(editPayment?.display_notes ?? editPayment?.notes ?? "");
   const [busy, setBusy] = useState(false);
 
   const selectedCustomer = customers.find((c) => c.id === customer_id);
@@ -449,6 +465,9 @@ function PaymentForm({ editPayment, customers, onDone }: PaymentFormProps) {
       return;
     }
 
+    const dbMode = payment_mode === "cheque" ? "online" : payment_mode;
+    const dbRemarks = payment_mode === "cheque" ? `[CHEQUE]${remarks.trim() ? " " + remarks.trim() : ""}` : (remarks.trim() || null);
+
     if (editPayment) {
       // Perform Edit
       const { error } = await (supabase
@@ -456,7 +475,8 @@ function PaymentForm({ editPayment, customers, onDone }: PaymentFormProps) {
         .update({
           customer_id,
           amount: val,
-          mode: payment_mode,
+          mode: dbMode,
+          remarks: dbRemarks,
           payment_date,
           updated_by: session?.user?.id
         })
@@ -480,7 +500,8 @@ function PaymentForm({ editPayment, customers, onDone }: PaymentFormProps) {
           agency_id: agency.id,
           customer_id,
           amount: val,
-          mode: payment_mode,
+          mode: dbMode,
+          remarks: dbRemarks,
           payment_date,
           updated_by: session?.user?.id
         });
@@ -560,6 +581,17 @@ function PaymentForm({ editPayment, customers, onDone }: PaymentFormProps) {
             <SelectItem value="cheque">Cheque</SelectItem>
           </SelectContent>
         </Select>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label>Remarks / Reference</Label>
+        <Input 
+          type="text"
+          value={remarks}
+          onChange={(e) => setRemarks(e.target.value)}
+          placeholder="e.g. Cheque/Txn number, Bank name..."
+          className="h-11 mt-1"
+        />
       </div>
 
       <div className="flex gap-3 pt-4 border-t">

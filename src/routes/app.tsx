@@ -9,7 +9,7 @@ import {
   LayoutDashboard, ShoppingCart, Users, Package, IndianRupee,
   Receipt, Wallet, Truck, BookOpen, LogOut, Flame, Menu, UserCog,
 } from "lucide-react";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/app")({
@@ -39,6 +39,18 @@ function AppLayout() {
   const { roles } = useAuth();
   const [open, setOpen] = useState(false);
   const nav = useNavigate();
+
+  useEffect(() => {
+    const handleWheel = (e: WheelEvent) => {
+      if (document.activeElement && (document.activeElement as HTMLInputElement).type === "number") {
+        (document.activeElement as HTMLInputElement).blur();
+      }
+    };
+    document.addEventListener("wheel", handleWheel, { passive: true });
+    return () => {
+      document.removeEventListener("wheel", handleWheel);
+    };
+  }, []);
 
   const isAdmin = useMemo(() => {
     return roles.includes("agency_admin") || roles.includes("platform_admin" as any);

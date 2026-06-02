@@ -61,7 +61,7 @@ function UdhariPage() {
   const [bucketFilter, setBucketFilter] = useState<"all" | Bucket>("all");
   const [payTarget, setPayTarget] = useState<UdhariCustomer | null>(null);
   const [payAmount, setPayAmount] = useState("");
-  const [payMode, setPayMode] = useState<"cash" | "online" | "paytm">("cash");
+  const [payMode, setPayMode] = useState<"cash" | "online" | "paytm" | "cheque">("cash");
   const [payRemarks, setPayRemarks] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -198,12 +198,15 @@ function UdhariPage() {
     }
     setBusy(true);
     try {
+      const dbMode = payMode === "cheque" ? "online" : payMode;
+      const dbRemarks = payMode === "cheque" ? `[CHEQUE]${payRemarks.trim() ? " " + payRemarks.trim() : ""}` : (payRemarks || "Payment against outstanding (Quick)");
+
       const { error } = await (supabase.from("payments") as any).insert({
         agency_id: agency.id,
         customer_id: payTarget.id,
         amount,
-        mode: payMode,
-        remarks: payRemarks || "Payment against outstanding (Quick)",
+        mode: dbMode,
+        remarks: dbRemarks,
         payment_date: new Date().toISOString().slice(0, 10),
         created_by: session?.user?.id,
       });
@@ -443,6 +446,7 @@ function UdhariPage() {
                     <SelectItem value="cash">Cash</SelectItem>
                     <SelectItem value="online">Online (UPI/Bank)</SelectItem>
                     <SelectItem value="paytm">Paytm</SelectItem>
+                    <SelectItem value="cheque">Cheque</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

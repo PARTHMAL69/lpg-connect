@@ -75,7 +75,7 @@ function Page() {
   // Collect payment states
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [payAmount, setPayAmount] = useState("");
-  const [payMode, setPayMode] = useState<"cash" | "online" | "paytm">("cash");
+  const [payMode, setPayMode] = useState<"cash" | "online" | "paytm" | "cheque">("cash");
   const [payDate, setPayDate] = useState(new Date().toISOString().split("T")[0]);
   const [payRemarks, setPayRemarks] = useState("");
   const [savingPayment, setSavingPayment] = useState(false);
@@ -110,16 +110,27 @@ function Page() {
   const ledger = useMemo<LedgerItem[]>(() => {
     const sItems: LedgerItem[] = sales.map((s) => {
       let isSplitSale = false;
+      let isCheque = false;
       let debitAmt = Number(s.gross_amount);
       let creditAmt = s.payment_mode !== "credit" ? Number(s.gross_amount) : 0;
+      let displayNotes = s.notes ?? "";
+      let paymentMode = s.payment_mode;
 
       if (s.notes) {
         try {
           const meta = JSON.parse(s.notes);
-          if (meta && typeof meta === "object" && meta.is_split) {
-            isSplitSale = true;
-            debitAmt = Number(meta.credit_amount || 0); // Only debit the Udhari portion!
-            creditAmt = 0; // Cash/online portions are pre-paid instantly
+          if (meta && typeof meta === "object") {
+            if (meta.is_split) {
+              isSplitSale = true;
+              debitAmt = Number(meta.credit_amount || 0); // Only debit the Udhari portion!
+              creditAmt = 0; // Cash/online portions are pre-paid instantly
+            }
+            if (meta.is_cheque) {
+              isCheque = true;
+              paymentMode = "cheque";
+              creditAmt = Number(s.gross_amount);
+            }
+            displayNotes = meta.remarks ?? "";
           }
         } catch (e) {}
       }
@@ -129,14 +140,14 @@ function Page() {
         date: s.sale_date,
         type: "sale",
         description: isSplitSale 
-          ? `${s.product?.name ?? "Cylinder"} (Split: Cash/Online/Udhari)` 
-          : `${s.product?.name ?? "Cylinder"} (${s.payment_mode})`,
+          ? `${s.product?.name ?? "Cylinder"} (Split: Cash/Online/Udhari)` + (debitAmt > 0 ? ` [Udhari portion: ${fmtCurrency(debitAmt)} on ${fmtDate(s.sale_date)}]` : "")
+          : `${s.product?.name ?? "Cylinder"} (${paymentMode === "credit" ? "Udhari" : paymentMode})`,
         debit: debitAmt,
         credit: creditAmt,
-        paymentMode: s.payment_mode,
+        paymentMode: paymentMode,
         is_deleted: s.is_deleted,
         balance: 0,
-        notes: s.notes,
+        notes: displayNotes || null,
         created_at: s.created_at,
         created_by: s.created_by,
         updated_at: s.updated_at,
@@ -153,24 +164,32 @@ function Page() {
       };
     });
 
-    const pItems: LedgerItem[] = pays.map((p) => ({
-      id: p.id,
-      date: p.payment_date,
-      type: "payment",
-      description: `Payment Received (${p.mode})`,
-      debit: 0,
-      credit: Number(p.amount),
-      paymentMode: p.mode,
-      is_deleted: p.is_deleted,
-      balance: 0,
-      notes: p.remarks,
-      created_at: p.created_at,
-      created_by: p.created_by,
-      updated_at: p.updated_at,
-      updated_by: p.updated_by,
-      deleted_at: p.deleted_at,
-      deleted_by: p.deleted_by,
-    }));
+    const pItems: LedgerItem[] = pays.map((p) => {
+      let mode = p.mode;
+      let displayNotes = p.remarks ?? "";
+      if (p.remarks && p.remarks.startsWith("[CHEQUE]")) {
+        mode = "cheque";
+        displayNotes = p.remarks.replace(/^\[CHEQUE\]\s*/, "");
+      }
+      return {
+        id: p.id,
+        date: p.payment_date,
+        type: "payment",
+        description: `Payment Received (${mode === "credit" ? "Udhari" : mode})`,
+        debit: 0,
+        credit: Number(p.amount),
+        paymentMode: mode,
+        is_deleted: p.is_deleted,
+        balance: 0,
+        notes: displayNotes || null,
+        created_at: p.created_at,
+        created_by: p.created_by,
+        updated_at: p.updated_at,
+        updated_by: p.updated_by,
+        deleted_at: p.deleted_at,
+        deleted_by: p.deleted_by,
+      };
+    });
 
     // Filter archived unless toggled
     const merged = [...sItems, ...pItems];
@@ -206,13 +225,16 @@ function Page() {
 
     setSavingPayment(true);
     try {
+      const dbMode = payMode === "cheque" ? "online" : payMode;
+      const dbRemarks = payMode === "cheque" ? `[CHEQUE]${payRemarks.trim() ? " " + payRemarks.trim() : ""}` : (payRemarks || null);
+
       const { error: payErr } = await supabase.from("payments").insert({
         agency_id: agency.id,
         customer_id: id,
         amount: amt,
-        mode: payMode,
+        mode: dbMode,
         payment_date: payDate,
-        remarks: payRemarks || null,
+        remarks: dbRemarks,
         created_by: session?.user?.id,
         updated_by: session?.user?.id
       });
@@ -824,6 +846,7 @@ function Page() {
                     <SelectItem value="cash">💵 Cash (Drawer)</SelectItem>
                     <SelectItem value="online">🏦 Bank Transfer</SelectItem>
                     <SelectItem value="paytm">📱 Paytm Wallet</SelectItem>
+                    <SelectItem value="cheque">✍️ Cheque Payment</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

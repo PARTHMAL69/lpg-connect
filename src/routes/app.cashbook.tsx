@@ -108,16 +108,27 @@ function Page() {
       }
       setOtherReceiptsList(parsedList);
     } else {
-      // If no book exists for today, fetch yesterday's actual closing cash as opening cash fallback
+      // If no book exists for today, fetch yesterday's calculated closing cash as opening cash fallback
       const yesterday = new Date(new Date(date).getTime() - 24 * 60 * 60 * 1000).toISOString().split("T")[0];
       const { data: prevBook } = await supabase
         .from("cash_book_days")
-        .select("actual_closing")
+        .select("actual_closing, notes")
         .eq("agency_id", agency.id)
         .eq("book_date", yesterday)
         .maybeSingle();
+
+      let yesterdayCalculated = 0;
+      if (prevBook?.notes) {
+        try {
+          const meta = JSON.parse(prevBook.notes);
+          if (meta && typeof meta === "object" && meta.calculated_closing != null) {
+            yesterdayCalculated = Number(meta.calculated_closing);
+          }
+        } catch (e) {}
+      }
       
-      setOpening(prevBook?.actual_closing != null ? String(prevBook.actual_closing) : "0");
+      const fallbackOpening = yesterdayCalculated || (prevBook?.actual_closing != null ? prevBook.actual_closing : 0);
+      setOpening(String(fallbackOpening));
       setActual("");
       setOtherReceiptsList([]);
     }
@@ -142,34 +153,51 @@ function Page() {
       .eq("sale_date", date)
       .eq("is_deleted", false);
     
-    const formattedSales = ((sData ?? []) as any[]).map((s) => ({
-      id: s.id,
-      customer_name: s.customer?.name ?? "Walk-in Counter",
-      product_name: s.product?.name ?? "Cylinder",
-      quantity: Number(s.quantity),
-      total: Number(s.gross_amount),
-      payment_mode: s.payment_mode,
-      commission_total: Number(s.commission_amount || 0),
-      notes: s.notes,
-      delivery_boy_id: s.delivery_boy_id,
-      delivery_boy_name: s.delivery_boy?.name ?? null
-    }));
+    const formattedSales = ((sData ?? []) as any[]).map((s) => {
+      let paymentMode = s.payment_mode;
+      if (s.notes) {
+        try {
+          const meta = JSON.parse(s.notes);
+          if (meta && typeof meta === "object" && meta.is_cheque) {
+            paymentMode = "cheque";
+          }
+        } catch (e) {}
+      }
+      return {
+        id: s.id,
+        customer_name: s.customer?.name ?? "Walk-in Counter",
+        product_name: s.product?.name ?? "Cylinder",
+        quantity: Number(s.quantity),
+        total: Number(s.gross_amount),
+        payment_mode: paymentMode,
+        commission_total: Number(s.commission_amount || 0),
+        notes: s.notes,
+        delivery_boy_id: s.delivery_boy_id,
+        delivery_boy_name: s.delivery_boy?.name ?? null
+      };
+    });
     setDailySales(formattedSales);
 
     // 3. Fetch daily payment collections (non-deleted only)
     const { data: pData } = await (supabase
       .from("payments") as any)
-      .select("id, amount, mode, customer:customers(name)")
+      .select("id, amount, mode, remarks, customer:customers(name)")
       .eq("agency_id", agency.id)
       .eq("payment_date", date)
       .eq("is_deleted", false);
     
-    const formattedPayments = ((pData ?? []) as any[]).map((p: any) => ({
-      id: p.id,
-      customer_name: p.customer?.name ?? "—",
-      amount: Number(p.amount),
-      payment_mode: p.mode
-    }));
+    const formattedPayments = ((pData ?? []) as any[]).map((p: any) => {
+      let mode = p.mode;
+      if (p.remarks && p.remarks.startsWith("[CHEQUE]")) {
+        mode = "cheque";
+      }
+      return {
+        id: p.id,
+        customer_name: p.customer?.name ?? "—",
+        amount: Number(p.amount),
+        payment_mode: mode
+      };
+    });
     setDailyPayments(formattedPayments);
 
     // 4. Fetch daily overhead expenses (non-deleted only)
@@ -336,6 +364,10 @@ function Page() {
     const updatedList = [...otherReceiptsList, newItem];
     const otherReceiptsSum = updatedList.reduce((sum, item) => sum + item.amount, 0);
 
+    const newOtherInflowsSum = updatedList.reduce((sum, r) => sum + r.amount, 0);
+    const newLeftGrandTotal = aggregates.leftGrandTotal - aggregates.otherInflowsSum + newOtherInflowsSum;
+    const newCashBalance = newLeftGrandTotal - (aggregates.expensesTotal + aggregates.paytmOutflow + aggregates.onlineOutflow + aggregates.chequeOutflow + aggregates.udhariOutflow + aggregates.commissionsTotal);
+
     setBusy(true);
     const payload = {
       agency_id: agency.id,
@@ -344,7 +376,8 @@ function Page() {
       actual_closing: actual === "" ? null : Number(actual),
       notes: JSON.stringify({
         other_cash_receipts: otherReceiptsSum,
-        other_receipts: updatedList
+        other_receipts: updatedList,
+        calculated_closing: newCashBalance
       })
     };
 
@@ -372,6 +405,10 @@ function Page() {
     const updatedList = otherReceiptsList.filter(item => item.id !== id);
     const otherReceiptsSum = updatedList.reduce((sum, item) => sum + item.amount, 0);
 
+    const newOtherInflowsSum = updatedList.reduce((sum, r) => sum + r.amount, 0);
+    const newLeftGrandTotal = aggregates.leftGrandTotal - aggregates.otherInflowsSum + newOtherInflowsSum;
+    const newCashBalance = newLeftGrandTotal - (aggregates.expensesTotal + aggregates.paytmOutflow + aggregates.onlineOutflow + aggregates.chequeOutflow + aggregates.udhariOutflow + aggregates.commissionsTotal);
+
     const payload = {
       agency_id: agency.id,
       book_date: date,
@@ -379,7 +416,8 @@ function Page() {
       actual_closing: actual === "" ? null : Number(actual),
       notes: JSON.stringify({
         other_cash_receipts: otherReceiptsSum,
-        other_receipts: updatedList
+        other_receipts: updatedList,
+        calculated_closing: newCashBalance
       })
     };
 
@@ -410,7 +448,8 @@ function Page() {
       actual_closing: actual === "" ? null : Number(actual),
       notes: JSON.stringify({
         other_cash_receipts: otherReceiptsSum,
-        other_receipts: otherReceiptsList
+        other_receipts: otherReceiptsList,
+        calculated_closing: aggregates.cashBalance
       })
     };
 
@@ -528,71 +567,48 @@ function Page() {
         </Button>
       </div>
 
-      {/* Balanced / Audit Status Banner */}
-      <Card className={`border shadow-sm transition-all overflow-hidden ${
-        actual === "" 
-          ? "bg-slate-50 border-slate-200/80" 
-          : Math.abs(aggregates.difference) < 0.01 
-          ? "bg-emerald-50/50 border-emerald-200 text-emerald-800" 
-          : "bg-amber-50/40 border-amber-200 text-amber-900"
-      }`}>
-        <CardContent className="p-4 flex items-center gap-3.5 flex-wrap justify-between">
-          <div className="flex items-center gap-3">
-            {actual === "" ? (
-              <AlertCircle className="h-6 w-6 text-slate-400 shrink-0" />
-            ) : Math.abs(aggregates.difference) < 0.01 ? (
-              <CheckCircle2 className="h-6 w-6 text-emerald-500 shrink-0" />
-            ) : (
-              <AlertTriangle className="h-6 w-6 text-amber-500 shrink-0" />
-            )}
-            <div>
-              <h4 className="font-bold text-sm">
-                {actual === "" 
-                  ? "Unreconciled Ledger" 
-                  : Math.abs(aggregates.difference) < 0.01 
-                  ? "✓ Balanced Ledger (Perfect match)" 
-                  : aggregates.difference < 0 
-                  ? `✗ Drawer Cash Shortage: ${fmtCurrency(Math.abs(aggregates.difference))}`
-                  : `⚠ Drawer Cash Excess: ${fmtCurrency(aggregates.difference)}`}
-              </h4>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {actual === "" 
-                  ? "Physical cash count has not been recorded for this distributorship date. Enter physical count to reconcile." 
-                  : `Physical cash counted: ${fmtCurrency(Number(actual))} vs Calculated cash balance: ${fmtCurrency(aggregates.cashBalance)}.`}
-              </p>
-            </div>
-          </div>
-          {actual !== "" && (
-            <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded border tracking-wider select-none ${
-              Math.abs(aggregates.difference) < 0.01 
-                ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" 
-                : "bg-amber-500/10 text-amber-600 border-amber-500/20"
-            }`}>
-              {Math.abs(aggregates.difference) < 0.01 ? "Perfect Match" : aggregates.difference < 0 ? "Shortage" : "Excess"}
-            </span>
-          )}
-        </CardContent>
-      </Card>
-
       {/* Excel Dual Column Ledger Table */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start border rounded-xl overflow-hidden shadow-soft bg-white">
         
         {/* LEFT COLUMN: Payment Received (Paisa Aaya) */}
         <div className="flex flex-col h-full border-r border-border/80 min-h-[500px]">
-          <div className="bg-slate-50 border-b border-border/80 px-5 py-3.5 flex justify-between items-center select-none">
+          <div className="bg-slate-50 border-b border-border/80 px-5 py-2.5 flex justify-between items-center select-none">
             <h3 className="font-extrabold text-xs uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
               <ArrowUpRight className="h-4.5 w-4.5 text-emerald-500 shrink-0" /> Payment Received (Paisa Aaya)
             </h3>
-            <span className="text-xs font-black text-slate-400">₹ INR</span>
+            <div className="flex items-center gap-2">
+              <Label htmlFor="opening-cash-input" className="text-[10px] font-bold text-slate-600 uppercase">Opening Cash:</Label>
+              <Input 
+                id="opening-cash-input"
+                type="number"
+                step="any"
+                min="0"
+                value={opening}
+                onChange={(e) => setOpening(e.target.value)}
+                onBlur={async () => {
+                  if (!agency) return;
+                  const otherReceiptsSum = otherReceiptsList.reduce((sum, item) => sum + item.amount, 0);
+                  const payload = {
+                    agency_id: agency.id,
+                    book_date: date,
+                    opening_cash: Number(opening || 0),
+                    actual_closing: actual === "" ? null : Number(actual),
+                    notes: JSON.stringify({
+                      other_cash_receipts: otherReceiptsSum,
+                      other_receipts: otherReceiptsList,
+                      calculated_closing: aggregates.cashBalance
+                    })
+                  };
+                  await supabase
+                    .from("cash_book_days")
+                    .upsert(payload, { onConflict: "agency_id,book_date" });
+                }}
+                className="h-8 w-24 font-bold text-right text-xs text-primary focus-visible:ring-primary"
+              />
+            </div>
           </div>
 
           <div className="flex-1 divide-y divide-slate-100 text-xs">
-            {/* Opening Cash */}
-            <div className="px-5 py-3.5 flex justify-between items-center hover:bg-slate-50/40 transition-colors">
-              <span className="font-semibold text-slate-600">Opening Cash Balance</span>
-              <span className="font-bold tabular-nums text-slate-800 text-sm">{fmtCurrency(aggregates.openingCash)}</span>
-            </div>
-
             {/* Home Delivery cylinders */}
             {aggregates.homeTotal > 0 && (
               <div className="px-5 py-3.5 flex justify-between items-center hover:bg-slate-50/40 transition-colors">
@@ -650,12 +666,6 @@ function Page() {
               </div>
             )}
           </div>
-
-          {/* Left Footer: Total Received */}
-          <div className="bg-slate-50 border-t border-border/80 px-5 py-4 flex justify-between items-center mt-auto font-black text-sm text-slate-800 shadow-sm select-none">
-            <span>Total Received (Inflows)</span>
-            <span className="tabular-nums font-black text-base text-primary">{fmtCurrency(aggregates.leftGrandTotal)}</span>
-          </div>
         </div>
 
         {/* RIGHT COLUMN: Money Paid (Paisa Gaya) */}
@@ -669,14 +679,25 @@ function Page() {
 
           <div className="flex-1 divide-y divide-slate-100 text-xs">
             {/* Direct Expenses */}
-            {dailyExpenses.map((exp) => (
-              <div key={exp.id} className="px-5 py-3.5 flex justify-between items-center hover:bg-slate-50/40 transition-colors">
-                <span className="font-semibold text-slate-600 capitalize">
-                  {exp.category.replace("_", " ")} {exp.notes ? `(${exp.notes})` : ""}
-                </span>
-                <span className="font-bold tabular-nums text-red-600 text-sm">{fmtCurrency(exp.amount)}</span>
-              </div>
-            ))}
+            {dailyExpenses.map((exp) => {
+              let displayCategory = exp.category;
+              let displayNotes = exp.notes ?? "";
+              if (exp.notes && exp.notes.startsWith("[OTHER_CAT:")) {
+                const match = exp.notes.match(/^\[OTHER_CAT:([^\]]+)\]/);
+                if (match) {
+                  displayCategory = match[1];
+                  displayNotes = exp.notes.replace(/^\[OTHER_CAT:[^\]]+\]\s*/, "");
+                }
+              }
+              return (
+                <div key={exp.id} className="px-5 py-3.5 flex justify-between items-center hover:bg-slate-50/40 transition-colors">
+                  <span className="font-semibold text-slate-600 capitalize">
+                    {displayCategory.replace("_", " ")} {displayNotes ? `(${displayNotes})` : ""}
+                  </span>
+                  <span className="font-bold tabular-nums text-red-600 text-sm">{fmtCurrency(exp.amount)}</span>
+                </div>
+              );
+            })}
 
             {/* Paytm outflow */}
             {aggregates.paytmOutflow > 0 && (
@@ -729,64 +750,52 @@ function Page() {
                 </div>
               </div>
             )}
-
-            {/* Calculated Closing Drawer Cash Balance */}
-            <div className="px-5 py-3.5 flex justify-between items-center bg-slate-50/40 border-t border-dashed">
-              <span className="font-bold text-slate-800">Calculated Cash Balance</span>
-              <span className="font-black tabular-nums text-slate-900 text-sm">{fmtCurrency(aggregates.cashBalance)}</span>
-            </div>
           </div>
 
-          {/* Right Footer: Total Outflows */}
+          {/* Right Footer: Calculated Cash Balance */}
           <div className="bg-slate-50 border-t border-border/80 px-5 py-4 flex justify-between items-center mt-auto font-black text-sm text-slate-800 shadow-sm select-none">
-            <span>Total Outflows + Cash</span>
-            <span className="tabular-nums font-black text-base text-primary">{fmtCurrency(aggregates.rightGrandTotal)}</span>
+            <span>Calculated Cash Balance</span>
+            <span className="tabular-nums font-black text-base text-primary">{fmtCurrency(aggregates.cashBalance)}</span>
           </div>
         </div>
 
       </div>
 
-      {/* Bottom Save & Physical Verification Panel */}
-      <Card className="shadow-card border"><CardContent className="p-6">
+      {/* Bottom Summary Reconciliation Card */}
+      <Card className="shadow-card border bg-slate-50/50"><CardContent className="p-6">
         <h3 className="font-bold text-sm uppercase tracking-wider text-slate-800 border-b pb-3 mb-5 flex items-center gap-2 select-none">
-          <Sparkles className="h-5 w-5 text-primary shrink-0" /> Physical Cash Reconciliation
+          <Sparkles className="h-5 w-5 text-primary shrink-0" /> Daily Cash Book Summary
         </h3>
 
-        <form onSubmit={saveCashBook} className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
-          <div className="space-y-2">
-            <Label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Opening Cash Balance (₹)</Label>
-            <Input 
-              type="number" 
-              step="any"
-              min="0"
-              value={opening} 
-              onChange={(e) => setOpening(e.target.value)} 
-              className="h-12 font-bold text-lg text-primary" 
-            />
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center text-center md:text-left">
+          <div className="space-y-1">
+            <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Total Received (Inflows)</span>
+            <div className="text-2xl font-black text-emerald-600 tabular-nums">{fmtCurrency(aggregates.leftGrandTotal)}</div>
           </div>
 
-          <div className="space-y-2">
-            <Label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Actual Physical Cash Count (₹)</Label>
-            <Input 
-              type="number" 
-              step="any"
-              min="0"
-              value={actual} 
-              onChange={(e) => setActual(e.target.value)} 
-              className="h-12 font-bold text-lg text-success-dark" 
-              placeholder="Count cash in drawer..." 
-            />
+          <div className="space-y-1">
+            <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Total Paid (Outflows)</span>
+            <div className="text-2xl font-black text-red-600 tabular-nums">
+              {fmtCurrency(aggregates.expensesTotal + aggregates.paytmOutflow + aggregates.onlineOutflow + aggregates.chequeOutflow + aggregates.udhariOutflow + aggregates.commissionsTotal)}
+            </div>
           </div>
 
-          <Button 
-            type="submit" 
-            disabled={busy} 
-            className="h-12 shadow-sm font-bold uppercase tracking-wider text-xs"
-          >
-            {busy ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-            Reconcile & Save Cash Book
-          </Button>
-        </form>
+          <div className="space-y-1 bg-primary-soft p-4 rounded-xl border border-primary/20">
+            <span className="text-xs font-bold text-primary uppercase tracking-wider">Closing Cash Balance (Difference)</span>
+            <div className="text-2xl font-black text-primary tabular-nums mt-0.5">{fmtCurrency(aggregates.cashBalance)}</div>
+          </div>
+
+          <div className="flex md:justify-end mt-4 md:mt-0 md:col-span-3 border-t pt-4">
+            <Button 
+              onClick={saveCashBook} 
+              disabled={busy} 
+              className="h-11 shadow-sm font-bold uppercase tracking-wider text-xs px-6"
+            >
+              {busy ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Save Cash Book for Today
+            </Button>
+          </div>
+        </div>
       </CardContent></Card>
 
       {/* Manual Receipt Quick Add Dialog */}

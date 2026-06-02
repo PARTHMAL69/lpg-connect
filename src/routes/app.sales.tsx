@@ -46,6 +46,7 @@ interface Row {
   commission_total: number;
   net_amount: number;
   notes: string | null;
+  display_notes?: string;
   txn_no: string | null;
   is_deleted: boolean;
   created_at: string;
@@ -103,31 +104,49 @@ function Page() {
 
       if (error) throw error;
 
-      const formattedRows = (data ?? []).map((s: any) => ({
-        id: s.id,
-        sale_date: s.sale_date,
-        customer_id: s.customer_id,
-        customer_name: s.customer?.name ?? null,
-        product_id: s.product_id,
-        product_name: s.product?.name ?? "Cylinder",
-        quantity: Number(s.quantity),
-        rate: Number(s.rate),
-        total: Number(s.gross_amount),
-        payment_mode: s.payment_mode,
-        delivery_boy_id: s.delivery_boy_id,
-        commission_rate: Number(s.commission_rate),
-        commission_total: Number(s.commission_amount),
-        net_amount: Number(s.net_amount),
-        notes: s.notes,
-        txn_no: s.txn_no,
-        is_deleted: s.is_deleted,
-        created_at: s.created_at,
-        created_by: s.created_by,
-        updated_at: s.updated_at,
-        updated_by: s.updated_by,
-        deleted_at: s.deleted_at,
-        deleted_by: s.deleted_by
-      }));
+      const formattedRows = (data ?? []).map((s: any) => {
+        let isCheque = false;
+        let displayNotes = s.notes ?? "";
+        let paymentMode = s.payment_mode;
+        if (s.notes) {
+          try {
+            const meta = JSON.parse(s.notes);
+            if (meta && typeof meta === "object") {
+              if (meta.is_cheque) {
+                isCheque = true;
+                paymentMode = "cheque";
+                displayNotes = meta.remarks ?? "";
+              }
+            }
+          } catch (e) {}
+        }
+        return {
+          id: s.id,
+          sale_date: s.sale_date,
+          customer_id: s.customer_id,
+          customer_name: s.customer?.name ?? null,
+          product_id: s.product_id,
+          product_name: s.product?.name ?? "Cylinder",
+          quantity: Number(s.quantity),
+          rate: Number(s.rate),
+          total: Number(s.gross_amount),
+          payment_mode: paymentMode,
+          delivery_boy_id: s.delivery_boy_id,
+          commission_rate: Number(s.commission_rate),
+          commission_total: Number(s.commission_amount),
+          net_amount: Number(s.net_amount),
+          notes: s.notes,
+          display_notes: displayNotes,
+          txn_no: s.txn_no,
+          is_deleted: s.is_deleted,
+          created_at: s.created_at,
+          created_by: s.created_by,
+          updated_at: s.updated_at,
+          updated_by: s.updated_by,
+          deleted_at: s.deleted_at,
+          deleted_by: s.deleted_by
+        };
+      });
 
       setRows(formattedRows as Row[]);
 
@@ -150,7 +169,7 @@ function Page() {
       const matchesSearch = !q.trim() || 
         r.product_name.toLowerCase().includes(q.toLowerCase()) ||
         (r.customer_name ?? "").toLowerCase().includes(q.toLowerCase()) ||
-        (r.notes ?? "").toLowerCase().includes(q.toLowerCase());
+        (r.display_notes ?? r.notes ?? "").toLowerCase().includes(q.toLowerCase());
       
       // 2. Date Range
       const matchesStart = !startDate || r.sale_date >= startDate;
@@ -543,7 +562,7 @@ function Page() {
                   <div className="font-bold text-foreground uppercase text-right">{selectedSale.payment_mode}</div>
 
                   <div className="text-muted-foreground">Notes / Remarks</div>
-                  <div className="font-medium text-foreground text-right italic truncate max-w-xs">{selectedSale.notes ?? "—"}</div>
+                  <div className="font-medium text-foreground text-right italic truncate max-w-xs">{selectedSale.display_notes ?? selectedSale.notes ?? "—"}</div>
                 </div>
               </div>
 
@@ -836,6 +855,9 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
       metaDetails.online_amount = Number(splitOnline || 0);
       metaDetails.credit_amount = Number(splitCredit || 0);
     }
+    if (f.payment_mode === "cheque") {
+      metaDetails.is_cheque = true;
+    }
     if (prep > 0) {
       metaDetails.website_prepaid_qty = prep;
     }
@@ -849,12 +871,12 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
       quantity: qty, 
       rate: Number(f.rate), 
       gross_amount: grossTotal, 
-      payment_mode: isSplit ? (Number(splitCredit || 0) > 0 ? "credit" : "cash") : f.payment_mode,
+      payment_mode: f.payment_mode === "cheque" ? "online" : (isSplit ? (Number(splitCredit || 0) > 0 ? "credit" : "cash") : f.payment_mode),
       delivery_boy_id: finalDeliveryBoyId,
       commission_rate: finalCommissionRate,
       commission_amount: finalCommissionAmount,
       net_amount: finalNetAmount,
-      notes: (isSplit || prep > 0) ? JSON.stringify(metaDetails) : (f.notes || null),
+      notes: (isSplit || prep > 0 || f.payment_mode === "cheque") ? JSON.stringify(metaDetails) : (f.notes || null),
       updated_by: session?.user?.id
     };
 
