@@ -250,6 +250,7 @@ function Page() {
                 <SelectItem value="cash">Cash</SelectItem>
                 <SelectItem value="online">Online</SelectItem>
                 <SelectItem value="paytm">Paytm</SelectItem>
+                <SelectItem value="cheque">Cheque</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -556,6 +557,7 @@ function PaymentForm({ editPayment, customers, onDone }: PaymentFormProps) {
             <SelectItem value="cash">{t("sales.cash")}</SelectItem>
             <SelectItem value="online">{t("sales.online")}</SelectItem>
             <SelectItem value="paytm">{t("sales.paytm")}</SelectItem>
+            <SelectItem value="cheque">Cheque</SelectItem>
           </SelectContent>
         </Select>
       </div>

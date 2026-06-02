@@ -11,9 +11,13 @@ import { PageHeader, EmptyState } from "@/components/page-header";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { fmtCurrency, fmtDate, todayISO } from "@/lib/format";
-import { ArrowUpRight, ArrowDownRight, Printer, Download, FileText, Sparkles } from "lucide-react";
+import { 
+  ArrowUpRight, ArrowDownRight, Printer, Download, FileText, 
+  Sparkles, Plus, Trash2, Loader2, Calendar, CheckCircle2, AlertTriangle, AlertCircle
+} from "lucide-react";
 import { exportToExcel, exportToPDF } from "@/lib/exports";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 
 export const Route = createFileRoute("/app/cashbook")({ component: () => <RequireAgencyUser><Page/></RequireAgencyUser> });
 
@@ -26,6 +30,8 @@ interface CashSaleItem {
   payment_mode: string;
   commission_total: number;
   notes: string | null;
+  delivery_boy_id: string | null;
+  delivery_boy_name: string | null;
 }
 
 interface CashPaymentItem {
@@ -42,11 +48,10 @@ interface CashExpenseItem {
   notes: string | null;
 }
 
-interface CommissionItem {
+interface OtherReceiptItem {
   id: string;
-  boy_name: string;
-  quantity: number;
-  commission_total: number;
+  particular: string;
+  amount: number;
 }
 
 function Page() {
@@ -55,8 +60,13 @@ function Page() {
   const [date, setDate] = useState(todayISO());
   const [opening, setOpening] = useState("0");
   const [actual, setActual] = useState("");
-  const [otherReceipts, setOtherReceipts] = useState("0");
+  const [otherReceiptsList, setOtherReceiptsList] = useState<OtherReceiptItem[]>([]);
   const [busy, setBusy] = useState(false);
+
+  // Other receipts quick-add dialog state
+  const [isReceiptOpen, setIsReceiptOpen] = useState(false);
+  const [receiptParticular, setReceiptParticular] = useState("");
+  const [receiptAmount, setReceiptAmount] = useState("");
 
   // Daily records list for Money Received / Money Paid sections
   const [dailySales, setDailySales] = useState<CashSaleItem[]>([]);
@@ -78,18 +88,25 @@ function Page() {
       setOpening(String(bookData.opening_cash ?? 0));
       setActual(bookData.actual_closing != null ? String(bookData.actual_closing) : "");
       
-      let parsedOther = "0";
+      let parsedList: OtherReceiptItem[] = [];
       if (bookData.notes) {
         try {
           const meta = JSON.parse(bookData.notes);
-          if (meta && typeof meta === "object" && meta.other_cash_receipts != null) {
-            parsedOther = String(meta.other_cash_receipts);
+          if (meta && typeof meta === "object" && Array.isArray(meta.other_receipts)) {
+            parsedList = meta.other_receipts;
+          } else if (meta && typeof meta === "object" && meta.other_cash_receipts != null) {
+            // Fallback to legacy single manual receipts sum if list is not structured
+            parsedList = [{
+              id: "legacy-receipt",
+              particular: "Legacy Manual Receipts",
+              amount: Number(meta.other_cash_receipts)
+            }];
           }
         } catch (e) {
           // ignore parsing error
         }
       }
-      setOtherReceipts(parsedOther);
+      setOtherReceiptsList(parsedList);
     } else {
       // If no book exists for today, fetch yesterday's actual closing cash as opening cash fallback
       const yesterday = new Date(new Date(date).getTime() - 24 * 60 * 60 * 1000).toISOString().split("T")[0];
@@ -102,26 +119,40 @@ function Page() {
       
       setOpening(prevBook?.actual_closing != null ? String(prevBook.actual_closing) : "0");
       setActual("");
-      setOtherReceipts("0");
+      setOtherReceiptsList([]);
     }
 
-    // 2. Fetch daily sales (non-deleted only)
+    // 2. Fetch daily sales (non-deleted only) with delivery boy name join
     const { data: sData } = await supabase
       .from("sales")
-      .select("id, sale_date, quantity, gross_amount, commission_amount, payment_mode, notes, customer:customers(name), product:products(name)")
+      .select(`
+        id, 
+        sale_date, 
+        quantity, 
+        gross_amount, 
+        commission_amount, 
+        payment_mode, 
+        notes, 
+        customer:customers(name), 
+        product:products(name),
+        delivery_boy:delivery_boys(name),
+        delivery_boy_id
+      `)
       .eq("agency_id", agency.id)
       .eq("sale_date", date)
       .eq("is_deleted", false);
     
     const formattedSales = ((sData ?? []) as any[]).map((s) => ({
       id: s.id,
-      customer_name: s.customer?.name ?? "—",
-      product_name: s.product?.name ?? "—",
+      customer_name: s.customer?.name ?? "Walk-in Counter",
+      product_name: s.product?.name ?? "Cylinder",
       quantity: Number(s.quantity),
       total: Number(s.gross_amount),
       payment_mode: s.payment_mode,
       commission_total: Number(s.commission_amount || 0),
-      notes: s.notes
+      notes: s.notes,
+      delivery_boy_id: s.delivery_boy_id,
+      delivery_boy_name: s.delivery_boy?.name ?? null
     }));
     setDailySales(formattedSales);
 
@@ -155,58 +186,62 @@ function Page() {
     void load();
   }, [agency, date]);
 
-  // Aggregate values
+  // Aggregate and process ledger statistics
   const aggregates = useMemo(() => {
-    // Extract the cash portion and net cash for each sale (handling split payments)
-    const salesWithCash = dailySales.map((s) => {
-      let isSplitSale = false;
-      let cashAmt = 0;
-      if (s.notes) {
-        try {
-          const meta = JSON.parse(s.notes);
-          if (meta && typeof meta === "object" && meta.is_split) {
-            isSplitSale = true;
-            cashAmt = Number(meta.cash_amount || 0) + Number(meta.online_amount || 0);
-          }
-        } catch (e) {}
-      }
+    const openingCash = Number(opening || 0);
 
-      if (!isSplitSale) {
-        cashAmt = s.payment_mode !== "credit" ? s.total : 0;
-      }
+    // Grouping domestic sales by "Home Delivery" vs "CNC Counter"
+    let homeTotal = 0;
+    let cncTotal = 0;
+    const productSalesTotals: Record<string, { quantity: number; total: number }> = {};
 
-      const netCash = Math.max(0, cashAmt - s.commission_total);
-      return {
-        ...s,
-        isSplitSale,
-        cashAmt,
-        netCash
-      };
+    dailySales.forEach((s) => {
+      const nameLower = s.product_name.toLowerCase();
+      // Main domestic cylinders check
+      const isMainCylinder = nameLower.includes("14.2") || nameLower.includes("domestic") || nameLower.includes("cylinder") || nameLower === "lpg" || nameLower === "gas";
+      
+      if (isMainCylinder) {
+        if (!s.delivery_boy_id || nameLower.includes("cnc")) {
+          cncTotal += s.total;
+        } else {
+          homeTotal += s.total;
+        }
+      } else {
+        const pName = s.product_name;
+        if (!productSalesTotals[pName]) {
+          productSalesTotals[pName] = { quantity: 0, total: 0 };
+        }
+        productSalesTotals[pName].quantity += s.quantity;
+        productSalesTotals[pName].total += s.total;
+      }
     });
 
-    // 1. Daily Business Register - Cash Sales Received
-    const cashSalesList = salesWithCash.filter((s) => s.cashAmt > 0);
-    const cashSales = cashSalesList.reduce((a, r) => a + r.netCash, 0);
+    const collectionsTotal = dailyPayments.reduce((sum, p) => sum + p.amount, 0);
+    const otherInflowsSum = otherReceiptsList.reduce((sum, r) => sum + r.amount, 0);
 
-    // Group cash sales by product name (Net cash value)
-    const cashSalesByProductMap: Record<string, { quantity: number; total: number }> = {};
-    cashSalesList.forEach((s) => {
-      const pName = s.product_name;
-      if (!cashSalesByProductMap[pName]) {
-        cashSalesByProductMap[pName] = { quantity: 0, total: 0 };
+    // Left Grand Total (Inflows)
+    const otherProductSalesSum = Object.values(productSalesTotals).reduce((sum, r) => sum + r.total, 0);
+    const leftGrandTotal = openingCash + homeTotal + cncTotal + otherProductSalesSum + collectionsTotal + otherInflowsSum;
+
+    // Right Side Outflows calculation
+    const expensesTotal = dailyExpenses.reduce((sum, e) => sum + Number(e.amount), 0);
+    const commissionsTotal = dailySales.reduce((sum, s) => sum + Number(s.commission_total), 0);
+
+    // Group commissions per driver/delivery boy
+    const commissionByDriver: Record<string, { name: string; amount: number }> = {};
+    dailySales.forEach((s) => {
+      if (s.commission_total > 0 && s.delivery_boy_name) {
+        const name = s.delivery_boy_name;
+        if (!commissionByDriver[name]) {
+          commissionByDriver[name] = { name, amount: 0 };
+        }
+        commissionByDriver[name].amount += s.commission_total;
       }
-      cashSalesByProductMap[pName].quantity += s.quantity || 0;
-      cashSalesByProductMap[pName].total += s.netCash || 0;
     });
 
-    const cashSalesByProduct = Object.entries(cashSalesByProductMap).map(([name, stats]) => ({
-      product_name: name,
-      quantity: stats.quantity,
-      total: stats.total,
-    }));
-
-    // Calculate digital sales (handles split online portions)
-    const digitalSales = dailySales.reduce((a, s) => {
+    // Payment modes outflows from Sales
+    const paytmSales = dailySales.filter(s => s.payment_mode === "paytm").reduce((a, r) => a + r.total, 0);
+    const onlineSales = dailySales.reduce((a, s) => {
       let isSplitSale = false;
       let onlineAmt = 0;
       if (s.notes) {
@@ -219,13 +254,12 @@ function Page() {
         } catch (e) {}
       }
       if (!isSplitSale) {
-        return a + (s.payment_mode !== "cash" && s.payment_mode !== "credit" ? s.total : 0);
+        return a + (s.payment_mode === "online" ? s.total : 0);
       }
       return a + onlineAmt;
     }, 0);
-
-    // Calculate credit/udhari sales (handles split credit portions)
-    const creditSales = dailySales.reduce((a, s) => {
+    const chequeSales = dailySales.filter(s => s.payment_mode === "cheque").reduce((a, r) => a + r.total, 0);
+    const udhariSales = dailySales.reduce((a, s) => {
       let isSplitSale = false;
       let creditAmt = 0;
       if (s.notes) {
@@ -243,67 +277,75 @@ function Page() {
       return a + creditAmt;
     }, 0);
 
-    const grossSalesTotal = dailySales.reduce((a, r) => a + r.total, 0); // Gross business done today
+    // Payment modes outflows from outstanding collections / recoveries
+    const paytmRecoveries = dailyPayments.filter(p => p.payment_mode === "paytm").reduce((a, r) => a + r.amount, 0);
+    const onlineRecoveries = dailyPayments.filter(p => p.payment_mode === "online").reduce((a, r) => a + r.amount, 0);
+    const chequeRecoveries = dailyPayments.filter(p => p.payment_mode === "cheque").reduce((a, r) => a + r.amount, 0);
 
-    // Outstanding Collections Received (All modes: Cash, Online, Paytm)
-    const cashPayments = dailyPayments.reduce((a, r) => a + Number(r.amount), 0);
-    const digitalPayments = 0; // all integrated into cashbook expected closing
-    const paymentsTotal = cashPayments;
+    const paytmOutflow = paytmSales + paytmRecoveries;
+    const onlineOutflow = onlineSales + onlineRecoveries;
+    const chequeOutflow = chequeSales + chequeRecoveries;
+    const udhariOutflow = udhariSales;
 
-    // 2. Business Expenses (Cash Outflows)
-    // Decompose Expenses by Category
-    const bankDeposits = dailyExpenses.filter((e) => ["bank_deposit", "paytm_transfer"].includes(e.category)).reduce((a, r) => a + Number(r.amount), 0);
-    const vehicleExpenses = dailyExpenses.filter((e) => ["vehicle_expense", "fuel", "repair", "maintenance"].includes(e.category)).reduce((a, r) => a + Number(r.amount), 0);
-    const deliveryBoyPayments = dailyExpenses.filter((e) => e.category === "delivery_boy_payment").reduce((a, r) => a + Number(r.amount), 0);
-    const otherExpenses = dailyExpenses.filter((e) => ["salary", "miscellaneous"].includes(e.category)).reduce((a, r) => a + Number(r.amount), 0);
+    // Calculated Cash Balance
+    const cashBalance = leftGrandTotal - (expensesTotal + paytmOutflow + onlineOutflow + chequeOutflow + udhariOutflow + commissionsTotal);
 
-    const expensesTotal = dailyExpenses.reduce((a, r) => a + Number(r.amount), 0);
-    const commissionsTotal = dailySales.reduce((a, r) => a + Number(r.commission_total), 0);
+    // Right Grand Total (Outflows + Cash Balance)
+    const rightGrandTotal = expensesTotal + paytmOutflow + onlineOutflow + chequeOutflow + udhariOutflow + commissionsTotal + cashBalance;
 
-    // Expected Closing Cash Box Drawer calculation
-    const openingCash = Number(opening || 0);
-    const otherCashReceipts = Number(otherReceipts || 0);
-    const cashInflow = cashSales + cashPayments + otherCashReceipts;
-    const cashOutflow = bankDeposits + vehicleExpenses + deliveryBoyPayments + otherExpenses; 
-    const expectedClosingCash = openingCash + cashInflow - cashOutflow;
-
-    const difference = actual === "" ? 0 : Number(actual) - expectedClosingCash;
+    const difference = actual === "" ? 0 : Number(actual) - cashBalance;
 
     return {
-      grossSalesTotal,
-      cashSales,
-      cashSalesList,
-      cashSalesByProduct,
-      digitalSales,
-      creditSales,
-      paymentsTotal,
-      cashPayments,
-      digitalPayments,
-      commissionsTotal,
+      openingCash,
+      homeTotal,
+      cncTotal,
+      productSalesTotals,
+      collectionsTotal,
+      otherInflowsSum,
+      leftGrandTotal,
       expensesTotal,
-      bankDeposits,
-      vehicleExpenses,
-      deliveryBoyPayments,
-      otherExpenses,
-      cashInflow,
-      cashOutflow,
-      expectedClosingCash,
-      difference,
-      otherCashReceipts
+      commissionsTotal,
+      commissionByDriver,
+      paytmOutflow,
+      onlineOutflow,
+      chequeOutflow,
+      udhariOutflow,
+      cashBalance,
+      rightGrandTotal,
+      difference
     };
-  }, [dailySales, dailyPayments, dailyExpenses, opening, actual, otherReceipts]);
+  }, [dailySales, dailyPayments, dailyExpenses, opening, actual, otherReceiptsList]);
 
-  const save = async (e: FormEvent) => {
+  // Add Other Manual Receipts
+  const addOtherReceipt = async (e: FormEvent) => {
     e.preventDefault();
     if (!agency) return;
-    setBusy(true);
 
+    const amount = Number(receiptAmount);
+    if (!receiptParticular.trim() || isNaN(amount) || amount <= 0) {
+      toast.error("Please enter a valid particular name and amount.");
+      return;
+    }
+
+    const newItem: OtherReceiptItem = {
+      id: "rec-" + Date.now() + "-" + Math.random().toString(36).substring(2, 7),
+      particular: receiptParticular.trim(),
+      amount
+    };
+
+    const updatedList = [...otherReceiptsList, newItem];
+    const otherReceiptsSum = updatedList.reduce((sum, item) => sum + item.amount, 0);
+
+    setBusy(true);
     const payload = {
       agency_id: agency.id,
       book_date: date,
       opening_cash: Number(opening || 0),
       actual_closing: actual === "" ? null : Number(actual),
-      notes: JSON.stringify({ other_cash_receipts: Number(otherReceipts || 0) })
+      notes: JSON.stringify({
+        other_cash_receipts: otherReceiptsSum,
+        other_receipts: updatedList
+      })
     };
 
     const { error } = await supabase
@@ -313,7 +355,73 @@ function Page() {
     if (error) {
       toast.error(error.message);
     } else {
-      toast.success("Daily Cash Book saved successfully.");
+      toast.success("Payment inflow recorded successfully.");
+      setOtherReceiptsList(updatedList);
+      setIsReceiptOpen(false);
+      setReceiptParticular("");
+      setReceiptAmount("");
+      void load();
+    }
+    setBusy(false);
+  };
+
+  // Delete manual receipt
+  const deleteOtherReceipt = async (id: string) => {
+    if (!agency) return;
+    
+    const updatedList = otherReceiptsList.filter(item => item.id !== id);
+    const otherReceiptsSum = updatedList.reduce((sum, item) => sum + item.amount, 0);
+
+    const payload = {
+      agency_id: agency.id,
+      book_date: date,
+      opening_cash: Number(opening || 0),
+      actual_closing: actual === "" ? null : Number(actual),
+      notes: JSON.stringify({
+        other_cash_receipts: otherReceiptsSum,
+        other_receipts: updatedList
+      })
+    };
+
+    const { error } = await supabase
+      .from("cash_book_days")
+      .upsert(payload, { onConflict: "agency_id,book_date" });
+
+    if (error) {
+      toast.error(error.message);
+    } else {
+      toast.success("Payment inflow deleted successfully.");
+      setOtherReceiptsList(updatedList);
+      void load();
+    }
+  };
+
+  // Save full Cash Book day
+  const saveCashBook = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!agency) return;
+    setBusy(true);
+
+    const otherReceiptsSum = otherReceiptsList.reduce((sum, item) => sum + item.amount, 0);
+    const payload = {
+      agency_id: agency.id,
+      book_date: date,
+      opening_cash: Number(opening || 0),
+      actual_closing: actual === "" ? null : Number(actual),
+      notes: JSON.stringify({
+        other_cash_receipts: otherReceiptsSum,
+        other_receipts: otherReceiptsList
+      })
+    };
+
+    const { error } = await supabase
+      .from("cash_book_days")
+      .upsert(payload, { onConflict: "agency_id,book_date" });
+
+    if (error) {
+      toast.error(error.message);
+    } else {
+      toast.success("Daily Cash Book successfully reconciled and saved.");
       void load();
     }
     setBusy(false);
@@ -321,40 +429,56 @@ function Page() {
 
   const doExport = (kind: "pdf" | "xlsx") => {
     if (kind === "pdf") {
-      const cols = ["Section", "Transaction Details", "Mode / Category", "Amount (INR)"];
+      const cols = ["Section / Column", "Particular Ledger Details", "Payment Type", "Amount (INR)"];
       const rowsData = [
-        ["Opening Balance", "Opening Cash Balance", "CASH", fmtCurrency(Number(opening || 0))],
-        ["Inflow (Paisa Aaya)", `Cash Sales Received (Net)`, "CASH", fmtCurrency(aggregates.cashSales)],
-        ["Inflow (Paisa Aaya)", `Outstanding Collections Received`, "CASH", fmtCurrency(aggregates.cashPayments)],
-        ["Inflow (Paisa Aaya)", `Other Cash Receipts`, "CASH", fmtCurrency(aggregates.otherCashReceipts)],
-        ["Outflow (Paisa Gaya)", `Bank Deposits`, "CASH", fmtCurrency(aggregates.bankDeposits)],
-        ["Outflow (Paisa Gaya)", `Vehicle Expenses`, "CASH", fmtCurrency(aggregates.vehicleExpenses)],
-        ["Outflow (Paisa Gaya)", `Delivery Expenses`, "CASH", fmtCurrency(aggregates.deliveryBoyPayments)],
-        ["Outflow (Paisa Gaya)", `Other Expenses`, "CASH", fmtCurrency(aggregates.otherExpenses)],
-        ["Summary", "Expected Closing Cash", "CALCULATED", fmtCurrency(aggregates.expectedClosingCash)],
-        ["Summary", "Actual Cash Count", "AUDITED", actual === "" ? "—" : fmtCurrency(Number(actual))],
-        ["Summary", "Difference", "STATUS", actual === "" ? "—" : `${fmtCurrency(aggregates.difference)} (${Math.abs(aggregates.difference) < 0.01 ? "Balanced" : aggregates.difference < 0 ? "Short" : "Excess"})`]
+        ["Payment Received", "Opening Cash Balance", "CASH", fmtCurrency(aggregates.openingCash)],
+        ["Payment Received", `Home Delivery Sales (Domestic 14.2kg)`, "REVENUE", fmtCurrency(aggregates.homeTotal)],
+        ["Payment Received", `CNC Counter Sales (Domestic 14.2kg)`, "REVENUE", fmtCurrency(aggregates.cncTotal)],
+        ...Object.entries(aggregates.productSalesTotals).map(([pName, stats]) => [
+          "Payment Received", `${pName} Sales (${stats.quantity} units)`, "REVENUE", fmtCurrency(stats.total)
+        ]),
+        ["Payment Received", `Outstanding Customer Collections`, "RECOVERY", fmtCurrency(aggregates.collectionsTotal)],
+        ...otherReceiptsList.map((item) => [
+          "Payment Received", `${item.particular} (Manual Inflow)`, "OTHER INFLOW", fmtCurrency(item.amount)
+        ]),
+        ["Money Paid", `Daily Overhead Expenses`, "EXPENSE", fmtCurrency(aggregates.expensesTotal)],
+        ["Money Paid", `Paytm Digital Outflow (Sales + Recovery)`, "NON-CASH", fmtCurrency(aggregates.paytmOutflow)],
+        ["Money Paid", `Online UPI / Website Prepaid Outflow`, "NON-CASH", fmtCurrency(aggregates.onlineOutflow)],
+        ["Money Paid", `Cheque Collections Outflow`, "NON-CASH", fmtCurrency(aggregates.chequeOutflow)],
+        ["Money Paid", `Udhari Credit Sales Today`, "CREDIT", fmtCurrency(aggregates.udhariOutflow)],
+        ["Money Paid", `Drivers Route Commission Paid`, "ROUTE PAYOUT", fmtCurrency(aggregates.commissionsTotal)],
+        ["Money Paid", "Calculated Cash Balance", "CASH BALANCE", fmtCurrency(aggregates.cashBalance)],
+        ["Summary Status", "Actual Cash Counted", "AUDIT", actual === "" ? "—" : fmtCurrency(Number(actual))],
+        ["Summary Status", "Cash Drawer Discrepancy", "AUDIT STATUS", actual === "" ? "—" : `${fmtCurrency(aggregates.difference)} (${Math.abs(aggregates.difference) < 0.01 ? "Balanced" : aggregates.difference < 0 ? "Short" : "Excess"})`]
       ];
-      exportToPDF(`Daily Cash Book Statement - ${fmtDate(date)}`, cols, rowsData, `cash_register_${date}`);
+      exportToPDF(`Daily Double-Entry Ledger - ${fmtDate(date)}`, cols, rowsData, `double_ledger_${date}`);
     } else {
       const data = [
-        { Date: fmtDate(date), Description: "Opening Cash Balance", Section: "Opening Balance", Mode: "CASH", Inflow: Number(opening || 0), Outflow: 0 },
-        { Date: fmtDate(date), Description: "Cash Sales Received (Net)", Section: "Inflow", Mode: "CASH", Inflow: aggregates.cashSales, Outflow: 0 },
-        { Date: fmtDate(date), Description: "Outstanding Collections Received (Cash)", Section: "Inflow", Mode: "CASH", Inflow: aggregates.cashPayments, Outflow: 0 },
-        { Date: fmtDate(date), Description: "Other Cash Receipts", Section: "Inflow", Mode: "CASH", Inflow: aggregates.otherCashReceipts, Outflow: 0 },
-        { Date: fmtDate(date), Description: "Bank Deposits Today", Section: "Outflow", Mode: "DEBIT", Inflow: 0, Outflow: aggregates.bankDeposits },
-        { Date: fmtDate(date), Description: "Vehicle & Fuel Expenses Today", Section: "Outflow", Mode: "DEBIT", Inflow: 0, Outflow: aggregates.vehicleExpenses },
-        { Date: fmtDate(date), Description: "Delivery Expenses Today", Section: "Outflow", Mode: "DEBIT", Inflow: 0, Outflow: aggregates.deliveryBoyPayments },
-        { Date: fmtDate(date), Description: "Other Expenses Today", Section: "Outflow", Mode: "DEBIT", Inflow: 0, Outflow: aggregates.otherExpenses },
-        { Date: fmtDate(date), Description: "Expected Closing Cash", Section: "Expected", Mode: "CASH", Inflow: aggregates.expectedClosingCash, Outflow: 0 }
+        { Date: fmtDate(date), Particulars: "Opening Cash Balance", Type: "Received", PaymentMode: "CASH", Inflow: aggregates.openingCash, Outflow: 0 },
+        { Date: fmtDate(date), Particulars: "Home Delivery Sales (Domestic 14.2kg)", Type: "Received", PaymentMode: "REVENUE", Inflow: aggregates.homeTotal, Outflow: 0 },
+        { Date: fmtDate(date), Particulars: "CNC Counter Sales (Domestic 14.2kg)", Type: "Received", PaymentMode: "REVENUE", Inflow: aggregates.cncTotal, Outflow: 0 },
+        ...Object.entries(aggregates.productSalesTotals).map(([pName, stats]) => ({
+          Date: fmtDate(date), Particulars: `${pName} Sales (${stats.quantity} units)`, Type: "Received", PaymentMode: "REVENUE", Inflow: stats.total, Outflow: 0
+        })),
+        { Date: fmtDate(date), Particulars: "Outstanding Customer Collections", Type: "Received", PaymentMode: "RECOVERY", Inflow: aggregates.collectionsTotal, Outflow: 0 },
+        ...otherReceiptsList.map((item) => ({
+          Date: fmtDate(date), Particulars: `${item.particular} (Manual Inflow)`, Type: "Received", PaymentMode: "OTHER INFLOW", Inflow: item.amount, Outflow: 0
+        })),
+        { Date: fmtDate(date), Particulars: "Overhead Expenses", Type: "Paid", PaymentMode: "EXPENSE", Inflow: 0, Outflow: aggregates.expensesTotal },
+        { Date: fmtDate(date), Particulars: "Paytm Digital Outflow", Type: "Paid", PaymentMode: "NON-CASH", Inflow: 0, Outflow: aggregates.paytmOutflow },
+        { Date: fmtDate(date), Particulars: "Online UPI Outflow", Type: "Paid", PaymentMode: "NON-CASH", Inflow: 0, Outflow: aggregates.onlineOutflow },
+        { Date: fmtDate(date), Particulars: "Cheque Collections Outflow", Type: "Paid", PaymentMode: "NON-CASH", Inflow: 0, Outflow: aggregates.chequeOutflow },
+        { Date: fmtDate(date), Particulars: "Udhari Credit Sales", Type: "Paid", PaymentMode: "CREDIT", Inflow: 0, Outflow: aggregates.udhariOutflow },
+        { Date: fmtDate(date), Particulars: "Drivers Route Commission Paid", Type: "Paid", PaymentMode: "COMMISSION", Inflow: 0, Outflow: aggregates.commissionsTotal },
+        { Date: fmtDate(date), Particulars: "Calculated Closing Cash Balance", Type: "Paid", PaymentMode: "CASH BALANCE", Inflow: 0, Outflow: aggregates.cashBalance }
       ];
-      exportToExcel(data, `cash_register_${date}`, "Daily Cash Book");
+      exportToExcel(data, `double_ledger_${date}`, "Double-Entry Cashbook");
     }
   };
 
   return (
-    <div className="space-y-6">
-      <PageHeader title="Daily Cash Book" actions={
+    <div className="space-y-6 pb-8">
+      <PageHeader title="Excel Double-Entry Ledger" actions={
         <div className="flex items-center gap-2">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -363,372 +487,357 @@ function Page() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => doExport("pdf")}><FileText className="h-4 w-4 mr-2" />PDF Cash Statement</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => doExport("xlsx")}><FileText className="h-4 w-4 mr-2" />Excel Daily Book</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => doExport("pdf")}><FileText className="h-4 w-4 mr-2 text-primary" />PDF Double Ledger</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => doExport("xlsx")}><FileText className="h-4 w-4 mr-2 text-success" />Excel Spreadsheet</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
 
           <Button variant="outline" className="h-11 gap-1.5" onClick={() => window.print()}>
-            <Printer className="h-4.5 w-4.5" /> Print Register
+            <Printer className="h-4.5 w-4.5" /> Print Ledger
           </Button>
         </div>
       } />
 
-      {/* Date Select Panel */}
-      <Card className="shadow-soft bg-muted/20 border"><CardContent className="p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div className="flex items-center gap-2">
-          <CalendarIcon className="h-5 w-5 text-primary shrink-0" />
-          <div>
-            <h3 className="font-semibold text-sm">Select Distributorship Date</h3>
-            <p className="text-xs text-muted-foreground">Showing records for: <strong className="text-foreground">{fmtDate(date)}</strong></p>
+      {/* Controls & Selection Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+        <Card className="md:col-span-2 shadow-soft bg-muted/20 border"><CardContent className="p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div className="flex items-center gap-2">
+            <Calendar className="h-5 w-5 text-primary shrink-0" />
+            <div>
+              <h3 className="font-semibold text-sm">Select Distributorship Date</h3>
+              <p className="text-xs text-muted-foreground">Double-entry ledger details for: <strong className="text-foreground">{fmtDate(date)}</strong></p>
+            </div>
           </div>
-        </div>
-        <div className="w-full sm:w-auto">
-          <Input 
-            type="date" 
-            value={date} 
-            onChange={(e) => setDate(e.target.value)} 
-            className="h-10 text-sm font-semibold max-w-xs" 
-          />
-        </div>
-      </CardContent></Card>
+          <div className="w-full sm:w-auto">
+            <Input 
+              type="date" 
+              value={date} 
+              onChange={(e) => setDate(e.target.value)} 
+              className="h-10 text-sm font-semibold max-w-xs" 
+            />
+          </div>
+        </CardContent></Card>
 
-      {/* Main Dual Column Ledger */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+        {/* Quick Inflow Receipt Button */}
+        <Button 
+          type="button" 
+          onClick={() => setIsReceiptOpen(true)}
+          className="h-14 font-semibold shadow-soft text-sm bg-gradient-to-r from-emerald-600 to-teal-600 text-white gap-2"
+        >
+          <Plus className="h-5 w-5" /> + Other Payment Inflow
+        </Button>
+      </div>
+
+      {/* Balanced / Audit Status Banner */}
+      <Card className={`border shadow-sm transition-all overflow-hidden ${
+        actual === "" 
+          ? "bg-slate-50 border-slate-200/80" 
+          : Math.abs(aggregates.difference) < 0.01 
+          ? "bg-emerald-50/50 border-emerald-200 text-emerald-800" 
+          : "bg-amber-50/40 border-amber-200 text-amber-900"
+      }`}>
+        <CardContent className="p-4 flex items-center gap-3.5 flex-wrap justify-between">
+          <div className="flex items-center gap-3">
+            {actual === "" ? (
+              <AlertCircle className="h-6 w-6 text-slate-400 shrink-0" />
+            ) : Math.abs(aggregates.difference) < 0.01 ? (
+              <CheckCircle2 className="h-6 w-6 text-emerald-500 shrink-0" />
+            ) : (
+              <AlertTriangle className="h-6 w-6 text-amber-500 shrink-0" />
+            )}
+            <div>
+              <h4 className="font-bold text-sm">
+                {actual === "" 
+                  ? "Unreconciled Ledger" 
+                  : Math.abs(aggregates.difference) < 0.01 
+                  ? "✓ Balanced Ledger (Perfect match)" 
+                  : aggregates.difference < 0 
+                  ? `✗ Drawer Cash Shortage: ${fmtCurrency(Math.abs(aggregates.difference))}`
+                  : `⚠ Drawer Cash Excess: ${fmtCurrency(aggregates.difference)}`}
+              </h4>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {actual === "" 
+                  ? "Physical cash count has not been recorded for this distributorship date. Enter physical count to reconcile." 
+                  : `Physical cash counted: ${fmtCurrency(Number(actual))} vs Calculated cash balance: ${fmtCurrency(aggregates.cashBalance)}.`}
+              </p>
+            </div>
+          </div>
+          {actual !== "" && (
+            <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded border tracking-wider select-none ${
+              Math.abs(aggregates.difference) < 0.01 
+                ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" 
+                : "bg-amber-500/10 text-amber-600 border-amber-500/20"
+            }`}>
+              {Math.abs(aggregates.difference) < 0.01 ? "Perfect Match" : aggregates.difference < 0 ? "Shortage" : "Excess"}
+            </span>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Excel Dual Column Ledger Table */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start border rounded-xl overflow-hidden shadow-soft bg-white">
         
-        {/* Money Inflow & Outflow details */}
-        <div className="lg:col-span-2 space-y-8">
-            
-          {/* Section: MONEY RECEIVED (Paisa Aaya) */}
-          <div className="space-y-4">
-            <h2 className="text-xs font-bold uppercase tracking-widest text-emerald-600 bg-emerald-500/10 px-3 py-1.5 rounded-md inline-block">
-              MONEY RECEIVED (Paisa Aaya)
-            </h2>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Cash Sales Received Card */}
-              <Card className="shadow-soft border-primary/20 overflow-hidden">
-                <div className="bg-primary/10 border-b border-primary/20 px-4 py-3 flex items-center justify-between">
-                  <h3 className="font-bold text-primary flex items-center gap-1.5 text-xs uppercase tracking-wider">
-                    <ArrowUpRight className="h-4 w-4 text-primary" /> Cash Sales Received
-                  </h3>
-                  <span className="font-extrabold text-primary text-sm">{fmtCurrency(aggregates.cashSales)}</span>
-                </div>
-                <CardContent className="p-0 divide-y text-xs max-h-64 overflow-y-auto">
-                  {aggregates.cashSalesList.length === 0 ? (
-                    <EmptyState title="No cylinder sales recorded." />
-                  ) : (
-                    aggregates.cashSalesList.map((s) => (
-                      <div key={s.id} className="p-3 flex justify-between items-center hover:bg-muted/10 transition-colors">
-                        <div>
-                          <div className="font-semibold text-foreground">{s.product_name} Cylinder</div>
-                          <div className="text-[10px] text-muted-foreground mt-0.5">
-                            To: {s.customer_name} · Qty: {s.quantity} · Mode: {s.payment_mode.toUpperCase()}
-                            {s.isSplitSale && <span className="ml-1 text-primary font-bold">(Split)</span>}
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <p className="font-bold text-foreground">{fmtCurrency(s.netCash)}</p>
-                          {s.commission_total > 0 && (
-                            <p className="text-[9px] text-muted-foreground font-medium">Net (Commission -{fmtCurrency(s.commission_total)})</p>
-                          )}
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Outstanding Collections Received Card */}
-              <Card className="shadow-soft border-success/20 overflow-hidden">
-                <div className="bg-success/10 border-b border-success/20 px-4 py-3 flex items-center justify-between">
-                  <h3 className="font-bold text-success-dark flex items-center gap-1.5 text-xs uppercase tracking-wider">
-                    <ArrowUpRight className="h-4 w-4 text-success" /> Outstanding Collections
-                  </h3>
-                  <span className="font-extrabold text-success-dark text-sm">{fmtCurrency(aggregates.cashPayments)}</span>
-                </div>
-                <CardContent className="p-0 divide-y text-xs max-h-64 overflow-y-auto">
-                  {dailyPayments.length === 0 ? (
-                    <EmptyState title="No customer payments collected." />
-                  ) : (
-                    dailyPayments.map((p) => (
-                      <div key={p.id} className="p-3 flex justify-between items-center hover:bg-muted/10 transition-colors">
-                        <div>
-                          <div className="font-semibold text-foreground">Recovery Payment ({p.payment_mode.toUpperCase()})</div>
-                          <div className="text-[10px] text-muted-foreground mt-0.5">From: {p.customer_name}</div>
-                        </div>
-                        <div className="text-right">
-                          <p className="font-bold text-success-dark">{fmtCurrency(p.amount)}</p>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </CardContent>
-              </Card>
-            </div>
+        {/* LEFT COLUMN: Payment Received (Paisa Aaya) */}
+        <div className="flex flex-col h-full border-r border-border/80 min-h-[500px]">
+          <div className="bg-slate-50 border-b border-border/80 px-5 py-3.5 flex justify-between items-center select-none">
+            <h3 className="font-extrabold text-xs uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+              <ArrowUpRight className="h-4.5 w-4.5 text-emerald-500 shrink-0" /> Payment Received (Paisa Aaya)
+            </h3>
+            <span className="text-xs font-black text-slate-400">₹ INR</span>
           </div>
 
-          {/* Section: MONEY PAID (Paisa Gaya) */}
-          <div className="space-y-4">
-            <h2 className="text-xs font-bold uppercase tracking-widest text-red-600 bg-red-500/10 px-3 py-1.5 rounded-md inline-block">
-              MONEY PAID (Paisa Gaya)
-            </h2>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Bank Deposits & Paytm Transfers Outflows */}
-              <Card className="shadow-soft border-destructive/20 overflow-hidden">
-                <div className="bg-destructive/10 border-b border-destructive/20 px-4 py-3 flex items-center justify-between">
-                  <h3 className="font-bold text-destructive-dark flex items-center gap-1.5 text-xs uppercase tracking-wider">
-                    <ArrowDownRight className="h-4 w-4 text-destructive" /> Bank Deposits
-                  </h3>
-                  <span className="font-bold text-destructive-dark text-sm">{fmtCurrency(aggregates.bankDeposits)}</span>
-                </div>
-                <CardContent className="p-4 text-xs space-y-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-muted-foreground">Bank/Online Cash Deposits</span>
-                    <span className="font-semibold">{fmtCurrency(dailyExpenses.filter(e => e.category === "bank_deposit").reduce((a,r)=>a+r.amount, 0))}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-muted-foreground">Paytm Wallet Transfers</span>
-                    <span className="font-semibold">{fmtCurrency(dailyExpenses.filter(e => e.category === "paytm_transfer").reduce((a,r)=>a+r.amount, 0))}</span>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Vehicle Expenses Card */}
-              <Card className="shadow-soft border-destructive/20 overflow-hidden">
-                <div className="bg-destructive/10 border-b border-destructive/20 px-4 py-3 flex items-center justify-between">
-                  <h3 className="font-bold text-destructive-dark flex items-center gap-1.5 text-xs uppercase tracking-wider">
-                    <ArrowDownRight className="h-4 w-4 text-destructive" /> Vehicle Expenses
-                  </h3>
-                  <span className="font-bold text-destructive-dark text-sm">{fmtCurrency(aggregates.vehicleExpenses)}</span>
-                </div>
-                <CardContent className="p-4 text-xs space-y-2 max-h-32 overflow-y-auto">
-                  {dailyExpenses.filter(e => ["vehicle_expense", "fuel", "repair", "maintenance"].includes(e.category)).length === 0 ? (
-                    <div className="text-muted-foreground py-2 text-center select-none">No vehicle expenses logged.</div>
-                  ) : (
-                    dailyExpenses.filter(e => ["vehicle_expense", "fuel", "repair", "maintenance"].includes(e.category)).map((e) => (
-                      <div key={e.id} className="flex justify-between items-start">
-                        <div>
-                          <span className="font-medium text-foreground capitalize">{e.category.replace("_", " ")}</span>
-                          {e.notes && <p className="text-[10px] text-muted-foreground">{e.notes}</p>}
-                        </div>
-                        <span className="font-semibold text-destructive-dark">{fmtCurrency(e.amount)}</span>
-                      </div>
-                    ))
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Delivery Expenses Card */}
-              <Card className="shadow-soft border-destructive/20 overflow-hidden">
-                <div className="bg-destructive/10 border-b border-destructive/20 px-4 py-3 flex items-center justify-between">
-                  <h3 className="font-bold text-destructive-dark flex items-center gap-1.5 text-xs uppercase tracking-wider">
-                    <ArrowDownRight className="h-4 w-4 text-destructive" /> Delivery Expenses
-                  </h3>
-                  <span className="font-bold text-destructive-dark text-sm">{fmtCurrency(aggregates.deliveryBoyPayments)}</span>
-                </div>
-                <CardContent className="p-4 text-xs space-y-2 max-h-32 overflow-y-auto">
-                  {dailyExpenses.filter(e => e.category === "delivery_boy_payment").length === 0 ? (
-                    <div className="text-muted-foreground py-2 text-center select-none">No direct delivery staff payments.</div>
-                  ) : (
-                    dailyExpenses.filter(e => e.category === "delivery_boy_payment").map((e) => (
-                      <div key={e.id} className="flex justify-between items-start">
-                        <div>
-                          <span className="font-medium text-foreground">Delivery Staff Payout</span>
-                          {e.notes && <p className="text-[10px] text-muted-foreground">{e.notes}</p>}
-                        </div>
-                        <span className="font-semibold text-destructive-dark">{fmtCurrency(e.amount)}</span>
-                      </div>
-                    ))
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Other Expenses Card */}
-              <Card className="shadow-soft border-destructive/20 overflow-hidden">
-                <div className="bg-destructive/10 border-b border-destructive/20 px-4 py-3 flex items-center justify-between">
-                  <h3 className="font-bold text-destructive-dark flex items-center gap-1.5 text-xs uppercase tracking-wider">
-                    <ArrowDownRight className="h-4 w-4 text-destructive" /> Other Expenses
-                  </h3>
-                  <span className="font-bold text-destructive-dark text-sm">{fmtCurrency(aggregates.otherExpenses)}</span>
-                </div>
-                <CardContent className="p-4 text-xs space-y-2 max-h-32 overflow-y-auto">
-                  {dailyExpenses.filter(e => ["salary", "miscellaneous"].includes(e.category)).length === 0 ? (
-                    <div className="text-muted-foreground py-2 text-center select-none">No salary or office expenses logged.</div>
-                  ) : (
-                    dailyExpenses.filter(e => ["salary", "miscellaneous"].includes(e.category)).map((e) => (
-                      <div key={e.id} className="flex justify-between items-start">
-                        <div>
-                          <span className="font-medium text-foreground capitalize">{e.category}</span>
-                          {e.notes && <p className="text-[10px] text-muted-foreground">{e.notes}</p>}
-                        </div>
-                        <span className="font-semibold text-destructive-dark">{fmtCurrency(e.amount)}</span>
-                      </div>
-                    ))
-                  )}
-                </CardContent>
-              </Card>
+          <div className="flex-1 divide-y divide-slate-100 text-xs">
+            {/* Opening Cash */}
+            <div className="px-5 py-3.5 flex justify-between items-center hover:bg-slate-50/40 transition-colors">
+              <span className="font-semibold text-slate-600">Opening Cash Balance</span>
+              <span className="font-bold tabular-nums text-slate-800 text-sm">{fmtCurrency(aggregates.openingCash)}</span>
             </div>
+
+            {/* Home Delivery cylinders */}
+            {aggregates.homeTotal > 0 && (
+              <div className="px-5 py-3.5 flex justify-between items-center hover:bg-slate-50/40 transition-colors">
+                <span className="font-semibold text-slate-600">Home Delivery Sales (Domestic 14.2kg)</span>
+                <span className="font-bold tabular-nums text-slate-800 text-sm">{fmtCurrency(aggregates.homeTotal)}</span>
+              </div>
+            )}
+
+            {/* CNC Counter Sales */}
+            {aggregates.cncTotal > 0 && (
+              <div className="px-5 py-3.5 flex justify-between items-center hover:bg-slate-50/40 transition-colors">
+                <span className="font-semibold text-slate-600">CNC Counter Sales (Domestic 14.2kg)</span>
+                <span className="font-bold tabular-nums text-slate-800 text-sm">{fmtCurrency(aggregates.cncTotal)}</span>
+              </div>
+            )}
+
+            {/* Other Products Sales */}
+            {Object.entries(aggregates.productSalesTotals).map(([pName, stats]) => (
+              <div key={pName} className="px-5 py-3.5 flex justify-between items-center hover:bg-slate-50/40 transition-colors">
+                <span className="font-semibold text-slate-600">{pName} Sales ({stats.quantity} units)</span>
+                <span className="font-bold tabular-nums text-slate-800 text-sm">{fmtCurrency(stats.total)}</span>
+              </div>
+            ))}
+
+            {/* Recovery payments collections */}
+            {aggregates.collectionsTotal > 0 && (
+              <div className="px-5 py-3.5 flex justify-between items-center hover:bg-slate-50/40 transition-colors">
+                <span className="font-semibold text-slate-600">Outstanding Customer Collections (Credit Recovery)</span>
+                <span className="font-bold tabular-nums text-slate-800 text-sm">{fmtCurrency(aggregates.collectionsTotal)}</span>
+              </div>
+            )}
+
+            {/* Manual inflows Other Receipts */}
+            {otherReceiptsList.map((item) => (
+              <div key={item.id} className="px-5 py-3 flex justify-between items-center hover:bg-slate-50/40 group transition-colors">
+                <span className="font-semibold text-slate-600 flex items-center gap-1.5">
+                  {item.particular}
+                  <button 
+                    type="button"
+                    onClick={() => deleteOtherReceipt(item.id)}
+                    className="text-red-500 hover:text-red-700 opacity-0 group-hover:opacity-100 transition-opacity font-bold ml-1.5 text-[10px]"
+                    title="Delete entry"
+                  >
+                    ✕
+                  </button>
+                </span>
+                <span className="font-bold tabular-nums text-emerald-600 text-sm">{fmtCurrency(item.amount)}</span>
+              </div>
+            ))}
+
+            {/* Empty filler rows when lists are short to balance visually */}
+            {dailySales.length === 0 && otherReceiptsList.length === 0 && (
+              <div className="p-8 text-center text-muted-foreground select-none italic text-[11px]">
+                No business transactions received today.
+              </div>
+            )}
           </div>
 
+          {/* Left Footer: Total Received */}
+          <div className="bg-slate-50 border-t border-border/80 px-5 py-4 flex justify-between items-center mt-auto font-black text-sm text-slate-800 shadow-sm select-none">
+            <span>Total Received (Inflows)</span>
+            <span className="tabular-nums font-black text-base text-primary">{fmtCurrency(aggregates.leftGrandTotal)}</span>
+          </div>
         </div>
 
-        {/* Daily Cash Book Summary Box */}
-        <div className="space-y-6">
-          <Card className="shadow-soft border-primary/20"><CardContent className="p-5">
-            <h3 className="font-bold text-sm uppercase tracking-wider text-primary border-b border-primary/20 pb-3 mb-4 flex items-center gap-1.5">
-              <Sparkles className="h-4.5 w-4.5 text-primary shrink-0" /> Daily Cash Book
+        {/* RIGHT COLUMN: Money Paid (Paisa Gaya) */}
+        <div className="flex flex-col h-full min-h-[500px]">
+          <div className="bg-slate-50 border-b border-border/80 px-5 py-3.5 flex justify-between items-center select-none">
+            <h3 className="font-extrabold text-xs uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+              <ArrowDownRight className="h-4.5 w-4.5 text-red-500 shrink-0" /> Money Paid (Paisa Gaya)
             </h3>
+            <span className="text-xs font-black text-slate-400">₹ INR</span>
+          </div>
 
-            <form onSubmit={save} className="space-y-4">
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-muted-foreground uppercase">Opening Cash</Label>
-                <Input 
-                  type="number" 
-                  step="0.01"
-                  value={opening} 
-                  onChange={(e) => setOpening(e.target.value)} 
-                  className="h-11 font-bold text-lg text-primary" 
-                />
+          <div className="flex-1 divide-y divide-slate-100 text-xs">
+            {/* Direct Expenses */}
+            {dailyExpenses.map((exp) => (
+              <div key={exp.id} className="px-5 py-3.5 flex justify-between items-center hover:bg-slate-50/40 transition-colors">
+                <span className="font-semibold text-slate-600 capitalize">
+                  {exp.category.replace("_", " ")} {exp.notes ? `(${exp.notes})` : ""}
+                </span>
+                <span className="font-bold tabular-nums text-red-600 text-sm">{fmtCurrency(exp.amount)}</span>
               </div>
+            ))}
 
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-muted-foreground uppercase">Other Cash Receipts</Label>
-                <Input 
-                  type="number" 
-                  step="0.01"
-                  value={otherReceipts} 
-                  onChange={(e) => setOtherReceipts(e.target.value)} 
-                  className="h-11 font-bold text-lg text-primary" 
-                  placeholder="Enter manual cash receipts..."
-                />
+            {/* Paytm outflow */}
+            {aggregates.paytmOutflow > 0 && (
+              <div className="px-5 py-3.5 flex justify-between items-center hover:bg-slate-50/40 transition-colors">
+                <span className="font-semibold text-slate-600">Paytm Digital Account (Sales + Recovery)</span>
+                <span className="font-bold tabular-nums text-slate-700 text-sm">{fmtCurrency(aggregates.paytmOutflow)}</span>
               </div>
+            )}
 
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-muted-foreground uppercase">Actual Cash Count</Label>
-                <Input 
-                  type="number" 
-                  step="0.01"
-                  value={actual} 
-                  onChange={(e) => setActual(e.target.value)} 
-                  className="h-11 font-bold text-lg text-success-dark" 
-                  placeholder="Enter physical cash count..." 
-                />
+            {/* Online UPI outflow */}
+            {aggregates.onlineOutflow > 0 && (
+              <div className="px-5 py-3.5 flex justify-between items-center hover:bg-slate-50/40 transition-colors">
+                <span className="font-semibold text-slate-600">Online UPI / Website Prepaid</span>
+                <span className="font-bold tabular-nums text-slate-700 text-sm">{fmtCurrency(aggregates.onlineOutflow)}</span>
               </div>
+            )}
 
-              <div className="rounded-lg border border-border/80 bg-muted/30 p-4 space-y-2.5 text-xs">
-                <div className="font-semibold text-primary uppercase text-[10px] tracking-wider border-b pb-1.5 mb-1.5">Expected Closing Cash</div>
-                
-                <div className="flex justify-between font-medium">
-                  <span className="text-muted-foreground">Opening Cash</span>
-                  <span>{fmtCurrency(Number(opening || 0))}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-success-dark">+ Cash Sales</span>
-                  <span className="font-semibold text-success-dark">+{fmtCurrency(aggregates.cashSales)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-success-dark">+ Outstanding Collections</span>
-                  <span className="font-semibold text-success-dark">+{fmtCurrency(aggregates.cashPayments)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-success-dark">+ Other Cash Receipts</span>
-                  <span className="font-semibold text-success-dark">+{fmtCurrency(aggregates.otherCashReceipts)}</span>
+            {/* Cheque outflow */}
+            {aggregates.chequeOutflow > 0 && (
+              <div className="px-5 py-3.5 flex justify-between items-center hover:bg-slate-50/40 transition-colors">
+                <span className="font-semibold text-slate-600">Bank Cheque collections</span>
+                <span className="font-bold tabular-nums text-slate-700 text-sm">{fmtCurrency(aggregates.chequeOutflow)}</span>
+              </div>
+            )}
+
+            {/* Udhari credit outflow */}
+            {aggregates.udhariOutflow > 0 && (
+              <div className="px-5 py-3.5 flex justify-between items-center hover:bg-slate-50/40 transition-colors">
+                <span className="font-semibold text-slate-600">Today's Credit Sales (Udhari)</span>
+                <span className="font-bold tabular-nums text-slate-700 text-sm">{fmtCurrency(aggregates.udhariOutflow)}</span>
+              </div>
+            )}
+
+            {/* Commission with driver breakdown */}
+            {aggregates.commissionsTotal > 0 && (
+              <div className="px-5 py-3 flex flex-col hover:bg-slate-50/40 transition-colors">
+                <div className="flex justify-between items-center py-0.5">
+                  <span className="font-semibold text-slate-600">Route Commission Paid</span>
+                  <span className="font-bold tabular-nums text-slate-700 text-sm">{fmtCurrency(aggregates.commissionsTotal)}</span>
                 </div>
                 
-                <div className="border-t border-dashed my-1.5" />
-                
-                <div className="flex justify-between">
-                  <span className="text-destructive-dark">- Bank Deposits</span>
-                  <span className="font-semibold text-destructive-dark">-{fmtCurrency(aggregates.bankDeposits)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-destructive-dark">- Vehicle Expenses</span>
-                  <span className="font-semibold text-destructive-dark">-{fmtCurrency(aggregates.vehicleExpenses)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-destructive-dark">- Delivery Expenses</span>
-                  <span className="font-semibold text-destructive-dark">-{fmtCurrency(aggregates.deliveryBoyPayments)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-destructive-dark">- Other Expenses</span>
-                  <span className="font-semibold text-destructive-dark">-{fmtCurrency(aggregates.otherExpenses)}</span>
-                </div>
-
-                <div className="border-t border-border/80 pt-2.5 flex justify-between font-bold text-sm">
-                  <span>Expected Closing Cash</span>
-                  <span className="text-primary font-extrabold">{fmtCurrency(aggregates.expectedClosingCash)}</span>
-                </div>
-
-                {actual !== "" && (
-                  <>
-                    <div className="border-t border-dashed my-1.5" />
-                    
-                    <div className="flex justify-between font-medium">
-                      <span className="text-muted-foreground">Actual Cash Count</span>
-                      <span className="font-bold text-foreground">{fmtCurrency(Number(actual))}</span>
+                {/* Driver listings */}
+                <div className="mt-1 pl-3 border-l-2 border-slate-200/80 space-y-0.5 text-[10px] text-slate-500 font-medium">
+                  {Object.values(aggregates.commissionByDriver).map((drv) => (
+                    <div key={drv.name} className="flex justify-between py-0.5">
+                      <span>{drv.name}</span>
+                      <span className="tabular-nums">{fmtCurrency(drv.amount)}</span>
                     </div>
-                    
-                    <div className={`flex justify-between font-bold text-sm ${
-                      Math.abs(aggregates.difference) < 0.01 
-                        ? "text-success-dark" 
-                        : "text-destructive-dark"
-                    }`}>
-                      <span>Difference</span>
-                      <span>{fmtCurrency(aggregates.difference)}</span>
-                    </div>
-
-                    <div className="flex justify-between items-center pt-1.5">
-                      <span className="text-xs font-bold text-muted-foreground">Reconciliation Status</span>
-                      <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded border ${
-                        Math.abs(aggregates.difference) < 0.01 
-                          ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" 
-                          : aggregates.difference < 0
-                          ? "bg-red-500/10 text-red-600 border-red-500/20"
-                          : "bg-blue-500/10 text-blue-600 border-blue-500/20"
-                      }`}>
-                        {Math.abs(aggregates.difference) < 0.01 
-                          ? "Balanced" 
-                          : aggregates.difference < 0
-                          ? "Short"
-                          : "Excess"}
-                      </span>
-                    </div>
-                  </>
-                )}
+                  ))}
+                </div>
               </div>
+            )}
 
-              <Button type="submit" disabled={busy} className="w-full h-12 shadow-sm font-bold uppercase tracking-wider text-xs">
-                {busy ? "Saving..." : "Save Daily Cash Book"}
-              </Button>
-            </form>
-          </CardContent></Card>
+            {/* Calculated Closing Drawer Cash Balance */}
+            <div className="px-5 py-3.5 flex justify-between items-center bg-slate-50/40 border-t border-dashed">
+              <span className="font-bold text-slate-800">Calculated Cash Balance</span>
+              <span className="font-black tabular-nums text-slate-900 text-sm">{fmtCurrency(aggregates.cashBalance)}</span>
+            </div>
+          </div>
+
+          {/* Right Footer: Total Outflows */}
+          <div className="bg-slate-50 border-t border-border/80 px-5 py-4 flex justify-between items-center mt-auto font-black text-sm text-slate-800 shadow-sm select-none">
+            <span>Total Outflows + Cash</span>
+            <span className="tabular-nums font-black text-base text-primary">{fmtCurrency(aggregates.rightGrandTotal)}</span>
+          </div>
         </div>
 
       </div>
+
+      {/* Bottom Save & Physical Verification Panel */}
+      <Card className="shadow-card border"><CardContent className="p-6">
+        <h3 className="font-bold text-sm uppercase tracking-wider text-slate-800 border-b pb-3 mb-5 flex items-center gap-2 select-none">
+          <Sparkles className="h-5 w-5 text-primary shrink-0" /> Physical Cash Reconciliation
+        </h3>
+
+        <form onSubmit={saveCashBook} className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
+          <div className="space-y-2">
+            <Label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Opening Cash Balance (₹)</Label>
+            <Input 
+              type="number" 
+              step="any"
+              min="0"
+              value={opening} 
+              onChange={(e) => setOpening(e.target.value)} 
+              className="h-12 font-bold text-lg text-primary" 
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Actual Physical Cash Count (₹)</Label>
+            <Input 
+              type="number" 
+              step="any"
+              min="0"
+              value={actual} 
+              onChange={(e) => setActual(e.target.value)} 
+              className="h-12 font-bold text-lg text-success-dark" 
+              placeholder="Count cash in drawer..." 
+            />
+          </div>
+
+          <Button 
+            type="submit" 
+            disabled={busy} 
+            className="h-12 shadow-sm font-bold uppercase tracking-wider text-xs"
+          >
+            {busy ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+            Reconcile & Save Cash Book
+          </Button>
+        </form>
+      </CardContent></Card>
+
+      {/* Manual Receipt Quick Add Dialog */}
+      <Dialog open={isReceiptOpen} onOpenChange={setIsReceiptOpen}>
+        <DialogContent className="max-w-sm bg-white border border-slate-100 shadow-xl rounded-2xl p-6">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold tracking-tight text-foreground flex items-center gap-2">
+              💰 Record Miscellaneous Inflow
+            </DialogTitle>
+          </DialogHeader>
+
+          <form onSubmit={addOtherReceipt} className="space-y-4 mt-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-muted-foreground uppercase">Particular / Description</Label>
+              <Input 
+                required
+                type="text" 
+                value={receiptParticular} 
+                onChange={(e) => setReceiptParticular(e.target.value)} 
+                placeholder="Name change, Udhari cash receipt..." 
+                className="h-11 font-medium"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-muted-foreground uppercase">Amount Received (₹)</Label>
+              <Input 
+                required
+                type="number" 
+                step="any"
+                min="0.01"
+                value={receiptAmount} 
+                onChange={(e) => setReceiptAmount(e.target.value)} 
+                placeholder="0.00" 
+                className="h-11 font-bold"
+              />
+            </div>
+
+            <DialogFooter className="pt-2">
+              <Button type="button" variant="ghost" onClick={() => setIsReceiptOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={busy} className="bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold h-11">
+                {busy ? "Saving..." : "Record Payment"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
     </div>
   );
 }
 
-function CalendarIcon(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg
-      {...props}
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M8 2v4" />
-      <path d="M16 2v4" />
-      <rect width="18" height="18" x="3" y="4" rx="2" />
-      <path d="M3 10h18" />
-    </svg>
-  );
-}

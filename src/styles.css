@@ -172,6 +172,17 @@
   }
   /* Numeric tabular figures for amounts */
   .tabular-nums { font-variant-numeric: tabular-nums; }
+
+  /* Hide number input scroll spinners */
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
 }
 
 /* Custom Print Stylesheet */

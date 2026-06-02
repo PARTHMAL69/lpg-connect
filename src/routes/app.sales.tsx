@@ -348,6 +348,7 @@ function Page() {
                 <SelectItem value="cash">Cash</SelectItem>
                 <SelectItem value="online">Online</SelectItem>
                 <SelectItem value="paytm">Paytm</SelectItem>
+                <SelectItem value="cheque">Cheque</SelectItem>
                 <SelectItem value="credit">Credit (Udhari)</SelectItem>
               </SelectContent>
             </Select>
@@ -718,10 +719,26 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
     }
   }, [boy, editSale]);
 
+  // Core calculation
   const qty = Math.max(0, Math.round(Number(f.quantity || 0)));
   const prep = Math.max(0, Math.round(Number(prepaidQty || 0)));
   const billedQty = Math.max(0, qty - prep);
-  const total = billedQty * Math.max(0, Number(f.rate || 0));
+  const grossTotal = billedQty * Math.max(0, Number(f.rate || 0));
+  const commissionPerUnit = isCncProduct ? 0 : Math.max(0, Number(f.commission_rate || 0));
+  const commissionTotal = commissionPerUnit * qty; // Commission on ALL cylinders (including prepaid, since delivery boy delivers all)
+  const totalWithoutCommission = grossTotal - commissionTotal;
+
+  // Auto-recalculate split amounts when total changes (real-time sync)
+  useEffect(() => {
+    if (isSplit && totalWithoutCommission >= 0) {
+      const currentSum = Number(splitCash || 0) + Number(splitOnline || 0) + Number(splitCredit || 0);
+      // If the sum doesn't match, reset cash to absorb the difference
+      if (Math.abs(currentSum - totalWithoutCommission) > 0.01) {
+        const newCash = Math.max(0, totalWithoutCommission - Number(splitOnline || 0) - Number(splitCredit || 0));
+        setSplitCash(String(newCash));
+      }
+    }
+  }, [totalWithoutCommission, isSplit]);
 
   useEffect(() => {
     if (editSale) {
@@ -781,13 +798,14 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
   }, [editSale]);
 
   const splitSum = Number(splitCash || 0) + Number(splitOnline || 0) + Number(splitCredit || 0);
-  const isSplitValid = Math.abs(splitSum - total) < 0.01;
+  const splitTarget = Math.max(0, totalWithoutCommission);
+  const isSplitValid = Math.abs(splitSum - splitTarget) < 0.01;
 
   const handlePaymentModeChange = (val: string) => {
     setF((prev) => ({ ...prev, payment_mode: val }));
     if (val === "split") {
       setIsSplit(true);
-      setSplitCash(String(total));
+      setSplitCash(String(splitTarget));
       setSplitOnline("0");
       setSplitCredit("0");
     } else {
@@ -800,17 +818,16 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
     if (!agency || !f.product_id) return; 
     
     if (isSplit && !isSplitValid) {
-      toast.error(`Split payment total must equal the invoice amount: ${fmtCurrency(total)}`);
+      toast.error(`Split payment total must equal: ${fmtCurrency(splitTarget)}`);
       return;
     }
 
     setBusy(true);
 
-    const prep = Number(prepaidQty || 0);
     const finalDeliveryBoyId = isCncProduct ? null : (f.delivery_boy_id || null);
     const finalCommissionRate = isCncProduct ? 0 : Number(f.commission_rate || 0);
-    const finalCommissionAmount = finalCommissionRate * Number(f.quantity || 0);
-    const finalNetAmount = total - finalCommissionAmount;
+    const finalCommissionAmount = finalCommissionRate * qty;
+    const finalNetAmount = grossTotal - finalCommissionAmount;
 
     const metaDetails: any = {};
     if (isSplit) {
@@ -829,9 +846,9 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
       sale_date: f.sale_date,
       customer_id: f.customer_id || null, 
       product_id: f.product_id, 
-      quantity: Number(f.quantity), 
+      quantity: qty, 
       rate: Number(f.rate), 
-      gross_amount: total, 
+      gross_amount: grossTotal, 
       payment_mode: isSplit ? (Number(splitCredit || 0) > 0 ? "credit" : "cash") : f.payment_mode,
       delivery_boy_id: finalDeliveryBoyId,
       commission_rate: finalCommissionRate,
@@ -906,11 +923,13 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
 
   return (
     <form onSubmit={submit} className="space-y-4 mt-6">
+      {/* 1. Date */}
       <div className="space-y-1.5">
         <Label>{t("common.date")}</Label>
         <Input type="date" required value={f.sale_date} onChange={(e) => setF({...f, sale_date: e.target.value})} className="h-11" />
       </div>
 
+      {/* 2. Customer */}
       <div className="space-y-1.5">
         <Label className="mb-1 block">{t("sales.customer")}</Label>
         <Combobox
@@ -923,6 +942,7 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
         />
       </div>
 
+      {/* 3. Product */}
       <div className="space-y-1.5">
         <Label>{t("sales.product")}</Label>
         <Select value={f.product_id} onValueChange={(v) => setF({...f, product_id: v})} required>
@@ -935,6 +955,22 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
         </Select>
       </div>
 
+      {/* 4. Delivery Boy (hidden for CNC) */}
+      {!isCncProduct && (
+        <div className="space-y-1.5">
+          <Label>{t("sales.deliveryBoy")}</Label>
+          <Select value={f.delivery_boy_id} onValueChange={(v) => setF({...f, delivery_boy_id: v})}>
+            <SelectTrigger className="h-11">
+              <SelectValue placeholder="—" />
+            </SelectTrigger>
+            <SelectContent>
+              {boys.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
+      {/* 5. Qty & Rate */}
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <Label>{t("common.quantity")}</Label>
@@ -953,11 +989,12 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
           />
         </div>
         <div className="space-y-1.5">
-          <Label>{t("common.rate")}</Label>
+          <Label>{t("common.rate")} (₹)</Label>
           <Input 
             type="number" 
             required 
             min="0"
+            step="any"
             value={f.rate} 
             onChange={(e) => setF({...f, rate: e.target.value})} 
             onBlur={(e) => {
@@ -969,22 +1006,26 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
         </div>
       </div>
 
-      <div className="space-y-1.5">
-        <Label>{t("sales.paymentMode")}</Label>
-        <Select value={f.payment_mode} onValueChange={handlePaymentModeChange}>
-          <SelectTrigger className="h-11">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="cash">{t("sales.cash")}</SelectItem>
-            <SelectItem value="online">{t("sales.online")}</SelectItem>
-            <SelectItem value="paytm">{t("sales.paytm")}</SelectItem>
-            <SelectItem value="credit">{t("sales.credit")}</SelectItem>
-            <SelectItem value="split">Split Payment (Mix Cash/Online/Udhari)</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+      {/* 6. Commission Per Unit (hidden for CNC) */}
+      {!isCncProduct && (
+        <div className="space-y-1.5">
+          <Label>Commission Per Unit (₹)</Label>
+          <Input 
+            type="number" 
+            min="0"
+            step="any"
+            value={f.commission_rate} 
+            onChange={(e) => setF({...f, commission_rate: e.target.value})} 
+            onBlur={(e) => {
+              const val = Math.max(0, parseFloat(e.target.value) || 0);
+              setF({...f, commission_rate: String(val)});
+            }}
+            className="h-11" 
+          />
+        </div>
+      )}
 
+      {/* 7. Online Website Orders */}
       <div className="space-y-1.5">
         <Label>Online Website Orders (Qty Already Paid Online)</Label>
         <Input 
@@ -1004,6 +1045,25 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
         />
       </div>
 
+      {/* 8. Payment Mode */}
+      <div className="space-y-1.5">
+        <Label>{t("sales.paymentMode")}</Label>
+        <Select value={f.payment_mode} onValueChange={handlePaymentModeChange}>
+          <SelectTrigger className="h-11">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="cash">{t("sales.cash")}</SelectItem>
+            <SelectItem value="online">{t("sales.online")}</SelectItem>
+            <SelectItem value="paytm">{t("sales.paytm")}</SelectItem>
+            <SelectItem value="cheque">Cheque</SelectItem>
+            <SelectItem value="credit">{t("sales.credit")}</SelectItem>
+            <SelectItem value="split">Split Payment (Mix Cash/Online/Udhari)</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Split Payment Breakdown */}
       {isSplit && (
         <Card className="p-4 bg-muted/40 border border-slate-100 space-y-3 rounded-lg">
           <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Split Payment Breakdown</h4>
@@ -1011,78 +1071,54 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
           <div className="grid grid-cols-3 gap-2">
             <div className="space-y-1">
               <Label className="text-[10px] uppercase font-bold text-muted-foreground">Cash (₹)</Label>
-              <Input type="number" step="0.01" value={splitCash} onChange={(e) => setSplitCash(e.target.value)} className="h-10 text-xs font-bold" />
+              <Input type="number" step="any" min="0" value={splitCash} onChange={(e) => setSplitCash(e.target.value)} className="h-10 text-xs font-bold" />
             </div>
             
             <div className="space-y-1">
               <Label className="text-[10px] uppercase font-bold text-muted-foreground">Online (₹)</Label>
-              <Input type="number" step="0.01" value={splitOnline} onChange={(e) => setSplitOnline(e.target.value)} className="h-10 text-xs font-bold" />
+              <Input type="number" step="any" min="0" value={splitOnline} onChange={(e) => setSplitOnline(e.target.value)} className="h-10 text-xs font-bold" />
             </div>
 
             <div className="space-y-1">
               <Label className="text-[10px] uppercase font-bold text-muted-foreground">Udhari (₹)</Label>
-              <Input type="number" step="0.01" value={splitCredit} onChange={(e) => setSplitCredit(e.target.value)} className="h-10 text-xs font-bold" />
+              <Input type="number" step="any" min="0" value={splitCredit} onChange={(e) => setSplitCredit(e.target.value)} className="h-10 text-xs font-bold" />
             </div>
           </div>
 
           <div className="flex justify-between items-center text-[10px] font-bold mt-1">
-            <span className="text-muted-foreground">Sum: {fmtCurrency(splitSum)} / Target: {fmtCurrency(total)}</span>
+            <span className="text-muted-foreground">Sum: {fmtCurrency(splitSum)} / Target: {fmtCurrency(splitTarget)}</span>
             <span className={isSplitValid ? "text-success" : "text-destructive"}>
-              {isSplitValid ? "✓ Perfect match" : `✗ Discrepancy: ${fmtCurrency(Math.abs(total - splitSum))}`}
+              {isSplitValid ? "✓ Perfect match" : `✗ Discrepancy: ${fmtCurrency(Math.abs(splitTarget - splitSum))}`}
             </span>
           </div>
         </Card>
       )}
 
-      {/* CNC Auto logic: hide delivery boy and commission rate completely */}
-      {!isCncProduct && (
-        <>
-          <div className="space-y-1.5">
-            <Label>{t("sales.deliveryBoy")}</Label>
-            <Select value={f.delivery_boy_id} onValueChange={(v) => setF({...f, delivery_boy_id: v})}>
-              <SelectTrigger className="h-11">
-                <SelectValue placeholder="—" />
-              </SelectTrigger>
-              <SelectContent>
-                {boys.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>{t("sales.commissionRate")}</Label>
-            <Input type="number" value={f.commission_rate} onChange={(e) => setF({...f, commission_rate: e.target.value})} className="h-11" />
-          </div>
-        </>
-      )}
-
+      {/* Notes */}
       <div className="space-y-1.5">
         <Label>{t("common.notes")}</Label>
         <Textarea value={f.notes} onChange={(e) => setF({...f, notes: e.target.value})} placeholder="Optional transaction notes..." />
       </div>
 
-      {/* Summary card showing Total, Boy commission, and Total without commission */}
+      {/* Summary card — Show only Total (without commission) */}
       <Card className="bg-primary-soft p-4 space-y-2 border border-primary/20 rounded-lg">
-        <div className="flex justify-between items-center text-sm font-bold text-primary">
-          <span>Total Gross</span>
-          <span className="font-extrabold text-base">{fmtCurrency(total)}</span>
-        </div>
-        
-        {!isCncProduct && f.delivery_boy_id && (
+        {!isCncProduct && f.delivery_boy_id && commissionTotal > 0 && (
           <>
-            <div className="flex justify-between items-center text-xs font-semibold text-destructive-dark/95">
-              <span>delivery boy commission</span>
-              <span className="font-extrabold text-sm">-{fmtCurrency(Number(f.commission_rate || 0) * Number(f.quantity || 0))}</span>
+            <div className="flex justify-between items-center text-xs font-medium text-muted-foreground">
+              <span>Gross Amount ({billedQty} × {fmtCurrency(Number(f.rate || 0))})</span>
+              <span>{fmtCurrency(grossTotal)}</span>
             </div>
-            
-            <div className="border-t border-dashed border-primary/20 my-1.5" />
-            
-            <div className="flex justify-between items-center text-sm font-bold text-primary">
-              <span>total without commission</span>
-              <span className="font-black text-base">{fmtCurrency(total - (Number(f.commission_rate || 0) * Number(f.quantity || 0)))}</span>
+            <div className="flex justify-between items-center text-xs font-medium text-destructive-dark/80">
+              <span>Commission ({qty} × {fmtCurrency(commissionPerUnit)})</span>
+              <span>-{fmtCurrency(commissionTotal)}</span>
             </div>
+            <div className="border-t border-dashed border-primary/20 my-1" />
           </>
         )}
+        <div className="flex justify-between items-center text-sm font-bold text-primary">
+          <span>Total</span>
+          <span className="font-black text-base">{fmtCurrency(totalWithoutCommission)}</span>
+        </div>
       </Card>
 
       <Button type="submit" disabled={busy || (isSplit && !isSplitValid)} className="w-full h-12 font-semibold mt-4">
