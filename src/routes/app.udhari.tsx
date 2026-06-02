@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -12,7 +12,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Search, IndianRupee, Eye, PlusCircle, AlertCircle, Loader2, Calendar, TrendingDown } from "lucide-react";
+import { Search, IndianRupee, Eye, PlusCircle, AlertCircle, Loader2, Calendar, TrendingDown, FileText } from "lucide-react";
 import { fmtCurrency, fmtDate } from "@/lib/format";
 
 export const Route = createFileRoute("/app/udhari")({
@@ -64,6 +64,94 @@ function UdhariPage() {
   const [payMode, setPayMode] = useState<"cash" | "online" | "paytm" | "cheque">("cash");
   const [payRemarks, setPayRemarks] = useState("");
   const [busy, setBusy] = useState(false);
+
+  // Statement modal state
+  const [stmtTarget, setStmtTarget] = useState<UdhariCustomer | null>(null);
+  const [stmtItems, setStmtItems] = useState<any[]>([]);
+  const [stmtLoading, setStmtLoading] = useState(false);
+
+  const openStatement = async (c: UdhariCustomer) => {
+    setStmtTarget(c);
+    setStmtItems([]);
+    setStmtLoading(true);
+    try {
+      // 1. Fetch sales where payment_mode = 'credit' OR split with credit portion
+      const { data: salesData } = await (supabase.from("sales") as any)
+        .select("id, sale_date, quantity, gross_amount, commission_amount, payment_mode, notes, product:products(name)")
+        .eq("agency_id", agency?.id)
+        .eq("customer_id", c.id)
+        .eq("is_deleted", false)
+        .order("sale_date", { ascending: false });
+
+      // 2. Fetch payment collections for this customer
+      const { data: paymentsData } = await (supabase.from("payments") as any)
+        .select("id, payment_date, amount, mode, remarks")
+        .eq("agency_id", agency?.id)
+        .eq("customer_id", c.id)
+        .eq("is_deleted", false)
+        .order("payment_date", { ascending: false });
+
+      const items: any[] = [];
+
+      // Process sales — include udhari (credit) or split-udhari entries
+      for (const s of (salesData ?? [])) {
+        let creditAmt = 0;
+        let isSplit = false;
+        let cashAmt = 0;
+        let onlineAmt = 0;
+        if (s.notes) {
+          try {
+            const meta = JSON.parse(s.notes);
+            if (meta?.is_split) {
+              isSplit = true;
+              creditAmt = Number(meta.credit_amount || 0);
+              cashAmt = Number(meta.cash_amount || 0);
+              onlineAmt = Number(meta.online_amount || 0);
+            }
+          } catch (_) {}
+        }
+        if (s.payment_mode === "credit" && !isSplit) {
+          items.push({
+            id: s.id,
+            date: s.sale_date,
+            type: "debit",
+            label: `Sale — ${s.product?.name ?? "Cylinder"} (${s.quantity} units)`,
+            mode: "Udhari",
+            amount: Number(s.gross_amount),
+          });
+        } else if (isSplit && creditAmt > 0) {
+          items.push({
+            id: s.id + "-u",
+            date: s.sale_date,
+            type: "debit",
+            label: `Split Sale — ${s.product?.name ?? "Cylinder"} (${s.quantity} units) · Cash ₹${cashAmt}${onlineAmt > 0 ? ` + Online ₹${onlineAmt}` : ""} + Udhari`,
+            mode: "Split+Udhari",
+            amount: creditAmt,
+          });
+        }
+      }
+
+      // Process payment collections (credits / recoveries)
+      for (const p of (paymentsData ?? [])) {
+        items.push({
+          id: p.id,
+          date: p.payment_date,
+          type: "credit",
+          label: p.remarks?.replace(/^\[CHEQUE\]\s*/, "") || "Payment received",
+          mode: p.remarks?.startsWith("[CHEQUE]") ? "Cheque" : p.mode === "online" ? "UPI/Online" : p.mode === "paytm" ? "Paytm" : "Cash",
+          amount: Number(p.amount),
+        });
+      }
+
+      // Sort by date desc
+      items.sort((a, b) => b.date.localeCompare(a.date));
+      setStmtItems(items);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to load statement.");
+    } finally {
+      setStmtLoading(false);
+    }
+  };
 
   // Fetch outstanding customers + their full ledger to compute FIFO aging
   const { data: customers = [], isLoading } = useQuery<UdhariCustomer[]>({
@@ -383,11 +471,9 @@ function UdhariPage() {
                           <Button size="sm" variant="outline" onClick={() => setPayTarget(c)} className="h-9 hover:border-emerald-500 hover:text-emerald-600">
                             <PlusCircle className="h-4 w-4 mr-1.5" /> Receive Payment
                           </Button>
-                          <Button size="sm" variant="outline" asChild className="h-9">
-                            <Link to="/app/customers/$id" params={{ id: c.id }}>
+                          <Button size="sm" variant="outline" onClick={() => openStatement(c)} className="h-9">
                               <Eye className="h-4 w-4 mr-1.5" /> View Statement
-                            </Link>
-                          </Button>
+                            </Button>
                         </div>
                       </td>
                     </tr>
@@ -464,6 +550,85 @@ function UdhariPage() {
                 </Button>
               </DialogFooter>
             </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Statement Modal */}
+      <Dialog open={!!stmtTarget} onOpenChange={(open) => !open && setStmtTarget(null)}>
+        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col bg-white border border-slate-100 shadow-xl rounded-2xl p-0 overflow-hidden">
+          <DialogHeader className="px-6 pt-6 pb-4 border-b border-slate-100 shrink-0">
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <FileText className="h-5 w-5 text-primary" />
+              Udhari Statement — {stmtTarget?.name}
+            </DialogTitle>
+            <div className="flex items-center gap-3 mt-1">
+              <span className="text-xs text-muted-foreground">Outstanding:</span>
+              <span className="text-sm font-black text-destructive tabular-nums">{fmtCurrency(stmtTarget?.outstanding ?? 0)}</span>
+            </div>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-2">
+            {stmtLoading ? (
+              <div className="flex items-center justify-center py-16 gap-2 text-muted-foreground">
+                <Loader2 className="h-5 w-5 animate-spin text-primary" /> Loading transactions...
+              </div>
+            ) : stmtItems.length === 0 ? (
+              <div className="text-center py-16 text-muted-foreground text-sm">No udhari transactions found for this customer.</div>
+            ) : (
+              stmtItems.map((item) => (
+                <div
+                  key={item.id}
+                  className={`flex items-start justify-between gap-4 rounded-xl border px-4 py-3 transition-colors ${
+                    item.type === "debit"
+                      ? "bg-red-50/60 border-red-100 hover:bg-red-50"
+                      : "bg-emerald-50/60 border-emerald-100 hover:bg-emerald-50"
+                  }`}
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold text-sm text-slate-800 leading-snug">{item.label}</span>
+                      <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${
+                        item.mode === "Udhari" || item.mode === "Split+Udhari"
+                          ? "bg-amber-50 text-amber-700 border-amber-200"
+                          : "bg-slate-100 text-slate-600 border-slate-200"
+                      }`}>{item.mode}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-1 text-xs text-muted-foreground">
+                      <Calendar className="h-3 w-3" />
+                      {fmtDate(item.date)}
+                    </div>
+                  </div>
+                  <div className={`text-base font-black tabular-nums shrink-0 ${
+                    item.type === "debit" ? "text-red-600" : "text-emerald-600"
+                  }`}>
+                    {item.type === "debit" ? "+" : "−"}{fmtCurrency(item.amount)}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Statement footer totals */}
+          {!stmtLoading && stmtItems.length > 0 && (
+            <div className="shrink-0 border-t border-slate-100 bg-slate-50 px-6 py-4 grid grid-cols-3 gap-3 text-center">
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Total Udhari</div>
+                <div className="text-lg font-black text-red-600 tabular-nums mt-0.5">
+                  {fmtCurrency(stmtItems.filter(i => i.type === "debit").reduce((s, i) => s + i.amount, 0))}
+                </div>
+              </div>
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Total Paid</div>
+                <div className="text-lg font-black text-emerald-600 tabular-nums mt-0.5">
+                  {fmtCurrency(stmtItems.filter(i => i.type === "credit").reduce((s, i) => s + i.amount, 0))}
+                </div>
+              </div>
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Balance Due</div>
+                <div className="text-lg font-black text-destructive tabular-nums mt-0.5">{fmtCurrency(stmtTarget?.outstanding ?? 0)}</div>
+              </div>
+            </div>
           )}
         </DialogContent>
       </Dialog>

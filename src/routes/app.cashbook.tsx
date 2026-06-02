@@ -752,10 +752,20 @@ function Page() {
             )}
           </div>
 
-          {/* Right Footer: Calculated Cash Balance */}
-          <div className="bg-slate-50 border-t border-border/80 px-5 py-4 flex justify-between items-center mt-auto font-black text-sm text-slate-800 shadow-sm select-none">
-            <span>Calculated Cash Balance</span>
-            <span className="tabular-nums font-black text-base text-primary">{fmtCurrency(aggregates.cashBalance)}</span>
+          {/* Right Footer: Total Outflow (blue) + Cash Balance / Difference (green) */}
+          <div className="mt-auto border-t border-border/80 select-none">
+            {/* Total Paid Outflow row - blue */}
+            <div className="bg-blue-50 border-b border-blue-100 px-5 py-3 flex justify-between items-center">
+              <span className="text-xs font-extrabold uppercase tracking-wider text-blue-700">Total Paid Outflow</span>
+              <span className="tabular-nums font-black text-sm text-blue-700">
+                {fmtCurrency(aggregates.expensesTotal + aggregates.paytmOutflow + aggregates.onlineOutflow + aggregates.chequeOutflow + aggregates.udhariOutflow + aggregates.commissionsTotal)}
+              </span>
+            </div>
+            {/* Calculated Cash Balance row - green */}
+            <div className="bg-emerald-50 px-5 py-4 flex justify-between items-center shadow-sm">
+              <span className="text-xs font-extrabold uppercase tracking-wider text-emerald-700">Calculated Cash Balance</span>
+              <span className="tabular-nums font-black text-base text-emerald-600">{fmtCurrency(aggregates.cashBalance)}</span>
+            </div>
           </div>
         </div>
 
@@ -780,9 +790,9 @@ function Page() {
             </div>
           </div>
 
-          <div className="space-y-1 bg-primary-soft p-4 rounded-xl border border-primary/20">
-            <span className="text-xs font-bold text-primary uppercase tracking-wider">Closing Cash Balance (Difference)</span>
-            <div className="text-2xl font-black text-primary tabular-nums mt-0.5">{fmtCurrency(aggregates.cashBalance)}</div>
+          <div className="space-y-1 bg-emerald-50 p-4 rounded-xl border border-emerald-200">
+            <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider">Closing Cash Balance (Difference)</span>
+            <div className="text-2xl font-black text-emerald-600 tabular-nums mt-0.5">{fmtCurrency(aggregates.cashBalance)}</div>
           </div>
 
           <div className="flex md:justify-end mt-4 md:mt-0 md:col-span-3 border-t pt-4">
