@@ -14,10 +14,11 @@ import { useTranslation } from "react-i18next";
 import { fmtCurrency, fmtDate, todayISO } from "@/lib/format";
 import {
   ArrowUpRight, ArrowDownRight, Printer, Download, FileText,
-  Sparkles, Plus, Loader2, Calendar, StickyNote, AlertCircle,
+  Sparkles, Plus, Loader2, Calendar, StickyNote,
 } from "lucide-react";
-import { exportToPDF } from "@/lib/exports";
-import * as XLSX from "xlsx";
+import * as XLSXStyle from "xlsx-js-style";
+import { jsPDF } from "jspdf";
+import "jspdf-autotable";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 
@@ -398,49 +399,132 @@ function Page() {
     setBusy(false);
   };
 
-  /* ─── Professional Excel Export (side-by-side) ─── */
+  /* ─── Professional Excel Export (colorful, side-by-side, equal rows, bordered) ─── */
   const doExcelExport = () => {
-    const wb = XLSX.utils.book_new();
-    const ws: XLSX.WorkSheet = {};
+    const wb = XLSXStyle.utils.book_new();
+    const ws: any = {};
 
-    const R = (row: number, col: number, v: any, bold = false, right = false, numFmt?: string) => {
-      const addr = XLSX.utils.encode_cell({ r: row, c: col });
-      ws[addr] = { v, t: typeof v === "number" ? "n" : "s", s: { font: { bold }, alignment: { horizontal: right ? "right" : "left" }, numFmt: numFmt ?? (typeof v === "number" ? "#,##0.00" : "@") } };
+    // ── Color palette ──
+    const C = {
+      titleBg:   "1A3C5E",   // dark navy
+      titleFg:   "FFFFFF",
+      hdrBg:     "2E75B6",   // blue
+      hdrFg:     "FFFFFF",
+      totRecBg:  "1F7A4D",   // dark green
+      totRecFg:  "FFFFFF",
+      totPaidBg: "1F7A4D",
+      totPaidFg: "FFFFFF",
+      sumHdrBg:  "1A3C5E",
+      sumHdrFg:  "FFFFFF",
+      sumBalBg:  "C6EFCE",   // light green
+      sumBalFg:  "375623",
+      sumDiffBg: "FFC7CE",   // light red
+      sumDiffFg: "9C0006",
+      altRowBg:  "EBF3FB",   // very light blue
+      subRowBg:  "F5F5F5",
+      borderCol: "BFBFBF",
+    };
+
+    const border = {
+      top:    { style: "thin", color: { rgb: C.borderCol } },
+      bottom: { style: "thin", color: { rgb: C.borderCol } },
+      left:   { style: "thin", color: { rgb: C.borderCol } },
+      right:  { style: "thin", color: { rgb: C.borderCol } },
+    };
+
+    const thickBorder = {
+      top:    { style: "medium", color: { rgb: "1A3C5E" } },
+      bottom: { style: "medium", color: { rgb: "1A3C5E" } },
+      left:   { style: "medium", color: { rgb: "1A3C5E" } },
+      right:  { style: "medium", color: { rgb: "1A3C5E" } },
+    };
+
+    // Helper: write a styled cell
+    const W = (
+      row: number, col: number, v: any,
+      opts: {
+        bold?: boolean; italic?: boolean; sz?: number;
+        fg?: string; bg?: string; align?: string;
+        border?: any; numFmt?: string; color?: string;
+      } = {}
+    ) => {
+      const addr = XLSXStyle.utils.encode_cell({ r: row, c: col });
+      const isNum = typeof v === "number";
+      ws[addr] = {
+        v,
+        t: isNum ? "n" : "s",
+        s: {
+          font: {
+            bold: opts.bold ?? false,
+            italic: opts.italic ?? false,
+            sz: opts.sz ?? 10,
+            color: { rgb: opts.fg ?? opts.color ?? "000000" },
+            name: "Calibri",
+          },
+          fill: opts.bg ? { fgColor: { rgb: opts.bg }, patternType: "solid" } : undefined,
+          alignment: {
+            horizontal: opts.align ?? (isNum ? "right" : "left"),
+            vertical: "center",
+            wrapText: false,
+          },
+          border: opts.border ?? border,
+          numFmt: opts.numFmt ?? (isNum ? "#,##0.00" : "@"),
+        },
+      };
+    };
+
+    // Helper: blank bordered cell
+    const BLANK = (row: number, col: number, bg?: string) => {
+      const addr = XLSXStyle.utils.encode_cell({ r: row, c: col });
+      ws[addr] = {
+        v: "", t: "s",
+        s: {
+          fill: bg ? { fgColor: { rgb: bg }, patternType: "solid" } : undefined,
+          border,
+        },
+      };
     };
 
     let row = 0;
 
-    // Title row
-    R(row, 0, `Daily Cash Book — ${fmtDate(date)}`, true);
-    R(row, 4, `Agency Report`, true);
-    row += 2;
-
-    // Column headers
-    R(row, 0, "PAYMENT RECEIVED (Paisa Aaya)", true);
-    R(row, 1, "Qty", true, true);
-    R(row, 2, "Amount (₹)", true, true);
-    R(row, 4, "MONEY PAID (Paisa Gaya)", true);
-    R(row, 5, "Qty", true, true);
-    R(row, 6, "Amount (₹)", true, true);
+    // ── ROW 0: Title ──
+    W(row, 0, `Daily Cash Book — ${fmtDate(date)}`, { bold: true, sz: 13, fg: C.titleFg, bg: C.titleBg, align: "left", border: thickBorder });
+    BLANK(row, 1, C.titleBg); BLANK(row, 2, C.titleBg); BLANK(row, 3, C.titleBg);
+    W(row, 4, `Agency Cash Report — ${fmtDate(date)}`, { bold: true, sz: 13, fg: C.titleFg, bg: C.titleBg, align: "left", border: thickBorder });
+    BLANK(row, 5, C.titleBg); BLANK(row, 6, C.titleBg);
     row++;
 
-    // Build left & right data arrays
-    type LRow = { label: string; qty: number | string; amt: number };
-    const left: LRow[] = [];
-    const right: LRow[] = [];
+    // ── ROW 1: blank separator ──
+    for (let c = 0; c < 7; c++) BLANK(row, c);
+    row++;
 
-    // LEFT
+    // ── ROW 2: Column headers ──
+    W(row, 0, "PAYMENT RECEIVED (Paisa Aaya)", { bold: true, sz: 11, fg: C.hdrFg, bg: C.hdrBg, align: "left", border: thickBorder });
+    W(row, 1, "Qty",        { bold: true, sz: 10, fg: C.hdrFg, bg: C.hdrBg, align: "center", border: thickBorder });
+    W(row, 2, "Amount (₹)",{ bold: true, sz: 10, fg: C.hdrFg, bg: C.hdrBg, align: "right",  border: thickBorder });
+    BLANK(row, 3);
+    W(row, 4, "MONEY PAID (Paisa Gaya)",       { bold: true, sz: 11, fg: C.hdrFg, bg: C.hdrBg, align: "left", border: thickBorder });
+    W(row, 5, "Qty",        { bold: true, sz: 10, fg: C.hdrFg, bg: C.hdrBg, align: "center", border: thickBorder });
+    W(row, 6, "Amount (₹)",{ bold: true, sz: 10, fg: C.hdrFg, bg: C.hdrBg, align: "right",  border: thickBorder });
+    const dataStartRow = row + 1;
+    row++;
+
+    // ── Build left & right data arrays ──
+    type XRow = { label: string; qty: number | ""; amt: number; sub?: boolean };
+    const left: XRow[] = [];
+    const right: XRow[] = [];
+
+    // LEFT side
     left.push({ label: "Opening Cash Balance", qty: "", amt: agg.openingCash });
     if (agg.homeTotal > 0) left.push({ label: "14 KG Home Delivery Sales", qty: agg.homeQty, amt: agg.homeTotal });
-    if (agg.cncTotal > 0) left.push({ label: "14 KG CNC Counter Sales", qty: agg.cncQty, amt: agg.cncTotal });
+    if (agg.cncTotal > 0)  left.push({ label: "14 KG CNC Counter Sales",   qty: agg.cncQty,  amt: agg.cncTotal });
     Object.entries(agg.productSalesTotals).forEach(([n, s]) => left.push({ label: `${n} Sales`, qty: s.quantity, amt: s.total }));
     if (agg.collectionsTotal > 0) left.push({ label: "Outstanding Customer Collections", qty: "", amt: agg.collectionsTotal });
     otherReceiptsList.forEach(r => left.push({ label: r.particular, qty: "", amt: r.amount }));
-    pendingBills.forEach(b => left.push({ label: `Pending — ${b.label} (${b.qty} × ₹${b.rate})`, qty: b.qty, amt: b.amount }));
+    pendingBills.forEach(b => left.push({ label: `Pending — ${b.label} (${b.qty}×₹${b.rate})`, qty: b.qty, amt: b.amount }));
     paymentInflows.forEach(p => left.push({ label: p.particular, qty: "", amt: p.amount }));
-    left.push({ label: "TOTAL RECEIVED", qty: "", amt: agg.leftGrandTotal });
 
-    // RIGHT
+    // RIGHT side (NO Calculated Cash Balance)
     dailyExpenses.forEach(e => {
       let cat = e.category, note = e.notes ?? "";
       if (note.startsWith("[OTHER_CAT:")) { const m = note.match(/^\[OTHER_CAT:([^\]]+)\]/); if (m) { cat = m[1]; note = note.replace(/^\[OTHER_CAT:[^\]]+\]\s*/, ""); } }
@@ -449,90 +533,298 @@ function Page() {
     if (agg.paytmOutflow > 0) right.push({ label: "Paytm Digital Account (Sales + Recovery)", qty: "", amt: agg.paytmOutflow });
     if (agg.onlineOutflow > 0) {
       right.push({ label: "Website Prepaid", qty: agg.onlineQtyTotal, amt: agg.onlineOutflow });
-      Object.values(agg.onlineByDriver).forEach(d => right.push({ label: `  └ ${d.name}`, qty: d.qty, amt: d.amount }));
+      Object.values(agg.onlineByDriver).forEach(d => right.push({ label: `  └ ${d.name}`, qty: d.qty, amt: d.amount, sub: true }));
     }
     if (agg.chequeOutflow > 0) right.push({ label: "Bank Cheque Collections", qty: "", amt: agg.chequeOutflow });
     if (agg.udhariOutflow > 0) {
       right.push({ label: "Today's Credit Sales (Udhari)", qty: "", amt: agg.udhariOutflow });
-      Object.values(agg.udhariByCustomer).forEach(c => right.push({ label: `  └ ${c.name}`, qty: "", amt: c.amount }));
+      Object.values(agg.udhariByCustomer).forEach(c => right.push({ label: `  └ ${c.name}`, qty: "", amt: c.amount, sub: true }));
     }
     if (agg.commissionsTotal > 0) {
       right.push({ label: "Route Commission Paid", qty: "", amt: agg.commissionsTotal });
-      Object.values(agg.commissionByDriver).forEach(d => right.push({ label: `  └ ${d.name}`, qty: d.qty, amt: d.amount }));
+      Object.values(agg.commissionByDriver).forEach(d => right.push({ label: `  └ ${d.name}`, qty: d.qty, amt: d.amount, sub: true }));
     }
-    magilBills.forEach(b => right.push({ label: `Magil — ${b.label} (${b.qty} × ₹${b.rate})`, qty: b.qty, amt: b.amount }));
+    magilBills.forEach(b => right.push({ label: `Magil — ${b.label} (${b.qty}×₹${b.rate})`, qty: b.qty, amt: b.amount }));
     paymentOutflows.forEach(p => right.push({ label: p.particular, qty: "", amt: p.amount }));
-    right.push({ label: "TOTAL PAID OUTFLOW", qty: "", amt: agg.totalOutflows });
-    right.push({ label: "CALCULATED CASH BALANCE", qty: "", amt: agg.cashBalance });
 
-    // Write rows
-    const maxRows = Math.max(left.length, right.length);
-    for (let i = 0; i < maxRows; i++) {
+    // Pad both sides to equal length (leaving space for the TOTAL row)
+    const maxData = Math.max(left.length, right.length);
+    while (left.length  < maxData) left.push({ label: "", qty: "", amt: 0 });
+    while (right.length < maxData) right.push({ label: "", qty: "", amt: 0 });
+
+    // Write data rows (alternating row colors)
+    for (let i = 0; i < maxData; i++) {
       const l = left[i];
       const r2 = right[i];
-      if (l) {
-        const isTot = l.label.startsWith("TOTAL");
-        R(row, 0, l.label, isTot);
-        if (l.qty !== "") R(row, 1, l.qty, isTot, true);
-        R(row, 2, l.amt, isTot, true);
+      const isAlt = i % 2 === 1;
+      const rowBg = isAlt ? C.altRowBg : undefined;
+
+      // LEFT
+      if (l.label) {
+        const subBg = l.sub ? C.subRowBg : rowBg;
+        W(row, 0, l.label, { italic: l.sub, bg: subBg });
+        if (l.qty !== "") W(row, 1, l.qty, { align: "center", bg: subBg });
+        else BLANK(row, 1, subBg);
+        W(row, 2, l.amt || 0, { bg: subBg });
+      } else {
+        BLANK(row, 0, rowBg); BLANK(row, 1, rowBg); BLANK(row, 2, rowBg);
       }
-      if (r2) {
-        const isTot = r2.label.startsWith("TOTAL") || r2.label.startsWith("CALCULATED");
-        R(row, 4, r2.label, isTot);
-        if (r2.qty !== "") R(row, 5, r2.qty, isTot, true);
-        R(row, 6, r2.amt, isTot, true);
+
+      BLANK(row, 3); // spacer
+
+      // RIGHT
+      if (r2.label) {
+        const subBg = r2.sub ? C.subRowBg : rowBg;
+        W(row, 4, r2.label, { italic: r2.sub, bg: subBg });
+        if (r2.qty !== "") W(row, 5, r2.qty, { align: "center", bg: subBg });
+        else BLANK(row, 5, subBg);
+        W(row, 6, r2.amt || 0, { bg: subBg });
+      } else {
+        BLANK(row, 4, rowBg); BLANK(row, 5, rowBg); BLANK(row, 6, rowBg);
       }
+
       row++;
     }
 
-    row += 2;
-    R(row, 0, "SUMMARY", true); row++;
-    R(row, 0, "Total Received (Inflows)"); R(row, 2, agg.leftGrandTotal, false, true); row++;
-    R(row, 0, "Total Paid (Outflows)"); R(row, 2, agg.totalOutflows, false, true); row++;
-    R(row, 0, "Calculated Cash Balance", true); R(row, 2, agg.cashBalance, true, true); row++;
+    // ── TOTAL ROW ──
+    W(row, 0, "TOTAL RECEIVED", { bold: true, sz: 11, fg: C.totRecFg, bg: C.totRecBg, border: thickBorder });
+    BLANK(row, 1, C.totRecBg);
+    W(row, 2, agg.leftGrandTotal, { bold: true, sz: 11, fg: C.totRecFg, bg: C.totRecBg, border: thickBorder });
+    BLANK(row, 3);
+    W(row, 4, "TOTAL PAID OUTFLOW", { bold: true, sz: 11, fg: C.totPaidFg, bg: C.totPaidBg, border: thickBorder });
+    BLANK(row, 5, C.totPaidBg);
+    W(row, 6, agg.totalOutflows, { bold: true, sz: 11, fg: C.totPaidFg, bg: C.totPaidBg, border: thickBorder });
+    row++;
+
+    // blank spacer
+    for (let c = 0; c < 7; c++) BLANK(row, c);
+    row++;
+
+    // ── SUMMARY SECTION ──
+    W(row, 0, "SUMMARY", { bold: true, sz: 11, fg: C.sumHdrFg, bg: C.sumHdrBg, border: thickBorder });
+    for (let c = 1; c < 7; c++) BLANK(row, c, C.sumHdrBg);
+    row++;
+
+    // Summary rows
+    W(row, 0, "Total Received (Inflows)", { bold: false });
+    BLANK(row, 1); W(row, 2, agg.leftGrandTotal, { bold: true }); row++;
+
+    W(row, 0, "Total Paid (Outflows)", { bold: false });
+    BLANK(row, 1); W(row, 2, agg.totalOutflows, { bold: true }); row++;
+
+    W(row, 0, "Calculated Cash Balance",  { bold: true, fg: C.sumBalFg, bg: C.sumBalBg, border: thickBorder });
+    BLANK(row, 1, C.sumBalBg);
+    W(row, 2, agg.cashBalance, { bold: true, fg: C.sumBalFg, bg: C.sumBalBg, border: thickBorder });
+    row++;
+
     if (agg.cashDifference !== null) {
-      R(row, 0, "Manual Cash Entry"); R(row, 2, Number(manualCashEntry), false, true); row++;
-      R(row, 0, "Difference (Calc − Manual)", true); R(row, 2, agg.cashDifference, true, true); row++;
+      W(row, 0, "Manual Cash Entry (Physical Count)"); BLANK(row, 1); W(row, 2, Number(manualCashEntry)); row++;
+      const diffBg = Math.abs(agg.cashDifference) < 0.01 ? C.sumBalBg : C.sumDiffBg;
+      const diffFg = Math.abs(agg.cashDifference) < 0.01 ? C.sumBalFg : C.sumDiffFg;
+      W(row, 0, "Cash Difference (Calculated − Manual)", { bold: true, fg: diffFg, bg: diffBg, border: thickBorder });
+      BLANK(row, 1, diffBg);
+      W(row, 2, agg.cashDifference, { bold: true, fg: diffFg, bg: diffBg, border: thickBorder });
+      row++;
     }
-    if (dailyNote) { row++; R(row, 0, `Daily Note: ${dailyNote}`); }
+
+    if (dailyNote.trim()) {
+      row++;
+      W(row, 0, `Note: ${dailyNote}`, { italic: true, fg: "555555" }); row++;
+    }
 
     // Col widths
     ws["!cols"] = [
-      { wch: 42 }, { wch: 7 }, { wch: 14 }, { wch: 2 },
-      { wch: 42 }, { wch: 7 }, { wch: 14 },
+      { wch: 40 }, { wch: 7 }, { wch: 15 }, { wch: 2 },
+      { wch: 40 }, { wch: 7 }, { wch: 15 },
     ];
-    ws["!ref"] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: row + 2, c: 6 } });
 
-    XLSX.utils.book_append_sheet(wb, ws, "Cash Book");
-    XLSX.writeFile(wb, `cashbook_${date}.xlsx`);
+    // Row heights (header rows taller)
+    ws["!rows"] = Array.from({ length: row + 2 }, (_, i) => ({
+      hpt: i === 0 ? 22 : i === 2 ? 18 : 16,
+    }));
+
+    ws["!ref"] = XLSXStyle.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: row + 1, c: 6 } });
+
+    XLSXStyle.utils.book_append_sheet(wb, ws, "Cash Book");
+    XLSXStyle.writeFile(wb, `cashbook_${date}.xlsx`);
   };
 
-  const doExport = (kind: "pdf" | "xlsx") => {
-    if (kind === "xlsx") { doExcelExport(); return; }
-    const cols = ["Section", "Particulars", "Qty", "Amount (INR)"];
-    const rows: any[][] = [
-      ["Received", "Opening Cash", "", fmtCurrency(agg.openingCash)],
-      ...(agg.homeTotal > 0 ? [["Received", "14KG Home Delivery", agg.homeQty, fmtCurrency(agg.homeTotal)]] : []),
-      ...(agg.cncTotal > 0 ? [["Received", "14KG CNC Counter", agg.cncQty, fmtCurrency(agg.cncTotal)]] : []),
-      ...Object.entries(agg.productSalesTotals).map(([n, s]) => ["Received", `${n} Sales`, s.quantity, fmtCurrency(s.total)]),
-      ...(agg.collectionsTotal > 0 ? [["Received", "Customer Collections", "", fmtCurrency(agg.collectionsTotal)]] : []),
-      ...otherReceiptsList.map(r => ["Received", r.particular, "", fmtCurrency(r.amount)]),
-      ...pendingBills.map(b => ["Received", `Pending — ${b.label}`, b.qty, fmtCurrency(b.amount)]),
-      ...paymentInflows.map(p => ["Received", p.particular, "", fmtCurrency(p.amount)]),
-      ...dailyExpenses.map(e => {
-        let cat = e.category; if (e.notes?.startsWith("[OTHER_CAT:")) { const m = e.notes.match(/^\[OTHER_CAT:([^\]]+)\]/); if (m) cat = m[1]; }
-        return ["Paid", cat, "", fmtCurrency(Number(e.amount))];
-      }),
-      ...(agg.paytmOutflow > 0 ? [["Paid", "Paytm Digital", "", fmtCurrency(agg.paytmOutflow)]] : []),
-      ...(agg.onlineOutflow > 0 ? [["Paid", "Website Prepaid", agg.onlineQtyTotal, fmtCurrency(agg.onlineOutflow)]] : []),
-      ...(agg.chequeOutflow > 0 ? [["Paid", "Bank Cheque", "", fmtCurrency(agg.chequeOutflow)]] : []),
-      ...(agg.udhariOutflow > 0 ? [["Paid", "Udhari Credit Sales", "", fmtCurrency(agg.udhariOutflow)]] : []),
-      ...(agg.commissionsTotal > 0 ? [["Paid", "Route Commission", "", fmtCurrency(agg.commissionsTotal)]] : []),
-      ...magilBills.map(b => ["Paid", `Magil — ${b.label}`, b.qty, fmtCurrency(b.amount)]),
-      ...paymentOutflows.map(p => ["Paid", p.particular, "", fmtCurrency(p.amount)]),
-      ["Balance", "Calculated Cash Balance", "", fmtCurrency(agg.cashBalance)],
-    ];
-    exportToPDF(`Daily Double-Entry Ledger — ${fmtDate(date)}`, cols, rows, `double_ledger_${date}`);
+  /* ─── Professional PDF Export (two-column, printout quality) ─── */
+  const doPdfExport = () => {
+    const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" }) as any;
+    const PW = 297, PH = 210;
+    const ML = 10, MR = 10, MT = 12;
+    const colW = (PW - ML - MR - 8) / 2; // width of each column block
+    const col2X = ML + colW + 8;           // X start of right column
+    const labelW = colW - 22 - 18;        // label portion
+    const qtyW = 18, amtW = 22;
+
+    // ── Colors ──
+    const NAVY  = [26, 60, 94]  as [number,number,number];
+    const BLUE  = [46,117,182]  as [number,number,number];
+    const GREEN = [31,122,77]   as [number,number,number];
+    const WHITE = [255,255,255] as [number,number,number];
+    const LGRAY = [245,245,245] as [number,number,number];
+    const LBLU  = [235,243,251] as [number,number,number];
+    const LGRN  = [198,239,206] as [number,number,number];
+    const LRED  = [255,199,206] as [number,number,number];
+
+    const fillRect = (x: number, y: number, w: number, h: number, rgb: [number,number,number]) => {
+      doc.setFillColor(...rgb); doc.rect(x, y, w, h, "F");
+    };
+    const drawRect = (x: number, y: number, w: number, h: number, rgb: [number,number,number]) => {
+      doc.setDrawColor(...rgb); doc.rect(x, y, w, h, "S");
+    };
+    const text = (s: string, x: number, y: number, opts?: any) => doc.text(s, x, y, opts);
+
+    // ── Page Title ──
+    fillRect(ML, MT, PW - ML - MR, 9, NAVY);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(12); doc.setTextColor(...WHITE);
+    text(`Daily Cash Book — ${fmtDate(date)}`, ML + 3, MT + 6);
+    doc.setFontSize(10);
+    text(`Agency Cash Report`, PW - MR - 50, MT + 6);
+
+    let y = MT + 13;
+
+    // ── Column Header Row ──
+    const hdrH = 7;
+    fillRect(ML, y, colW, hdrH, BLUE);
+    fillRect(col2X, y, colW, hdrH, BLUE);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(...WHITE);
+    text("PAYMENT RECEIVED (Paisa Aaya)", ML + 2, y + 5);
+    text("Qty",       ML + labelW + 4,       y + 5, { align: "right" });
+    text("Amount (₹)",ML + labelW + qtyW + amtW - 1, y + 5, { align: "right" });
+    text("MONEY PAID (Paisa Gaya)", col2X + 2, y + 5);
+    text("Qty",       col2X + labelW + 4,       y + 5, { align: "right" });
+    text("Amount (₹)",col2X + labelW + qtyW + amtW - 1, y + 5, { align: "right" });
+    y += hdrH;
+
+    // ── Build data rows ──
+    type PRow = { label: string; qty: string; amt: string; sub?: boolean; isTot?: boolean };
+    const lRows: PRow[] = [];
+    const rRows: PRow[] = [];
+    const fmt = (n: number) => n === 0 && !n ? "" : n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    lRows.push({ label: "Opening Cash Balance", qty: "", amt: fmt(agg.openingCash) });
+    if (agg.homeTotal > 0) lRows.push({ label: "14 KG Home Delivery Sales", qty: String(agg.homeQty), amt: fmt(agg.homeTotal) });
+    if (agg.cncTotal > 0)  lRows.push({ label: "14 KG CNC Counter Sales",   qty: String(agg.cncQty),  amt: fmt(agg.cncTotal) });
+    Object.entries(agg.productSalesTotals).forEach(([n, s]) => lRows.push({ label: `${n} Sales`, qty: String(s.quantity), amt: fmt(s.total) }));
+    if (agg.collectionsTotal > 0) lRows.push({ label: "Outstanding Customer Collections", qty: "", amt: fmt(agg.collectionsTotal) });
+    otherReceiptsList.forEach(r => lRows.push({ label: r.particular, qty: "", amt: fmt(r.amount) }));
+    pendingBills.forEach(b => lRows.push({ label: `Pending — ${b.label} (${b.qty}×₹${b.rate})`, qty: String(b.qty), amt: fmt(b.amount) }));
+    paymentInflows.forEach(p => lRows.push({ label: p.particular, qty: "", amt: fmt(p.amount) }));
+
+    dailyExpenses.forEach(e => {
+      let cat = e.category, note = e.notes ?? "";
+      if (note.startsWith("[OTHER_CAT:")) { const m = note.match(/^\[OTHER_CAT:([^\]]+)\]/); if (m) { cat = m[1]; note = note.replace(/^\[OTHER_CAT:[^\]]+\]\s*/, ""); } }
+      rRows.push({ label: `${cat.replace("_", " ")}${note ? ` (${note})` : ""}`, qty: "", amt: fmt(Number(e.amount)) });
+    });
+    if (agg.paytmOutflow > 0) rRows.push({ label: "Paytm Digital Account (Sales + Recovery)", qty: "", amt: fmt(agg.paytmOutflow) });
+    if (agg.onlineOutflow > 0) {
+      rRows.push({ label: "Website Prepaid", qty: String(agg.onlineQtyTotal), amt: fmt(agg.onlineOutflow) });
+      Object.values(agg.onlineByDriver).forEach(d => rRows.push({ label: `  └ ${d.name}`, qty: String(d.qty), amt: fmt(d.amount), sub: true }));
+    }
+    if (agg.chequeOutflow > 0) rRows.push({ label: "Bank Cheque Collections", qty: "", amt: fmt(agg.chequeOutflow) });
+    if (agg.udhariOutflow > 0) {
+      rRows.push({ label: "Today's Credit Sales (Udhari)", qty: "", amt: fmt(agg.udhariOutflow) });
+      Object.values(agg.udhariByCustomer).forEach(c => rRows.push({ label: `  └ ${c.name}`, qty: "", amt: fmt(c.amount), sub: true }));
+    }
+    if (agg.commissionsTotal > 0) {
+      rRows.push({ label: "Route Commission Paid", qty: "", amt: fmt(agg.commissionsTotal) });
+      Object.values(agg.commissionByDriver).forEach(d => rRows.push({ label: `  └ ${d.name}`, qty: String(d.qty), amt: fmt(d.amount), sub: true }));
+    }
+    magilBills.forEach(b => rRows.push({ label: `Magil — ${b.label} (${b.qty}×₹${b.rate})`, qty: String(b.qty), amt: fmt(b.amount) }));
+    paymentOutflows.forEach(p => rRows.push({ label: p.particular, qty: "", amt: fmt(p.amount) }));
+
+    const maxData = Math.max(lRows.length, rRows.length);
+    while (lRows.length < maxData) lRows.push({ label: "", qty: "", amt: "" });
+    while (rRows.length < maxData) rRows.push({ label: "", qty: "", amt: "" });
+
+    const rowH = 6.2;
+    const drawRow = (
+      row: PRow, xBase: number, yy: number, alt: boolean
+    ) => {
+      const bg = row.label === "" ? WHITE : row.sub ? LGRAY : alt ? LBLU : WHITE;
+      fillRect(xBase, yy, colW, rowH, bg);
+      drawRect( xBase, yy, colW, rowH, [200,200,200]);
+
+      if (!row.label) return;
+      doc.setFont("helvetica", row.sub ? "italic" : "normal");
+      doc.setFontSize(8); doc.setTextColor(30, 30, 30);
+      const lbl = doc.splitTextToSize(row.label, labelW - 2);
+      text(lbl[0], xBase + 2, yy + 4);
+      if (row.qty) { doc.setFont("helvetica", "normal"); text(row.qty, xBase + labelW + 4, yy + 4, { align: "right" }); }
+      if (row.amt) { doc.setFont("helvetica", row.sub ? "italic" : "normal"); text(row.amt, xBase + labelW + qtyW + amtW - 1, yy + 4, { align: "right" }); }
+    };
+
+    for (let i = 0; i < maxData; i++) {
+      // New page check
+      if (y + rowH > PH - 20) {
+        doc.addPage();
+        y = MT;
+        // re-draw mini headers
+        fillRect(ML, y, colW, hdrH, BLUE); fillRect(col2X, y, colW, hdrH, BLUE);
+        doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(...WHITE);
+        text("PAYMENT RECEIVED (Paisa Aaya)", ML + 2, y + 5);
+        text("MONEY PAID (Paisa Gaya)", col2X + 2, y + 5);
+        y += hdrH;
+      }
+      drawRow(lRows[i], ML,    y, i % 2 === 1);
+      drawRow(rRows[i], col2X, y, i % 2 === 1);
+      y += rowH;
+    }
+
+    // ── Total Row ──
+    const totH = 7;
+    fillRect(ML,    y, colW, totH, GREEN); drawRect(ML,    y, colW, totH, GREEN);
+    fillRect(col2X, y, colW, totH, GREEN); drawRect(col2X, y, colW, totH, GREEN);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(...WHITE);
+    text("TOTAL RECEIVED",  ML + 2,    y + 5);
+    text(fmt(agg.leftGrandTotal), ML + labelW + qtyW + amtW - 1, y + 5, { align: "right" });
+    text("TOTAL PAID OUTFLOW", col2X + 2, y + 5);
+    text(fmt(agg.totalOutflows), col2X + labelW + qtyW + amtW - 1, y + 5, { align: "right" });
+    y += totH + 4;
+
+    // ── Summary Section ──
+    if (y + 30 > PH - 10) { doc.addPage(); y = MT; }
+    const sw = (PW - ML - MR) / 2; // summary table width
+    fillRect(ML, y, sw, 7, NAVY); doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(...WHITE);
+    text("DAILY SUMMARY", ML + 3, y + 5); y += 7;
+
+    const sumRow = (label: string, val: string, bg: [number,number,number], bold = false, textColor: [number,number,number] = [30,30,30]) => {
+      fillRect(ML, y, sw, 6.5, bg); drawRect(ML, y, sw, 6.5, [180,180,180]);
+      doc.setFont("helvetica", bold ? "bold" : "normal"); doc.setFontSize(8.5); doc.setTextColor(...textColor);
+      text(label, ML + 3, y + 4.5);
+      text(val, ML + sw - 3, y + 4.5, { align: "right" });
+      y += 6.5;
+    };
+
+    sumRow("Total Received (Inflows)",  fmt(agg.leftGrandTotal), WHITE);
+    sumRow("Total Paid (Outflows)",     fmt(agg.totalOutflows),  LGRAY);
+    sumRow("Calculated Cash Balance",   fmt(agg.cashBalance),    LGRN, true, [31,122,77]);
+    if (agg.cashDifference !== null) {
+      sumRow("Manual Cash Count",       fmt(Number(manualCashEntry)), WHITE);
+      const diffBg = Math.abs(agg.cashDifference) < 0.01 ? LGRN : LRED;
+      const diffFg = (Math.abs(agg.cashDifference) < 0.01 ? [31,122,77] : [156,0,6]) as [number, number, number];
+      sumRow("Cash Difference (Calc − Manual)", fmt(agg.cashDifference), diffBg, true, diffFg);
+    }
+    if (dailyNote.trim()) {
+      y += 3;
+      doc.setFont("helvetica", "italic"); doc.setFontSize(7.5); doc.setTextColor(80,80,80);
+      text(`Note: ${dailyNote}`, ML, y);
+    }
+
+    // ── Footer on each page ──
+    const totalPages = doc.internal.getNumberOfPages();
+    for (let p = 1; p <= totalPages; p++) {
+      doc.setPage(p);
+      doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(140,140,140);
+      text(`GasFlow LPG Agency — Confidential`, ML, PH - 5);
+      text(`Page ${p} of ${totalPages} | Printed: ${new Date().toLocaleString()}`, PW - MR, PH - 5, { align: "right" });
+      doc.setDrawColor(200,200,200); doc.line(ML, PH - 8, PW - MR, PH - 8);
+    }
+
+    doc.save(`cashbook_${date}.pdf`);
   };
 
   /* ─── Opening cash blur persist ─── */
@@ -556,8 +848,8 @@ function Page() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => doExport("pdf")}><FileText className="h-4 w-4 mr-2 text-primary" />PDF Ledger</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => doExport("xlsx")}><FileText className="h-4 w-4 mr-2 text-emerald-600" />Excel (Side-by-Side)</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => doPdfExport()}><FileText className="h-4 w-4 mr-2 text-primary" />PDF Ledger</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => doExcelExport()}><FileText className="h-4 w-4 mr-2 text-emerald-600" />Excel (Side-by-Side)</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
           <Button variant="outline" className="h-11 gap-1.5" onClick={() => window.print()}>
