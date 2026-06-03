@@ -27,6 +27,8 @@ import { Route as AppDeliveryBoysRouteImport } from './routes/app.delivery-boys'
 import { Route as AppDashboardRouteImport } from './routes/app.dashboard'
 import { Route as AppCustomersRouteImport } from './routes/app.customers'
 import { Route as AppCashbookRouteImport } from './routes/app.cashbook'
+import { Route as AppPaymentInflowRouteImport } from './routes/app.payment-inflow'
+import { Route as AppPaymentOutflowRouteImport } from './routes/app.payment-outflow'
 import { Route as AppCustomersIdRouteImport } from './routes/app.customers.$id'
 
 const PlatformAdminRoute = PlatformAdminRouteImport.update({
@@ -119,6 +121,16 @@ const AppCashbookRoute = AppCashbookRouteImport.update({
   path: '/cashbook',
   getParentRoute: () => AppRoute,
 } as any)
+const AppPaymentInflowRoute = AppPaymentInflowRouteImport.update({
+  id: '/payment-inflow',
+  path: '/payment-inflow',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppPaymentOutflowRoute = AppPaymentOutflowRouteImport.update({
+  id: '/payment-outflow',
+  path: '/payment-outflow',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppCustomersIdRoute = AppCustomersIdRouteImport.update({
   id: '/$id',
   path: '/$id',
@@ -131,6 +143,8 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/platform-admin': typeof PlatformAdminRouteWithChildren
   '/app/cashbook': typeof AppCashbookRoute
+  '/app/payment-inflow': typeof AppPaymentInflowRoute
+  '/app/payment-outflow': typeof AppPaymentOutflowRoute
   '/app/customers': typeof AppCustomersRouteWithChildren
   '/app/dashboard': typeof AppDashboardRoute
   '/app/delivery-boys': typeof AppDeliveryBoysRoute
@@ -150,6 +164,8 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/app/cashbook': typeof AppCashbookRoute
+  '/app/payment-inflow': typeof AppPaymentInflowRoute
+  '/app/payment-outflow': typeof AppPaymentOutflowRoute
   '/app/customers': typeof AppCustomersRouteWithChildren
   '/app/dashboard': typeof AppDashboardRoute
   '/app/delivery-boys': typeof AppDeliveryBoysRoute
@@ -172,6 +188,8 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/platform-admin': typeof PlatformAdminRouteWithChildren
   '/app/cashbook': typeof AppCashbookRoute
+  '/app/payment-inflow': typeof AppPaymentInflowRoute
+  '/app/payment-outflow': typeof AppPaymentOutflowRoute
   '/app/customers': typeof AppCustomersRouteWithChildren
   '/app/dashboard': typeof AppDashboardRoute
   '/app/delivery-boys': typeof AppDeliveryBoysRoute
@@ -195,6 +213,8 @@ export interface FileRouteTypes {
     | '/login'
     | '/platform-admin'
     | '/app/cashbook'
+    | '/app/payment-inflow'
+    | '/app/payment-outflow'
     | '/app/customers'
     | '/app/dashboard'
     | '/app/delivery-boys'
@@ -214,6 +234,8 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/app/cashbook'
+    | '/app/payment-inflow'
+    | '/app/payment-outflow'
     | '/app/customers'
     | '/app/dashboard'
     | '/app/delivery-boys'
@@ -235,6 +257,8 @@ export interface FileRouteTypes {
     | '/login'
     | '/platform-admin'
     | '/app/cashbook'
+    | '/app/payment-inflow'
+    | '/app/payment-outflow'
     | '/app/customers'
     | '/app/dashboard'
     | '/app/delivery-boys'
@@ -386,6 +410,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppCashbookRouteImport
       parentRoute: typeof AppRoute
     }
+    '/app/payment-inflow': {
+      id: '/app/payment-inflow'
+      path: '/payment-inflow'
+      fullPath: '/app/payment-inflow'
+      preLoaderRoute: typeof AppPaymentInflowRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/payment-outflow': {
+      id: '/app/payment-outflow'
+      path: '/payment-outflow'
+      fullPath: '/app/payment-outflow'
+      preLoaderRoute: typeof AppPaymentOutflowRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/app/customers/$id': {
       id: '/app/customers/$id'
       path: '/$id'
@@ -410,6 +448,8 @@ const AppCustomersRouteWithChildren = AppCustomersRoute._addFileChildren(
 
 interface AppRouteChildren {
   AppCashbookRoute: typeof AppCashbookRoute
+  AppPaymentInflowRoute: typeof AppPaymentInflowRoute
+  AppPaymentOutflowRoute: typeof AppPaymentOutflowRoute
   AppCustomersRoute: typeof AppCustomersRouteWithChildren
   AppDashboardRoute: typeof AppDashboardRoute
   AppDeliveryBoysRoute: typeof AppDeliveryBoysRoute
@@ -425,6 +465,8 @@ interface AppRouteChildren {
 
 const AppRouteChildren: AppRouteChildren = {
   AppCashbookRoute: AppCashbookRoute,
+  AppPaymentInflowRoute: AppPaymentInflowRoute,
+  AppPaymentOutflowRoute: AppPaymentOutflowRoute,
   AppCustomersRoute: AppCustomersRouteWithChildren,
   AppDashboardRoute: AppDashboardRoute,
   AppDeliveryBoysRoute: AppDeliveryBoysRoute,
