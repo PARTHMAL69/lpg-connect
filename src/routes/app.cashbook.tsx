@@ -204,10 +204,12 @@ function Page() {
     let homeTotal = 0, homeQty = 0, cncTotal = 0, cncQty = 0;
     const productSalesTotals: Record<string, { quantity: number; total: number }> = {};
 
-    // Per-delivery-boy for commission and online
+    // Per-delivery-boy for commission, online, and prepaid website orders
     const commissionByDriver: Record<string, { name: string; amount: number; qty: number }> = {};
     const onlineByDriver: Record<string, { name: string; qty: number; amount: number }> = {};
     let onlineQtyTotal = 0;
+    const prepByDriver: Record<string, { name: string; qty: number; amount: number }> = {};
+    let prepQtyTotal = 0;
 
     // Per-customer udhari
     const udhariByCustomer: Record<string, { name: string; amount: number }> = {};
@@ -251,14 +253,26 @@ function Page() {
         }
       } catch (_) {}
 
-      // Website Prepaid per delivery boy
+      // 1. Website Prepaid (govt website prepaid orders)
       if (prepQty > 0) {
         const prepAmt = prepQty * Number(s.rate);
         const dbKey = s.delivery_boy_name ?? "Counter / Walk-in";
+        if (!prepByDriver[dbKey]) prepByDriver[dbKey] = { name: dbKey, qty: 0, amount: 0 };
+        prepByDriver[dbKey].qty += prepQty;
+        prepByDriver[dbKey].amount += prepAmt;
+        prepQtyTotal += prepQty;
+      }
+
+      // 2. Online UPI (local QR code payments directly to agency)
+      const isOnlineSale = !isSplit && s.payment_mode === "online";
+      const effectiveOnline = isSplit ? onlineAmt : (isOnlineSale ? s.total : 0);
+      if (effectiveOnline > 0) {
+        const qrQty = isSplit ? Math.round(effectiveOnline / Number(s.rate || 1)) : s.quantity;
+        const dbKey = s.delivery_boy_name ?? "Counter / Walk-in";
         if (!onlineByDriver[dbKey]) onlineByDriver[dbKey] = { name: dbKey, qty: 0, amount: 0 };
-        onlineByDriver[dbKey].qty += prepQty;
-        onlineByDriver[dbKey].amount += prepAmt;
-        onlineQtyTotal += prepQty;
+        onlineByDriver[dbKey].qty += qrQty;
+        onlineByDriver[dbKey].amount += effectiveOnline;
+        onlineQtyTotal += qrQty;
       }
 
       // Udhari per customer
@@ -283,6 +297,7 @@ function Page() {
 
     // Mode outflows from sales
     const paytmSales = dailySales.filter(s => s.payment_mode === "paytm").reduce((a, r) => a + r.total, 0);
+    const prepSales = Object.values(prepByDriver).reduce((s, d) => s + d.amount, 0);
     const onlineSales = Object.values(onlineByDriver).reduce((s, d) => s + d.amount, 0);
     const chequeSales = dailySales.filter(s => s.payment_mode === "cheque").reduce((a, r) => a + r.total, 0);
     const udhariSales = Object.values(udhariByCustomer).reduce((s, c) => s + c.amount, 0);
@@ -292,13 +307,14 @@ function Page() {
     const chequeRecoveries = dailyPayments.filter(p => p.payment_mode === "cheque").reduce((a, r) => a + r.amount, 0);
 
     const paytmOutflow = paytmSales + paytmRecoveries;
-    const onlineOutflow = onlineSales;
+    const prepOutflow = prepSales;
+    const onlineOutflow = onlineSales + onlineRecoveries;
     const chequeOutflow = chequeSales + chequeRecoveries;
     const udhariOutflow = udhariSales;
     const magilBillsTotal = magilBills.reduce((s, b) => s + b.amount, 0);
     const paymentOutflowsTotal = paymentOutflows.reduce((s, p) => s + p.amount, 0);
 
-    const totalOutflows = expensesTotal + paytmOutflow + onlineOutflow + chequeOutflow + udhariOutflow + commissionsTotal + magilBillsTotal + paymentOutflowsTotal;
+    const totalOutflows = expensesTotal + paytmOutflow + prepOutflow + onlineOutflow + chequeOutflow + udhariOutflow + commissionsTotal + magilBillsTotal + paymentOutflowsTotal;
     const cashBalance = leftGrandTotal - totalOutflows;
     const manualNum = manualCashEntry === "" ? null : Number(manualCashEntry);
     const cashDifference = manualNum != null ? cashBalance - manualNum : null;
@@ -309,6 +325,7 @@ function Page() {
       pendingBillsTotal, paymentInflowsTotal,
       leftGrandTotal, expensesTotal, commissionsTotal,
       commissionByDriver, onlineByDriver, onlineQtyTotal,
+      prepOutflow, prepByDriver, prepQtyTotal,
       udhariByCustomer, udhariOutflow, paytmOutflow, onlineOutflow,
       chequeOutflow, magilBillsTotal, paymentOutflowsTotal,
       totalOutflows, cashBalance, cashDifference,
@@ -527,8 +544,12 @@ function Page() {
       right.push({ label: `${cat.replace("_", " ")}${note ? ` (${note})` : ""}`, qty: "", amt: Number(e.amount) });
     });
     if (agg.paytmOutflow > 0) right.push({ label: "Paytm Digital Account (Sales + Recovery)", qty: "", amt: agg.paytmOutflow });
+    if (agg.prepOutflow > 0) {
+      right.push({ label: "Website Prepaid", qty: agg.prepQtyTotal, amt: agg.prepOutflow });
+      Object.values(agg.prepByDriver).forEach(d => right.push({ label: `  └ ${d.name}`, qty: d.qty, amt: d.amount, sub: true }));
+    }
     if (agg.onlineOutflow > 0) {
-      right.push({ label: "Website Prepaid", qty: agg.onlineQtyTotal, amt: agg.onlineOutflow });
+      right.push({ label: "Online UPI (QR Code)", qty: agg.onlineQtyTotal, amt: agg.onlineOutflow });
       Object.values(agg.onlineByDriver).forEach(d => right.push({ label: `  └ ${d.name}`, qty: d.qty, amt: d.amount, sub: true }));
     }
     if (agg.chequeOutflow > 0) right.push({ label: "Bank Cheque Collections", qty: "", amt: agg.chequeOutflow });
@@ -716,8 +737,12 @@ function Page() {
       rRows.push({ label: `${cat.replace("_", " ")}${note ? ` (${note})` : ""}`, qty: "", amt: fmt(Number(e.amount)) });
     });
     if (agg.paytmOutflow > 0) rRows.push({ label: "Paytm Digital Account (Sales + Recovery)", qty: "", amt: fmt(agg.paytmOutflow) });
+    if (agg.prepOutflow > 0) {
+      rRows.push({ label: "Website Prepaid", qty: String(agg.prepQtyTotal), amt: fmt(agg.prepOutflow) });
+      Object.values(agg.prepByDriver).forEach(d => rRows.push({ label: `  └ ${d.name}`, qty: String(d.qty), amt: fmt(d.amount), sub: true }));
+    }
     if (agg.onlineOutflow > 0) {
-      rRows.push({ label: "Website Prepaid", qty: String(agg.onlineQtyTotal), amt: fmt(agg.onlineOutflow) });
+      rRows.push({ label: "Online UPI (QR Code)", qty: String(agg.onlineQtyTotal), amt: fmt(agg.onlineOutflow) });
       Object.values(agg.onlineByDriver).forEach(d => rRows.push({ label: `  └ ${d.name}`, qty: String(d.qty), amt: fmt(d.amount), sub: true }));
     }
     if (agg.chequeOutflow > 0) rRows.push({ label: "Bank Cheque Collections", qty: "", amt: fmt(agg.chequeOutflow) });
@@ -1018,11 +1043,29 @@ function Page() {
               </div>
             )}
 
-            {/* Website Prepaid (renamed, with per-delivery-boy breakdown) */}
+            {/* Website Prepaid */}
+            {agg.prepOutflow > 0 && (
+              <div className="px-5 py-3 flex flex-col hover:bg-slate-50/40">
+                <div className="flex justify-between items-center py-0.5">
+                  <span className="font-semibold text-slate-600">Website Prepaid <span className="text-slate-400 font-normal">({agg.prepQtyTotal} units)</span></span>
+                  <span className="font-bold tabular-nums text-slate-700 text-sm">{fmtCurrency(agg.prepOutflow)}</span>
+                </div>
+                <div className="mt-1 pl-3 border-l-2 border-slate-200/80 space-y-0.5 text-[10px] text-slate-500 font-medium">
+                  {Object.values(agg.prepByDriver).map((d) => (
+                    <div key={d.name} className="flex justify-between py-0.5">
+                      <span>{d.name} <span className="text-slate-400">({d.qty} units)</span></span>
+                      <span className="tabular-nums">{fmtCurrency(d.amount)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Online UPI (QR Code) */}
             {agg.onlineOutflow > 0 && (
               <div className="px-5 py-3 flex flex-col hover:bg-slate-50/40">
                 <div className="flex justify-between items-center py-0.5">
-                  <span className="font-semibold text-slate-600">Website Prepaid <span className="text-slate-400 font-normal">({agg.onlineQtyTotal} units)</span></span>
+                  <span className="font-semibold text-slate-600">Online UPI (QR Code) <span className="text-slate-400 font-normal">({agg.onlineQtyTotal} units)</span></span>
                   <span className="font-bold tabular-nums text-slate-700 text-sm">{fmtCurrency(agg.onlineOutflow)}</span>
                 </div>
                 <div className="mt-1 pl-3 border-l-2 border-slate-200/80 space-y-0.5 text-[10px] text-slate-500 font-medium">
