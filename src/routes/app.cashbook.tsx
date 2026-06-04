@@ -51,6 +51,8 @@ interface CashExpenseItem {
   category: string;
   amount: number;
   notes: string | null;
+  delivery_boy_id?: string | null;
+  delivery_boy?: { name: string } | null;
 }
 interface OtherReceiptItem { id: string; particular: string; amount: number; }
 interface BillItem { id: string; label: string; qty: number; rate: number; amount: number; }
@@ -174,15 +176,15 @@ function Page() {
       } catch (_) {}
       const quantity = Number(s.quantity);
       const rate = Number(s.rate || 0);
-      const nonPrepaidGross = (quantity - prepQty) * rate;
+      const grossAmount = quantity * rate;
       return {
         id: s.id,
         customer_name: s.customer?.name ?? "Walk-in",
         product_name: s.product?.name ?? "Cylinder",
         quantity,
         rate,
-        total: nonPrepaidGross,
-        gross_amount: nonPrepaidGross,
+        total: grossAmount,
+        gross_amount: grossAmount,
         payment_mode: pm,
         commission_total: Number(s.commission_amount || 0),
         notes: s.notes,
@@ -205,7 +207,7 @@ function Page() {
 
     // Expenses
     const { data: eData } = await (supabase.from("expenses") as any)
-      .select("id, category, amount, notes")
+      .select("id, category, amount, notes, delivery_boy_id, delivery_boy:delivery_boys(name)")
       .eq("agency_id", agency.id).eq("expense_date", date).eq("is_deleted", false);
     setDailyExpenses((eData ?? []) as CashExpenseItem[]);
   };
@@ -330,7 +332,7 @@ function Page() {
     const udhariOutflow = udhariSales;
 
     const otherProductSalesSum = Object.values(productSalesTotals).reduce((s, r) => s + r.total, 0);
-    const leftGrandTotal = openingCash + homeTotal + cncTotal + otherProductSalesSum + collectionsTotal + otherInflowsSum + pendingBillsTotal + paymentInflowsTotal + prepOutflow;
+    const leftGrandTotal = openingCash + homeTotal + cncTotal + otherProductSalesSum + collectionsTotal + otherInflowsSum + pendingBillsTotal + paymentInflowsTotal;
 
     const expensesTotal = dailyExpenses.reduce((s, e) => s + Number(e.amount), 0);
     const commissionsTotal = Object.values(commissionByDriver).reduce((s, d) => s + d.amount, 0);
@@ -564,10 +566,7 @@ function Page() {
       left.push({ label: "Credit Recovery / Outstanding Collections", qty: "", amt: agg.collectionsTotal });
       dailyPayments.forEach(p => left.push({ label: `  - ${p.customer_name} (${p.payment_mode})`, qty: "", amt: p.amount, sub: true }));
     }
-    if (agg.prepQtyTotal > 0) {
-      left.push({ label: "Website Prepaid", qty: agg.prepQtyTotal, amt: agg.prepOutflow });
-      Object.values(agg.prepByDriver).forEach(d => left.push({ label: `  - ${d.name}`, qty: d.qty, amt: d.amount, sub: true }));
-    }
+
     otherReceiptsList.forEach(r => left.push({ label: r.particular, qty: "", amt: r.amount }));
     pendingBills.forEach(b => left.push({ label: `Pending — ${b.label} (${b.qty}×₹${b.rate})`, qty: b.qty, amt: b.amount }));
     paymentInflows.forEach(p => left.push({ label: p.particular + ((p as any).note ? ` (${(p as any).note})` : ""), qty: "", amt: p.amount }));
@@ -577,14 +576,22 @@ function Page() {
     // RIGHT side (NO Calculated Cash Balance)
     dailyExpenses.forEach(e => {
       let cat = e.category, note = e.notes ?? "";
+      let workerName = "";
       if (note.startsWith("[OTHER_CAT:")) {
         const m = note.match(/^\[OTHER_CAT:([^\]]+)\]/);
         if (m) { cat = m[1]; note = note.replace(/^\[OTHER_CAT:[^\]]+\]\s*/, ""); }
+      }
+      if (e.delivery_boy?.name) {
+        workerName = e.delivery_boy.name;
       } else if (note.startsWith("[WORKER:")) {
         const m = note.match(/^\[WORKER:([^\]]+)\]/);
-        if (m) { cat = `${cat.replace("_", " ")} (${m[1]})`; note = note.replace(/^\[WORKER:[^\]]+\]\s*/, ""); }
+        if (m) { workerName = m[1]; }
       }
-      right.push({ label: `${cat.replace("_", " ")}${note ? ` (${note})` : ""}`, qty: "", amt: Number(e.amount) });
+      if (note.startsWith("[WORKER:")) {
+        note = note.replace(/^\[WORKER:[^\]]+\]\s*/, "");
+      }
+      const label = workerName ? `${cat.replace("_", " ")} (${workerName})` : cat.replace("_", " ");
+      right.push({ label: `${label}${note ? ` (${note})` : ""}`, qty: "", amt: Number(e.amount) });
     });
     if (agg.prepQtyTotal > 0) {
       right.push({ label: "Website Prepaid", qty: agg.prepQtyTotal, amt: agg.prepOutflow });
@@ -781,10 +788,7 @@ function Page() {
       lRows.push({ label: "Credit Recovery / Outstanding Collections", qty: "", amt: fmt(agg.collectionsTotal) });
       dailyPayments.forEach(p => lRows.push({ label: `  - ${p.customer_name} (${p.payment_mode})`, qty: "", amt: fmt(p.amount), sub: true }));
     }
-    if (agg.prepQtyTotal > 0) {
-      lRows.push({ label: "Website Prepaid", qty: String(agg.prepQtyTotal), amt: fmt(agg.prepOutflow) });
-      Object.values(agg.prepByDriver).forEach(d => lRows.push({ label: `  - ${d.name}`, qty: String(d.qty), amt: fmt(d.amount), sub: true }));
-    }
+
     otherReceiptsList.forEach(r => lRows.push({ label: r.particular, qty: "", amt: fmt(r.amount) }));
     pendingBills.forEach(b => lRows.push({ label: `Pending — ${b.label} (${b.qty}×₹${b.rate})`, qty: String(b.qty), amt: fmt(b.amount) }));
     paymentInflows.forEach(p => lRows.push({ label: p.particular + ((p as any).note ? ` (${(p as any).note})` : ""), qty: "", amt: fmt(p.amount) }));
@@ -793,14 +797,22 @@ function Page() {
 
     dailyExpenses.forEach(e => {
       let cat = e.category, note = e.notes ?? "";
+      let workerName = "";
       if (note.startsWith("[OTHER_CAT:")) {
         const m = note.match(/^\[OTHER_CAT:([^\]]+)\]/);
         if (m) { cat = m[1]; note = note.replace(/^\[OTHER_CAT:[^\]]+\]\s*/, ""); }
+      }
+      if (e.delivery_boy?.name) {
+        workerName = e.delivery_boy.name;
       } else if (note.startsWith("[WORKER:")) {
         const m = note.match(/^\[WORKER:([^\]]+)\]/);
-        if (m) { cat = `${cat.replace("_", " ")} (${m[1]})`; note = note.replace(/^\[WORKER:[^\]]+\]\s*/, ""); }
+        if (m) { workerName = m[1]; }
       }
-      rRows.push({ label: `${cat.replace("_", " ")}${note ? ` (${note})` : ""}`, qty: "", amt: fmt(Number(e.amount)) });
+      if (note.startsWith("[WORKER:")) {
+        note = note.replace(/^\[WORKER:[^\]]+\]\s*/, "");
+      }
+      const label = workerName ? `${cat.replace("_", " ")} (${workerName})` : cat.replace("_", " ");
+      rRows.push({ label: `${label}${note ? ` (${note})` : ""}`, qty: "", amt: fmt(Number(e.amount)) });
     });
     if (agg.prepQtyTotal > 0) {
       rRows.push({ label: "Website Prepaid", qty: String(agg.prepQtyTotal), amt: fmt(agg.prepOutflow) });
@@ -1029,24 +1041,6 @@ function Page() {
               </div>
             ))}
 
-            {/* Website Prepaid Inflow */}
-            {agg.prepQtyTotal > 0 && (
-              <div className="px-5 py-3 flex flex-col hover:bg-slate-50/40">
-                <div className="flex justify-between items-center py-0.5">
-                  <span className="font-semibold text-slate-600">Website Prepaid <span className="text-slate-400 font-normal">({agg.prepQtyTotal} units)</span></span>
-                  <span className="font-bold tabular-nums text-emerald-600 text-sm">{fmtCurrency(agg.prepOutflow)}</span>
-                </div>
-                <div className="mt-1 pl-3 border-l-2 border-slate-200/80 space-y-0.5 text-[10px] text-slate-500 font-medium">
-                  {Object.values(agg.prepByDriver).map((d) => (
-                    <div key={d.name} className="flex justify-between py-0.5">
-                      <span>{d.name} <span className="text-slate-400">({d.qty} units)</span></span>
-                      <span className="tabular-nums">{fmtCurrency(d.amount)}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
             {/* Collections */}
             {agg.collectionsTotal > 0 && (
               <div className="px-5 py-3 flex flex-col hover:bg-slate-50/40">
@@ -1149,16 +1143,27 @@ function Page() {
             {/* Expenses */}
             {dailyExpenses.map((exp) => {
               let cat = exp.category, note = exp.notes ?? "";
+              let workerName = "";
               if (note.startsWith("[OTHER_CAT:")) {
                 const m = note.match(/^\[OTHER_CAT:([^\]]+)\]/);
                 if (m) { cat = m[1]; note = note.replace(/^\[OTHER_CAT:[^\]]+\]\s*/, ""); }
+              }
+              if (exp.delivery_boy?.name) {
+                workerName = exp.delivery_boy.name;
               } else if (note.startsWith("[WORKER:")) {
                 const m = note.match(/^\[WORKER:([^\]]+)\]/);
-                if (m) { cat = `${cat.replace("_", " ")} (${m[1]})`; note = note.replace(/^\[WORKER:[^\]]+\]\s*/, ""); }
+                if (m) { workerName = m[1]; }
               }
+              if (note.startsWith("[WORKER:")) {
+                note = note.replace(/^\[WORKER:[^\]]+\]\s*/, "");
+              }
+              const displayLabel = workerName ? `${cat.replace("_", " ")} (${workerName})` : cat.replace("_", " ");
               return (
                 <div key={exp.id} className="px-5 py-3.5 flex justify-between items-center hover:bg-slate-50/40">
-                  <span className="font-semibold text-slate-600 capitalize">{cat.replace("_", " ")}{note ? ` (${note})` : ""}</span>
+                  <span className="font-semibold text-slate-600 capitalize">
+                    {displayLabel}
+                    {note ? <span className="text-slate-400 font-normal ml-1">({note})</span> : ""}
+                  </span>
                   <span className="font-bold tabular-nums text-red-600 text-sm">{fmtCurrency(Number(exp.amount))}</span>
                 </div>
               );
