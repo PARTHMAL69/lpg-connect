@@ -675,9 +675,13 @@ function Page() {
     W(row, 0, "Total Paid (Outflows)", { bold: false });
     BLANK(row, 1); W(row, 2, agg.totalOutflows, { bold: true }); row++;
 
-    W(row, 0, "Calculated Cash Balance",  { bold: true, fg: C.sumBalFg, bg: C.sumBalBg, border: thickBorder });
-    BLANK(row, 1, C.sumBalBg);
-    W(row, 2, agg.cashBalance, { bold: true, fg: C.sumBalFg, bg: C.sumBalBg, border: thickBorder });
+    const isBalZero = agg.cashBalance === 0;
+    const isBalPos = agg.cashBalance > 0;
+    const balBgExcel = isBalZero ? C.sumBalYelBg : isBalPos ? C.sumBalBg : C.sumDiffBg;
+    const balFgExcel = isBalZero ? C.sumBalYelFg : isBalPos ? C.sumBalFg : C.sumDiffFg;
+    W(row, 0, "Calculated Cash Balance",  { bold: true, fg: balFgExcel, bg: balBgExcel, border: thickBorder });
+    BLANK(row, 1, balBgExcel);
+    W(row, 2, agg.cashBalance, { bold: true, fg: balFgExcel, bg: balBgExcel, border: thickBorder });
     row++;
 
     if (agg.cashDifference !== null) {
@@ -887,7 +891,9 @@ function Page() {
 
     sumRow("Total Received (Inflows)",  fmt(agg.leftGrandTotal), WHITE);
     sumRow("Total Paid (Outflows)",     fmt(agg.totalOutflows),  LGRAY);
-    sumRow("Calculated Cash Balance",   fmt(agg.cashBalance),    LGRN, true, [31,122,77]);
+    const balBg = agg.cashBalance === 0 ? [255,251,230] as [number,number,number] : agg.cashBalance > 0 ? LGRN : LRED;
+    const balFg = (agg.cashBalance === 0 ? [212,136,6] : agg.cashBalance > 0 ? [31,122,77] : [156,0,6]) as [number, number, number];
+    sumRow("Calculated Cash Balance",   fmt(agg.cashBalance),    balBg, true, balFg);
     if (agg.cashDifference !== null) {
       sumRow("Manual Cash Count",       fmt(Number(manualCashEntry)), WHITE);
       const isBalanced = Math.abs(agg.cashDifference) < 0.01;
@@ -918,13 +924,13 @@ function Page() {
 
   const balanceColors = useMemo(() => {
     const bal = agg.cashBalance;
-    if (bal < 0) {
+    if (bal > 0) {
       return {
         bg: "bg-emerald-50 border-emerald-200/80",
         text: "text-emerald-600",
         label: "text-emerald-700",
       };
-    } else if (bal > 0) {
+    } else if (bal < 0) {
       return {
         bg: "bg-red-50 border-red-200/80",
         text: "text-red-600",
