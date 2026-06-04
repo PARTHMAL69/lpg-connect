@@ -354,7 +354,7 @@ function Page() {
     const totalOutflows = expensesTotal + prepOutflow + upiOutflow + chequeOutflow + udhariOutflow + commissionsTotal + magilBillsTotal + paymentOutflowsTotal + outstandingTotal;
     const cashBalance = leftGrandTotal - totalOutflows;
     const manualNum = manualCashEntry === "" ? null : Number(manualCashEntry);
-    const cashDifference = manualNum != null ? manualNum - cashBalance : null;
+    const cashDifference = manualNum != null ? manualNum - Math.abs(cashBalance) : null;
 
     return {
       openingCash, homeTotal, homeQty, cncTotal, cncQty,
