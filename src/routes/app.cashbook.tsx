@@ -178,7 +178,7 @@ function Page() {
         product_name: s.product?.name ?? "Cylinder",
         quantity: Number(s.quantity),
         rate: Number(s.rate || 0),
-        total: Number(s.gross_amount) + (prepQty * Number(s.rate || 0)),
+        total: Number(s.gross_amount),
         gross_amount: Number(s.gross_amount),
         payment_mode: pm,
         commission_total: Number(s.commission_amount || 0),
