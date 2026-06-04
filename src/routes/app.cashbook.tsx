@@ -30,6 +30,7 @@ interface CashSaleItem {
   customer_name: string | null;
   product_name: string;
   quantity: number;
+  rate: number;
   total: number;
   payment_mode: string;
   commission_total: number;
@@ -151,7 +152,7 @@ function Page() {
     // Sales
     const { data: sData } = await supabase
       .from("sales")
-      .select(`id, quantity, gross_amount, commission_amount, payment_mode, notes,
+      .select(`id, quantity, rate, gross_amount, commission_amount, payment_mode, notes,
         customer:customers(name), product:products(name),
         delivery_boy:delivery_boys(name), delivery_boy_id`)
       .eq("agency_id", agency.id).eq("sale_date", date).eq("is_deleted", false);
@@ -164,6 +165,7 @@ function Page() {
         customer_name: s.customer?.name ?? "Walk-in",
         product_name: s.product?.name ?? "Cylinder",
         quantity: Number(s.quantity),
+        rate: Number(s.rate || 0),
         total: Number(s.gross_amount),
         payment_mode: pm,
         commission_total: Number(s.commission_amount || 0),
@@ -232,21 +234,31 @@ function Page() {
         commissionByDriver[n].qty += s.quantity;
       }
 
-      // Online/website per delivery boy
-      let isSplit = false, onlineAmt = 0, creditAmt = 0;
+      // Parse notes JSON
+      let isSplit = false;
+      let onlineAmt = 0;
+      let creditAmt = 0;
+      let prepQty = 0;
       try {
         const m = JSON.parse(s.notes ?? "{}");
-        if (m.is_split) { isSplit = true; onlineAmt = Number(m.online_amount || 0); creditAmt = Number(m.credit_amount || 0); }
+        if (m.is_split) {
+          isSplit = true;
+          onlineAmt = Number(m.online_amount || 0);
+          creditAmt = Number(m.credit_amount || 0);
+        }
+        if (m.website_prepaid_qty != null) {
+          prepQty = Number(m.website_prepaid_qty);
+        }
       } catch (_) {}
 
-      const isOnlineSale = !isSplit && s.payment_mode === "online";
-      const effectiveOnline = isSplit ? onlineAmt : (isOnlineSale ? s.total : 0);
-      if (effectiveOnline > 0) {
+      // Website Prepaid per delivery boy
+      if (prepQty > 0) {
+        const prepAmt = prepQty * Number(s.rate);
         const dbKey = s.delivery_boy_name ?? "Counter / Walk-in";
         if (!onlineByDriver[dbKey]) onlineByDriver[dbKey] = { name: dbKey, qty: 0, amount: 0 };
-        onlineByDriver[dbKey].qty += s.quantity;
-        onlineByDriver[dbKey].amount += effectiveOnline;
-        onlineQtyTotal += s.quantity;
+        onlineByDriver[dbKey].qty += prepQty;
+        onlineByDriver[dbKey].amount += prepAmt;
+        onlineQtyTotal += prepQty;
       }
 
       // Udhari per customer
@@ -280,7 +292,7 @@ function Page() {
     const chequeRecoveries = dailyPayments.filter(p => p.payment_mode === "cheque").reduce((a, r) => a + r.amount, 0);
 
     const paytmOutflow = paytmSales + paytmRecoveries;
-    const onlineOutflow = onlineSales + onlineRecoveries;
+    const onlineOutflow = onlineSales;
     const chequeOutflow = chequeSales + chequeRecoveries;
     const udhariOutflow = udhariSales;
     const magilBillsTotal = magilBills.reduce((s, b) => s + b.amount, 0);
