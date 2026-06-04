@@ -18,7 +18,7 @@ export const Route = createFileRoute("/app/payment-inflow")({
   head: () => ({ meta: [{ title: "Payment Inflow — GasFlow" }] }),
 });
 
-interface InflowItem { id: string; particular: string; amount: number; }
+interface InflowItem { id: string; particular: string; amount: number; note?: string; }
 
 function newId() { return "inf-" + Date.now() + "-" + Math.random().toString(36).slice(2, 7); }
 
@@ -33,6 +33,7 @@ function PaymentInflowPage() {
   const [isOpen, setIsOpen] = useState(false);
   const [particular, setParticular] = useState("");
   const [amount, setAmount] = useState("");
+  const [note, setNote] = useState("");
 
   const loadItems = async () => {
     if (!agency) return;
@@ -86,12 +87,12 @@ function PaymentInflowPage() {
     const amt = Number(amount);
     if (!particular.trim() || !amt || amt <= 0) { toast.error("Enter description and amount."); return; }
     setBusy(true);
-    const item: InflowItem = { id: newId(), particular: particular.trim(), amount: amt };
+    const item: InflowItem = { id: newId(), particular: particular.trim(), amount: amt, note: note.trim() || undefined };
     const updated = [...items, item];
     setItems(updated);
     await saveItems(updated);
     toast.success("Payment inflow recorded.");
-    setIsOpen(false); setParticular(""); setAmount("");
+    setIsOpen(false); setParticular(""); setAmount(""); setNote("");
     setBusy(false);
   };
 
@@ -154,7 +155,8 @@ function PaymentInflowPage() {
                       </div>
                       <div>
                         <div className="font-semibold text-sm">{item.particular}</div>
-                        <div className="text-xs text-muted-foreground">{fmtDate(date)}</div>
+                        {item.note && <div className="text-xs text-slate-500 mt-0.5">{item.note}</div>}
+                        <div className="text-xs text-muted-foreground mt-0.5">{fmtDate(date)}</div>
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
@@ -189,9 +191,13 @@ function PaymentInflowPage() {
               <Label className="text-xs font-bold text-muted-foreground uppercase">Particular / Description</Label>
               <Input required value={particular} onChange={(e) => setParticular(e.target.value)} placeholder="Name change, cash receipt..." className="h-11" />
             </div>
-            <div className="space-y-1.5">
+             <div className="space-y-1.5">
               <Label className="text-xs font-bold text-muted-foreground uppercase">Amount (₹)</Label>
               <Input required type="number" step="any" min="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" className="h-11 font-bold text-lg" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-muted-foreground uppercase">Note (Optional)</Label>
+              <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Additional details..." className="h-11" />
             </div>
             <DialogFooter className="pt-2">
               <Button type="button" variant="ghost" onClick={() => setIsOpen(false)}>Cancel</Button>

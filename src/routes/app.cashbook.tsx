@@ -77,9 +77,6 @@ function Page() {
   const [dailyExpenses, setDailyExpenses] = useState<CashExpenseItem[]>([]);
 
   // Dialog states
-  const [isReceiptOpen, setIsReceiptOpen] = useState(false);
-  const [receiptParticular, setReceiptParticular] = useState("");
-  const [receiptAmount, setReceiptAmount] = useState("");
 
   const [isPendingOpen, setIsPendingOpen] = useState(false);
   const [pendingLabel, setPendingLabel] = useState("");
@@ -370,19 +367,6 @@ function Page() {
     await persist({ magil_bills: updated });
   };
 
-  /* ─── Add Other Receipt (misc inflow) ─── */
-  const addOtherReceipt = async (e: FormEvent) => {
-    e.preventDefault();
-    const amount = Number(receiptAmount);
-    if (!receiptParticular.trim() || !amount) { toast.error("Enter description and amount."); return; }
-    const item: OtherReceiptItem = { id: newId(), particular: receiptParticular.trim(), amount };
-    const updated = [...otherReceiptsList, item];
-    setOtherReceiptsList(updated);
-    await persist({ other_receipts: updated, other_cash_receipts: updated.reduce((s, r) => s + r.amount, 0) });
-    toast.success("Inflow recorded.");
-    setIsReceiptOpen(false); setReceiptParticular(""); setReceiptAmount("");
-  };
-
   const deleteOtherReceipt = async (id: string) => {
     const updated = otherReceiptsList.filter(r => r.id !== id);
     setOtherReceiptsList(updated);
@@ -522,7 +506,7 @@ function Page() {
     if (agg.collectionsTotal > 0) left.push({ label: "Outstanding Customer Collections", qty: "", amt: agg.collectionsTotal });
     otherReceiptsList.forEach(r => left.push({ label: r.particular, qty: "", amt: r.amount }));
     pendingBills.forEach(b => left.push({ label: `Pending — ${b.label} (${b.qty}×₹${b.rate})`, qty: b.qty, amt: b.amount }));
-    paymentInflows.forEach(p => left.push({ label: p.particular, qty: "", amt: p.amount }));
+    paymentInflows.forEach(p => left.push({ label: p.particular + ((p as any).note ? ` (${(p as any).note})` : ""), qty: "", amt: p.amount }));
 
     // RIGHT side (NO Calculated Cash Balance)
     dailyExpenses.forEach(e => {
@@ -545,7 +529,7 @@ function Page() {
       Object.values(agg.commissionByDriver).forEach(d => right.push({ label: `  └ ${d.name}`, qty: d.qty, amt: d.amount, sub: true }));
     }
     magilBills.forEach(b => right.push({ label: `Magil — ${b.label} (${b.qty}×₹${b.rate})`, qty: b.qty, amt: b.amount }));
-    paymentOutflows.forEach(p => right.push({ label: p.particular, qty: "", amt: p.amount }));
+    paymentOutflows.forEach(p => right.push({ label: p.particular + ((p as any).note ? ` (${(p as any).note})` : ""), qty: "", amt: p.amount }));
 
     // Pad both sides to equal length (leaving space for the TOTAL row)
     const maxData = Math.max(left.length, right.length);
@@ -712,7 +696,7 @@ function Page() {
     if (agg.collectionsTotal > 0) lRows.push({ label: "Outstanding Customer Collections", qty: "", amt: fmt(agg.collectionsTotal) });
     otherReceiptsList.forEach(r => lRows.push({ label: r.particular, qty: "", amt: fmt(r.amount) }));
     pendingBills.forEach(b => lRows.push({ label: `Pending — ${b.label} (${b.qty}×₹${b.rate})`, qty: String(b.qty), amt: fmt(b.amount) }));
-    paymentInflows.forEach(p => lRows.push({ label: p.particular, qty: "", amt: fmt(p.amount) }));
+    paymentInflows.forEach(p => lRows.push({ label: p.particular + ((p as any).note ? ` (${(p as any).note})` : ""), qty: "", amt: fmt(p.amount) }));
 
     dailyExpenses.forEach(e => {
       let cat = e.category, note = e.notes ?? "";
@@ -734,7 +718,7 @@ function Page() {
       Object.values(agg.commissionByDriver).forEach(d => rRows.push({ label: `  └ ${d.name}`, qty: String(d.qty), amt: fmt(d.amount), sub: true }));
     }
     magilBills.forEach(b => rRows.push({ label: `Magil — ${b.label} (${b.qty}×₹${b.rate})`, qty: String(b.qty), amt: fmt(b.amount) }));
-    paymentOutflows.forEach(p => rRows.push({ label: p.particular, qty: "", amt: fmt(p.amount) }));
+    paymentOutflows.forEach(p => rRows.push({ label: p.particular + ((p as any).note ? ` (${(p as any).note})` : ""), qty: "", amt: fmt(p.amount) }));
 
     const maxData = Math.max(lRows.length, rRows.length);
     while (lRows.length < maxData) lRows.push({ label: "", qty: "", amt: "" });
@@ -878,17 +862,17 @@ function Page() {
         {/* LEFT: Payment Received */}
         <div className="flex flex-col border-r border-border/80 min-h-[520px]">
           {/* Header */}
-          <div className="bg-slate-50 border-b border-border/80 px-5 py-2.5 flex justify-between items-center select-none">
-            <h3 className="font-extrabold text-xs uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+          <div className="bg-slate-50 border-b border-border/80 px-5 py-2 flex flex-col xs:flex-row justify-between items-start xs:items-center gap-2 select-none sm:h-14">
+            <h3 className="font-extrabold text-xs uppercase tracking-wider text-slate-700 flex items-center gap-1.5 py-1">
               <ArrowUpRight className="h-4.5 w-4.5 text-emerald-500 shrink-0" /> Payment Received (Paisa Aaya)
             </h3>
-            <div className="flex items-center gap-2">
-              <Label htmlFor="opening-cash-input" className="text-[10px] font-bold text-slate-600 uppercase">Opening Cash:</Label>
+            <div className="flex items-center gap-2 w-full xs:w-auto justify-between xs:justify-end py-1">
+              <Label htmlFor="opening-cash-input" className="text-[10px] font-bold text-slate-600 uppercase shrink-0">Opening Cash:</Label>
               <Input
                 id="opening-cash-input" type="number" step="any" min="0"
                 value={opening} onChange={(e) => setOpening(e.target.value)}
                 onBlur={onOpeningBlur}
-                className="h-8 w-24 font-bold text-right text-xs text-primary focus-visible:ring-primary"
+                className="h-8 w-24 font-bold text-right text-xs text-primary focus-visible:ring-primary shrink-0"
               />
             </div>
           </div>
@@ -939,13 +923,16 @@ function Page() {
             ))}
 
             {/* Payment Inflows (from dedicated page) */}
-            {paymentInflows.map((item) => (
+            {paymentInflows.map((item: any) => (
               <div key={item.id} className="px-5 py-3 flex justify-between items-center hover:bg-slate-50/40 group">
-                <span className="font-semibold text-slate-600 flex items-center gap-1.5">
-                  <span className="text-[9px] font-black uppercase bg-blue-100 text-blue-700 px-1 rounded">Inflow</span>
-                  {item.particular}
+                <span className="font-semibold text-slate-600 flex flex-col gap-0.5 min-w-0">
+                  <span className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[9px] font-black uppercase bg-blue-100 text-blue-700 px-1 rounded shrink-0">Inflow</span>
+                    <span className="break-all">{item.particular}</span>
+                  </span>
+                  {item.note && <span className="text-[10px] text-slate-400 font-normal ml-0 sm:ml-11 break-all">{item.note}</span>}
                 </span>
-                <span className="font-bold tabular-nums text-emerald-600 text-sm">{fmtCurrency(item.amount)}</span>
+                <span className="font-bold tabular-nums text-emerald-600 text-sm shrink-0 ml-2">{fmtCurrency(item.amount)}</span>
               </div>
             ))}
 
@@ -971,11 +958,6 @@ function Page() {
           {/* Left action buttons */}
           <div className="border-t border-border/80 px-5 py-3 flex gap-2">
             <Button type="button" size="sm" variant="outline"
-              onClick={() => setIsReceiptOpen(true)}
-              className="h-8 text-xs font-semibold text-emerald-700 border-emerald-200 hover:bg-emerald-50 gap-1">
-              <Plus className="h-3.5 w-3.5" /> Other Inflow
-            </Button>
-            <Button type="button" size="sm" variant="outline"
               onClick={() => setIsPendingOpen(true)}
               className="h-8 text-xs font-semibold text-amber-700 border-amber-200 hover:bg-amber-50 gap-1">
               <Plus className="h-3.5 w-3.5" /> Pending Bill
@@ -985,11 +967,11 @@ function Page() {
 
         {/* RIGHT: Money Paid */}
         <div className="flex flex-col min-h-[520px]">
-          <div className="bg-slate-50 border-b border-border/80 px-5 py-3.5 flex justify-between items-center select-none">
-            <h3 className="font-extrabold text-xs uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+          <div className="bg-slate-50 border-b border-border/80 px-5 py-2.5 flex justify-between items-center select-none sm:h-14">
+            <h3 className="font-extrabold text-xs uppercase tracking-wider text-slate-700 flex items-center gap-1.5 py-1">
               <ArrowDownRight className="h-4.5 w-4.5 text-red-500 shrink-0" /> Money Paid (Paisa Gaya)
             </h3>
-            <span className="text-xs font-black text-slate-400">₹ INR</span>
+            <span className="text-xs font-black text-slate-400 py-1 shrink-0">₹ INR</span>
           </div>
 
           <div className="flex-1 divide-y divide-slate-100 text-xs">
@@ -1079,13 +1061,16 @@ function Page() {
             )}
 
             {/* Payment Outflows (from dedicated page) */}
-            {paymentOutflows.map((item) => (
+            {paymentOutflows.map((item: any) => (
               <div key={item.id} className="px-5 py-3 flex justify-between items-center hover:bg-slate-50/40 group">
-                <span className="font-semibold text-slate-600 flex items-center gap-1.5">
-                  <span className="text-[9px] font-black uppercase bg-orange-100 text-orange-700 px-1 rounded">Outflow</span>
-                  {item.particular}
+                <span className="font-semibold text-slate-600 flex flex-col gap-0.5 min-w-0">
+                  <span className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[9px] font-black uppercase bg-orange-100 text-orange-700 px-1 rounded shrink-0">Outflow</span>
+                    <span className="break-all">{item.particular}</span>
+                  </span>
+                  {item.note && <span className="text-[10px] text-slate-400 font-normal ml-0 sm:ml-14 break-all">{item.note}</span>}
                 </span>
-                <span className="font-bold tabular-nums text-red-600 text-sm">{fmtCurrency(item.amount)}</span>
+                <span className="font-bold tabular-nums text-red-600 text-sm shrink-0 ml-2">{fmtCurrency(item.amount)}</span>
               </div>
             ))}
 
@@ -1216,26 +1201,7 @@ function Page() {
 
       {/* ── Dialogs ── */}
 
-      {/* Other Inflow */}
-      <Dialog open={isReceiptOpen} onOpenChange={setIsReceiptOpen}>
-        <DialogContent className="max-w-sm bg-white rounded-2xl shadow-xl p-6">
-          <DialogHeader><DialogTitle className="flex items-center gap-2 text-lg font-bold">💰 Record Miscellaneous Inflow</DialogTitle></DialogHeader>
-          <form onSubmit={addOtherReceipt} className="space-y-4 mt-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-bold text-muted-foreground uppercase">Particular / Description</Label>
-              <Input required value={receiptParticular} onChange={(e) => setReceiptParticular(e.target.value)} placeholder="Name change, Udhari cash receipt..." className="h-11" />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-bold text-muted-foreground uppercase">Amount (₹)</Label>
-              <Input required type="number" step="any" min="0.01" value={receiptAmount} onChange={(e) => setReceiptAmount(e.target.value)} placeholder="0.00" className="h-11 font-bold" />
-            </div>
-            <DialogFooter className="pt-2">
-              <Button type="button" variant="ghost" onClick={() => setIsReceiptOpen(false)}>Cancel</Button>
-              <Button type="submit" className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold h-11">Record Payment</Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+
 
       {/* Pending Bill */}
       <Dialog open={isPendingOpen} onOpenChange={setIsPendingOpen}>
