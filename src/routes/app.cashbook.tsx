@@ -354,7 +354,7 @@ function Page() {
     const totalOutflows = expensesTotal + prepOutflow + upiOutflow + chequeOutflow + udhariOutflow + commissionsTotal + magilBillsTotal + paymentOutflowsTotal + outstandingTotal;
     const cashBalance = leftGrandTotal - totalOutflows;
     const manualNum = manualCashEntry === "" ? null : Number(manualCashEntry);
-    const cashDifference = manualNum != null ? cashBalance - manualNum : null;
+    const cashDifference = manualNum != null ? manualNum - cashBalance : null;
 
     return {
       openingCash, homeTotal, homeQty, cncTotal, cncQty,
@@ -705,7 +705,7 @@ function Page() {
     if (agg.cashDifference !== null) {
       W(row, 0, "Manual Cash Entry (Physical Count)"); BLANK(row, 1); W(row, 2, Number(manualCashEntry)); row++;
       const isBalanced = Math.abs(agg.cashDifference) < 0.01;
-      const isSurplus = agg.cashDifference < 0;
+      const isSurplus = agg.cashDifference > 0;
       const diffBg = isBalanced ? C.sumBalYelBg : isSurplus ? C.sumBalBg : C.sumDiffBg;
       const diffFg = isBalanced ? C.sumBalYelFg : isSurplus ? C.sumBalFg : C.sumDiffFg;
       const diffLabel = isBalanced ? "Cash Difference (Balanced)" : isSurplus ? "Cash Difference (Surplus)" : "Cash Difference (Shortage)";
@@ -920,11 +920,11 @@ function Page() {
     if (agg.cashDifference !== null) {
       sumRow("Manual Cash Count",       fmt(Number(manualCashEntry)), WHITE);
       const isBalanced = Math.abs(agg.cashDifference) < 0.01;
-      const isSurplus = agg.cashDifference < 0;
+      const isSurplus = agg.cashDifference > 0;
       const diffBg = isBalanced ? [255,251,230] as [number,number,number] : isSurplus ? LGRN : LRED;
       const diffFg = (isBalanced ? [212,136,6] : isSurplus ? [31,122,77] : [156,0,6]) as [number, number, number];
       const diffLabel = isBalanced ? "Cash Difference (Balanced)" : isSurplus ? "Cash Difference (Surplus)" : "Cash Difference (Shortage)";
-      sumRow(diffLabel, fmt(agg.cashDifference), diffBg, true, diffFg);
+      sumRow(diffLabel, fmt(Math.abs(agg.cashDifference)), diffBg, true, diffFg);
     }
     if (dailyNote.trim()) {
       y += 3;
@@ -1351,7 +1351,7 @@ function Page() {
             ? "bg-slate-50 border-slate-200"
             : Math.abs(agg.cashDifference) < 0.01
             ? "bg-amber-50 border-amber-200/80"
-            : agg.cashDifference < 0
+            : agg.cashDifference > 0
             ? "bg-emerald-50 border-emerald-200/80"
             : "bg-red-50 border-red-200/80"
         )}>
@@ -1362,11 +1362,11 @@ function Page() {
                 ? "text-slate-600"
                 : Math.abs(agg.cashDifference) < 0.01
                 ? "text-amber-700"
-                : agg.cashDifference < 0
+                : agg.cashDifference > 0
                 ? "text-emerald-700"
                 : "text-red-700"
             )}>
-              {agg.cashDifference === null ? "Difference (Calculated − Manual)" : Math.abs(agg.cashDifference) < 0.01 ? "✅ Balanced" : agg.cashDifference < 0 ? "✅ Cash Surplus (Excess)" : "⚠️ Cash Shortage"}
+              {agg.cashDifference === null ? "Difference (Manual − Calculated)" : Math.abs(agg.cashDifference) < 0.01 ? "✅ Balanced" : agg.cashDifference > 0 ? "✅ Cash Surplus (Excess)" : "⚠️ Cash Shortage"}
             </div>
             {agg.cashDifference === null ? (
               <div className="text-sm text-muted-foreground italic">Enter manual cash count to see difference</div>
@@ -1376,7 +1376,7 @@ function Page() {
                   "text-2xl font-black tabular-nums mt-1",
                   Math.abs(agg.cashDifference) < 0.01
                     ? "text-amber-600"
-                    : agg.cashDifference < 0
+                    : agg.cashDifference > 0
                     ? "text-emerald-600"
                     : "text-red-600"
                 )}>
@@ -1384,7 +1384,7 @@ function Page() {
                 </div>
                 <div className="text-[10px] text-muted-foreground">
                   {Math.abs(agg.cashDifference) < 0.01 ? "Cashbook is perfectly balanced." :
-                    agg.cashDifference < 0 ? `Surplus: ₹${Math.abs(agg.cashDifference).toFixed(2)} more cash in hand than calculated` :
+                    agg.cashDifference > 0 ? `Surplus: ₹${Math.abs(agg.cashDifference).toFixed(2)} more cash in hand than calculated` :
                     `Shortage: ₹${Math.abs(agg.cashDifference).toFixed(2)} less cash in hand than calculated`}
                 </div>
               </>
