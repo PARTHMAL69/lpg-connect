@@ -430,7 +430,7 @@ function Page() {
     : kind === "payments"
     ? "Collection Report"
     : kind === "udhari"
-    ? "Udhari Register"
+    ? "Credit Book"
     : kind === "cashbook"
     ? "Cashbook"
     : kind === "delivery"
@@ -452,7 +452,7 @@ function Page() {
               <SelectItem value="daily_summary">📋 Daily Sales Register</SelectItem>
               <SelectItem value="product_sales">📈 Cylinder Sales Report</SelectItem>
               <SelectItem value="payments">💰 Collection Report</SelectItem>
-              <SelectItem value="udhari">⚠️ Udhari Register</SelectItem>
+              <SelectItem value="udhari">⚠️ Credit Book</SelectItem>
               <SelectItem value="cashbook">📓 Cashbook</SelectItem>
               <SelectItem value="delivery">🚚 Delivery Boy Settlement Report</SelectItem>
               <SelectItem value="stock">📦 Cylinder Stock Register</SelectItem>

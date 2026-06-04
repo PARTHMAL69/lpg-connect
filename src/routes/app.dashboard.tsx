@@ -10,7 +10,8 @@ import { fmtCurrency, fmtDate, todayISO } from "@/lib/format";
 import { useTranslation } from "react-i18next";
 import { 
   ShoppingCart, HandCoins, Receipt, UserPlus, TrendingUp, AlertCircle, 
-  BookOpen, Users, Clock, Flame, ChevronRight, Activity, Trash2, Calendar, Info
+  BookOpen, Users, Clock, Flame, ChevronRight, Activity, Trash2, Calendar, Info,
+  ArrowDownToLine, ArrowUpFromLine
 } from "lucide-react";
 
 
@@ -282,7 +283,7 @@ function Dash() {
     <div className="space-y-6 pb-8">
       
       {/* Premium Welcome Banner */}
-      <div className="bg-gradient-to-r from-navy via-slate-900 to-navy text-white rounded-2xl p-6 shadow-soft flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border border-slate-800">
+      <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 text-white rounded-2xl p-6 shadow-soft flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border border-slate-800">
         <div className="space-y-1.5">
           <div className="flex items-center gap-2">
             <Flame className="h-6 w-6 text-primary animate-pulse" />
@@ -307,11 +308,13 @@ function Dash() {
       {/* Quick Action Hub */}
       <div className="space-y-3">
         <h2 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">{t("dashboard.quickActions")}</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           <QuickAction to="/app/sales" icon={<ShoppingCart className="h-5 w-5" />} label={t("dashboard.newSale")} />
           <QuickAction to="/app/payments" icon={<HandCoins className="h-5 w-5" />} label={t("dashboard.receivePayment")} />
           <QuickAction to="/app/expenses" icon={<Receipt className="h-5 w-5" />} label={t("dashboard.newExpense")} />
           <QuickAction to="/app/customers" icon={<UserPlus className="h-5 w-5" />} label={t("dashboard.newCustomer")} />
+          <QuickAction to="/app/payment-inflow" icon={<ArrowDownToLine className="h-5 w-5" />} label="Record Inflow" />
+          <QuickAction to="/app/payment-outflow" icon={<ArrowUpFromLine className="h-5 w-5" />} label="Record Outflow" />
         </div>
       </div>
 
@@ -428,23 +431,27 @@ function Dash() {
 
 function Kpi({ label, value, icon, accent, description, tooltip }: { label: string; value: string; icon: React.ReactNode; accent: string; description?: string; tooltip?: string }) {
   const cls: Record<string, string> = {
-    primary: "bg-primary-soft text-primary border-primary/20",
-    success: "bg-success/10 text-success border-success/20",
-    warning: "bg-warning/10 text-warning-foreground border-warning/20",
-    destructive: "bg-destructive/10 text-destructive border-destructive/20",
+    primary: "bg-gradient-to-br from-indigo-500 via-indigo-600 to-blue-600 text-white shadow-indigo-500/10 hover:shadow-indigo-500/20",
+    success: "bg-gradient-to-br from-emerald-500 via-emerald-600 to-teal-600 text-white shadow-emerald-500/10 hover:shadow-emerald-500/20",
+    destructive: "bg-gradient-to-br from-rose-500 via-rose-600 to-red-600 text-white shadow-rose-500/10 hover:shadow-rose-500/20",
+    warning: "bg-gradient-to-br from-amber-500 via-amber-600 to-orange-600 text-white shadow-amber-500/10 hover:shadow-amber-500/20",
     muted: "bg-muted text-muted-foreground border-border",
   };
   return (
-    <Card title={tooltip} className="shadow-soft hover:shadow-card hover:border-primary/30 transition-all border cursor-help"><CardContent className="p-4">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground truncate">{label}</div>
-          <div className="text-lg md:text-xl font-extrabold mt-1.5 tracking-tight text-foreground truncate">{value}</div>
-          {description && <p className="text-[10px] text-muted-foreground mt-1 truncate">{description}</p>}
+    <Card title={tooltip} className={`${cls[accent] ?? "bg-white"} shadow-soft border-none transition-all hover:scale-[1.02] cursor-help`}>
+      <CardContent className="p-5">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 space-y-1">
+            <div className="text-[10px] font-extrabold uppercase tracking-widest text-white/80">{label}</div>
+            <div className="text-xl md:text-2xl font-black tracking-tight text-white">{value}</div>
+            {description && <p className="text-[10px] text-white/70 font-medium truncate">{description}</p>}
+          </div>
+          <div className="h-10 w-10 rounded-xl bg-white/20 text-white flex items-center justify-center shrink-0 border border-white/10 shadow-inner">
+            {icon}
+          </div>
         </div>
-        <div className={`h-9 w-9 rounded-xl flex items-center justify-center shrink-0 border ${cls[accent] ?? cls.muted}`}>{icon}</div>
-      </div>
-    </CardContent></Card>
+      </CardContent>
+    </Card>
   );
 }
 

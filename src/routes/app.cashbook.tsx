@@ -159,14 +159,21 @@ function Page() {
 
     setDailySales(((sData ?? []) as any[]).map((s) => {
       let pm = s.payment_mode;
-      try { const m = JSON.parse(s.notes ?? "{}"); if (m.is_cheque) pm = "cheque"; } catch (_) {}
+      let prepQty = 0;
+      try {
+        const m = JSON.parse(s.notes ?? "{}");
+        if (m.is_cheque) pm = "cheque";
+        if (m.website_prepaid_qty != null) {
+          prepQty = Number(m.website_prepaid_qty);
+        }
+      } catch (_) {}
       return {
         id: s.id,
         customer_name: s.customer?.name ?? "Walk-in",
         product_name: s.product?.name ?? "Cylinder",
         quantity: Number(s.quantity),
         rate: Number(s.rate || 0),
-        total: Number(s.gross_amount),
+        total: Number(s.gross_amount) + (prepQty * Number(s.rate || 0)),
         payment_mode: pm,
         commission_total: Number(s.commission_amount || 0),
         notes: s.notes,
@@ -265,7 +272,7 @@ function Page() {
 
       // 2. Online UPI (local QR code payments directly to agency)
       const isOnlineSale = !isSplit && s.payment_mode === "online";
-      const effectiveOnline = isSplit ? onlineAmt : (isOnlineSale ? s.total : 0);
+      const effectiveOnline = isSplit ? onlineAmt : (isOnlineSale ? (s.total - s.commission_total) : 0);
       if (effectiveOnline > 0) {
         const qrQty = isSplit ? Math.round(effectiveOnline / Number(s.rate || 1)) : s.quantity;
         const dbKey = s.delivery_boy_name ?? "Counter / Walk-in";
@@ -276,7 +283,7 @@ function Page() {
       }
 
       // Udhari per customer
-      const effectiveCredit = isSplit ? creditAmt : (s.payment_mode === "credit" ? s.total : 0);
+      const effectiveCredit = isSplit ? creditAmt : (s.payment_mode === "credit" ? (s.total - s.commission_total) : 0);
       if (effectiveCredit > 0) {
         const cn = s.customer_name ?? "Unknown";
         if (!udhariByCustomer[cn]) udhariByCustomer[cn] = { name: cn, amount: 0 };
@@ -295,11 +302,11 @@ function Page() {
     const expensesTotal = dailyExpenses.reduce((s, e) => s + Number(e.amount), 0);
     const commissionsTotal = Object.values(commissionByDriver).reduce((s, d) => s + d.amount, 0);
 
-    // Mode outflows from sales
-    const paytmSales = dailySales.filter(s => s.payment_mode === "paytm").reduce((a, r) => a + r.total, 0);
+    // Mode outflows from sales (net of delivery boy commission for cashbook balance adjustments)
+    const paytmSales = dailySales.filter(s => s.payment_mode === "paytm").reduce((a, r) => a + (r.total - r.commission_total), 0);
     const prepSales = Object.values(prepByDriver).reduce((s, d) => s + d.amount, 0);
     const onlineSales = Object.values(onlineByDriver).reduce((s, d) => s + d.amount, 0);
-    const chequeSales = dailySales.filter(s => s.payment_mode === "cheque").reduce((a, r) => a + r.total, 0);
+    const chequeSales = dailySales.filter(s => s.payment_mode === "cheque").reduce((a, r) => a + (r.total - r.commission_total), 0);
     const udhariSales = Object.values(udhariByCustomer).reduce((s, c) => s + c.amount, 0);
 
     const paytmRecoveries = dailyPayments.filter(p => p.payment_mode === "paytm").reduce((a, r) => a + r.amount, 0);
@@ -362,8 +369,9 @@ function Page() {
   const addPendingBill = async (e: FormEvent) => {
     e.preventDefault();
     const qty = Number(pendingQty), rate = Number(pendingRate);
-    if (!pendingLabel.trim() || !qty || !rate) { toast.error("Fill in label, qty and rate."); return; }
-    const item: BillItem = { id: newId(), label: pendingLabel.trim(), qty, rate, amount: qty * rate };
+    if (!qty || !rate) { toast.error("Please enter quantity and rate."); return; }
+    const label = pendingLabel.trim() || "Pending Bill";
+    const item: BillItem = { id: newId(), label, qty, rate, amount: qty * rate };
     const updated = [...pendingBills, item];
     setPendingBills(updated);
     await persist({ pending_bills: updated });
@@ -381,8 +389,9 @@ function Page() {
   const addMagilBill = async (e: FormEvent) => {
     e.preventDefault();
     const qty = Number(magilQty), rate = Number(magilRate);
-    if (!magilLabel.trim() || !qty || !rate) { toast.error("Fill in label, qty and rate."); return; }
-    const item: BillItem = { id: newId(), label: magilLabel.trim(), qty, rate, amount: qty * rate };
+    if (!qty || !rate) { toast.error("Please enter quantity and rate."); return; }
+    const label = magilLabel.trim() || "Magil Bill";
+    const item: BillItem = { id: newId(), label, qty, rate, amount: qty * rate };
     const updated = [...magilBills, item];
     setMagilBills(updated);
     await persist({ magil_bills: updated });
@@ -512,11 +521,11 @@ function Page() {
     row++;
 
     // ── ROW 2: Column headers ──
-    W(row, 0, "PAYMENT RECEIVED (Paisa Aaya)", { bold: true, sz: 11, fg: C.hdrFg, bg: C.hdrBg, align: "left", border: thickBorder });
+    W(row, 0, "PAYMENT RECEIVED", { bold: true, sz: 11, fg: C.hdrFg, bg: C.hdrBg, align: "left", border: thickBorder });
     W(row, 1, "Qty",        { bold: true, sz: 10, fg: C.hdrFg, bg: C.hdrBg, align: "center", border: thickBorder });
     W(row, 2, "Amount (₹)",{ bold: true, sz: 10, fg: C.hdrFg, bg: C.hdrBg, align: "right",  border: thickBorder });
     BLANK(row, 3);
-    W(row, 4, "MONEY PAID (Paisa Gaya)",       { bold: true, sz: 11, fg: C.hdrFg, bg: C.hdrBg, align: "left", border: thickBorder });
+    W(row, 4, "MONEY PAID / OUTFLOW",       { bold: true, sz: 11, fg: C.hdrFg, bg: C.hdrBg, align: "left", border: thickBorder });
     W(row, 5, "Qty",        { bold: true, sz: 10, fg: C.hdrFg, bg: C.hdrBg, align: "center", border: thickBorder });
     W(row, 6, "Amount (₹)",{ bold: true, sz: 10, fg: C.hdrFg, bg: C.hdrBg, align: "right",  border: thickBorder });
     const dataStartRow = row + 1;
@@ -554,7 +563,7 @@ function Page() {
     }
     if (agg.chequeOutflow > 0) right.push({ label: "Bank Cheque Collections", qty: "", amt: agg.chequeOutflow });
     if (agg.udhariOutflow > 0) {
-      right.push({ label: "Today's Credit Sales (Udhari)", qty: "", amt: agg.udhariOutflow });
+      right.push({ label: "Credit Sales", qty: "", amt: agg.udhariOutflow });
       Object.values(agg.udhariByCustomer).forEach(c => right.push({ label: `  └ ${c.name}`, qty: "", amt: c.amount, sub: true }));
     }
     if (agg.commissionsTotal > 0) {
@@ -708,10 +717,10 @@ function Page() {
     fillRect(ML, y, colW, hdrH, BLUE);
     fillRect(col2X, y, colW, hdrH, BLUE);
     doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(...WHITE);
-    text("PAYMENT RECEIVED (Paisa Aaya)", ML + 2, y + 5);
+    text("PAYMENT RECEIVED", ML + 2, y + 5);
     text("Qty",       ML + labelW + 4,       y + 5, { align: "right" });
     text("Amount (₹)",ML + labelW + qtyW + amtW - 1, y + 5, { align: "right" });
-    text("MONEY PAID (Paisa Gaya)", col2X + 2, y + 5);
+    text("MONEY PAID / OUTFLOW", col2X + 2, y + 5);
     text("Qty",       col2X + labelW + 4,       y + 5, { align: "right" });
     text("Amount (₹)",col2X + labelW + qtyW + amtW - 1, y + 5, { align: "right" });
     y += hdrH;
@@ -747,7 +756,7 @@ function Page() {
     }
     if (agg.chequeOutflow > 0) rRows.push({ label: "Bank Cheque Collections", qty: "", amt: fmt(agg.chequeOutflow) });
     if (agg.udhariOutflow > 0) {
-      rRows.push({ label: "Today's Credit Sales (Udhari)", qty: "", amt: fmt(agg.udhariOutflow) });
+      rRows.push({ label: "Credit Sales", qty: "", amt: fmt(agg.udhariOutflow) });
       Object.values(agg.udhariByCustomer).forEach(c => rRows.push({ label: `  └ ${c.name}`, qty: "", amt: fmt(c.amount), sub: true }));
     }
     if (agg.commissionsTotal > 0) {
@@ -786,8 +795,8 @@ function Page() {
         // re-draw mini headers
         fillRect(ML, y, colW, hdrH, BLUE); fillRect(col2X, y, colW, hdrH, BLUE);
         doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(...WHITE);
-        text("PAYMENT RECEIVED (Paisa Aaya)", ML + 2, y + 5);
-        text("MONEY PAID (Paisa Gaya)", col2X + 2, y + 5);
+        text("PAYMENT RECEIVED", ML + 2, y + 5);
+        text("MONEY PAID / OUTFLOW", col2X + 2, y + 5);
         y += hdrH;
       }
       drawRow(lRows[i], ML,    y, i % 2 === 1);
@@ -901,7 +910,7 @@ function Page() {
           {/* Header */}
           <div className="bg-slate-50 border-b border-border/80 px-5 py-3 flex justify-between items-center select-none h-12">
             <h3 className="font-extrabold text-xs uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-              <ArrowUpRight className="h-4.5 w-4.5 text-emerald-500 shrink-0" /> Payment Received (Paisa Aaya)
+              <ArrowUpRight className="h-4.5 w-4.5 text-emerald-500 shrink-0" /> Payment Received
             </h3>
             <span className="text-xs font-black text-slate-400">₹ INR</span>
           </div>
@@ -950,7 +959,7 @@ function Page() {
             {/* Collections */}
             {agg.collectionsTotal > 0 && (
               <div className="px-5 py-3.5 flex justify-between items-center hover:bg-slate-50/40">
-                <span className="font-semibold text-slate-600">Outstanding Customer Collections <span className="text-slate-400 font-normal">(Credit Recovery)</span></span>
+                <span className="font-semibold text-slate-600">Credit Recovery / Outstanding Collections</span>
                 <span className="font-bold tabular-nums text-slate-800 text-sm">{fmtCurrency(agg.collectionsTotal)}</span>
               </div>
             )}
@@ -1014,7 +1023,7 @@ function Page() {
         <div className="flex flex-col min-h-[520px]">
           <div className="bg-slate-50 border-b border-border/80 px-5 py-3 flex justify-between items-center select-none h-12">
             <h3 className="font-extrabold text-xs uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-              <ArrowDownRight className="h-4.5 w-4.5 text-red-500 shrink-0" /> Money Paid (Paisa Gaya)
+              <ArrowDownRight className="h-4.5 w-4.5 text-red-500 shrink-0" /> Money Paid / Outflow
             </h3>
             <span className="text-xs font-black text-slate-400">₹ INR</span>
           </div>
@@ -1091,7 +1100,7 @@ function Page() {
             {agg.udhariOutflow > 0 && (
               <div className="px-5 py-3 flex flex-col hover:bg-slate-50/40">
                 <div className="flex justify-between items-center py-0.5">
-                  <span className="font-semibold text-slate-600">Today's Credit Sales <span className="text-slate-400 font-normal">(Udhari)</span></span>
+                  <span className="font-semibold text-slate-600">Credit Sales</span>
                   <span className="font-bold tabular-nums text-slate-700 text-sm">{fmtCurrency(agg.udhariOutflow)}</span>
                 </div>
                 <div className="mt-1 pl-3 border-l-2 border-slate-200/80 space-y-0.5 text-[10px] text-slate-500 font-medium">
@@ -1271,12 +1280,11 @@ function Page() {
         <DialogContent className="max-w-sm bg-white rounded-2xl shadow-xl p-6">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-lg font-bold">📋 Add Pending Bill</DialogTitle>
-            <p className="text-xs text-muted-foreground mt-1">Pending = Qty × Rate → added to Payment Received</p>
           </DialogHeader>
           <form onSubmit={addPendingBill} className="space-y-4 mt-3">
             <div className="space-y-1.5">
               <Label className="text-xs font-bold text-muted-foreground uppercase">Description / Label</Label>
-              <Input required value={pendingLabel} onChange={(e) => setPendingLabel(e.target.value)} placeholder="e.g. Pending cylinders" className="h-11" />
+              <Input value={pendingLabel} onChange={(e) => setPendingLabel(e.target.value)} placeholder="e.g. Pending cylinders (optional)" className="h-11" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
@@ -1307,12 +1315,11 @@ function Page() {
         <DialogContent className="max-w-sm bg-white rounded-2xl shadow-xl p-6">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-lg font-bold">🧾 Add Magil Bill</DialogTitle>
-            <p className="text-xs text-muted-foreground mt-1">Magil = Qty × Rate → added to Money Paid</p>
           </DialogHeader>
           <form onSubmit={addMagilBill} className="space-y-4 mt-3">
             <div className="space-y-1.5">
               <Label className="text-xs font-bold text-muted-foreground uppercase">Description / Label</Label>
-              <Input required value={magilLabel} onChange={(e) => setMagilLabel(e.target.value)} placeholder="e.g. Magil cylinders" className="h-11" />
+              <Input value={magilLabel} onChange={(e) => setMagilLabel(e.target.value)} placeholder="e.g. Magil cylinders (optional)" className="h-11" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">

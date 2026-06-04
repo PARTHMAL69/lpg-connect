@@ -26,7 +26,7 @@ const NAV = [
   { to: "/app", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { to: "/app/sales", label: "Sales", icon: ShoppingCart },
   { to: "/app/customers", label: "Customers", icon: Users },
-  { to: "/app/udhari", label: "Udhari", icon: IndianRupee },
+  { to: "/app/udhari", label: "Credit Book", icon: IndianRupee },
   { to: "/app/payments", label: "Payments", icon: Wallet },
   { to: "/app/expenses", label: "Expenses", icon: Receipt },
   { to: "/app/products", label: "Products", icon: Package },

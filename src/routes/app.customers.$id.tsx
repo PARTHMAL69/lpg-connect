@@ -988,36 +988,20 @@ function Page() {
               {/* AUDIT TRAIL METADATA SECTION */}
               <div className="space-y-2.5 bg-slate-50/50 p-4 rounded-xl border border-dashed border-slate-200">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5 select-none">
-                  <Clock className="h-3.5 w-3.5 text-muted-foreground" /> Complete System Audit Trail
+                  <Clock className="h-3.5 w-3.5 text-muted-foreground" /> System Records
                 </h4>
                 
                 <div className="space-y-1.5 text-xs text-muted-foreground">
                   <div className="flex justify-between items-center">
-                    <span className="flex items-center gap-1"><User className="h-3 w-3" /> Created By</span>
-                    <span className="font-mono text-[10px] text-foreground font-semibold bg-white border px-1.5 py-0.5 rounded">
-                      {selectedItem.created_by ? `UID: ${selectedItem.created_by.substring(0, 8)}` : "System / Seeder"}
-                    </span>
-                  </div>
-
-                  <div className="flex justify-between items-center">
-                    <span>Created Timestamp</span>
+                    <span>Created At</span>
                     <span className="font-semibold text-foreground">
                       {new Date(selectedItem.created_at).toLocaleString()}
                     </span>
                   </div>
 
-                  {selectedItem.updated_by && (
-                    <div className="flex justify-between items-center border-t pt-1.5 mt-1.5">
-                      <span className="flex items-center gap-1"><User className="h-3 w-3" /> Last Updated By</span>
-                      <span className="font-mono text-[10px] text-foreground font-semibold bg-white border px-1.5 py-0.5 rounded">
-                        UID: {selectedItem.updated_by.substring(0, 8)}
-                      </span>
-                    </div>
-                  )}
-
                   {selectedItem.updated_at && selectedItem.updated_by && (
-                    <div className="flex justify-between items-center">
-                      <span>Last Updated Timestamp</span>
+                    <div className="flex justify-between items-center border-t pt-1.5 mt-1.5">
+                      <span>Last Updated At</span>
                       <span className="font-semibold text-foreground">
                         {new Date(selectedItem.updated_at).toLocaleString()}
                       </span>
@@ -1027,14 +1011,8 @@ function Page() {
                   {selectedItem.is_deleted && (
                     <div className="space-y-1.5 border-t border-destructive/25 pt-1.5 mt-1.5 bg-destructive/5 -mx-4 -mb-4 p-4 rounded-b-xl text-destructive-dark">
                       <div className="flex justify-between items-center">
-                        <span className="flex items-center gap-1"><User className="h-3 w-3" /> Voided/Deleted By</span>
-                        <span className="font-mono text-[10px] text-destructive-dark font-black bg-white border border-destructive/25 px-1.5 py-0.5 rounded">
-                          UID: {selectedItem.deleted_by?.substring(0, 8)}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span>Voided Timestamp</span>
-                        <span className="font-extrabold text-destructive-dark">
+                        <span>Voided At</span>
+                        <span className="font-extrabold text-destructive-dark text-right">
                           {selectedItem.deleted_at ? new Date(selectedItem.deleted_at).toLocaleString() : "—"}
                         </span>
                       </div>

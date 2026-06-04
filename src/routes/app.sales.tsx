@@ -116,6 +116,16 @@ function Page() {
                 isCheque = true;
                 paymentMode = "cheque";
                 displayNotes = meta.remarks ?? "";
+              } else if (meta.is_split) {
+                const parts: string[] = [];
+                if (meta.cash_amount) parts.push(`Cash ₹${Number(meta.cash_amount).toLocaleString("en-IN")}`);
+                if (meta.online_amount) parts.push(`Online ₹${Number(meta.online_amount).toLocaleString("en-IN")}`);
+                if (meta.credit_amount) parts.push(`Credit ₹${Number(meta.credit_amount).toLocaleString("en-IN")}`);
+                const rem = meta.remarks ? ` · Notes: ${meta.remarks}` : "";
+                displayNotes = `Split [${parts.join(" + ")}]${rem}`;
+              } else if (meta.website_prepaid_qty != null) {
+                const rem = meta.remarks ? ` · Notes: ${meta.remarks}` : "";
+                displayNotes = `Website Prepaid: ${meta.website_prepaid_qty} units${rem}`;
               }
             }
           } catch (e) {}
@@ -569,36 +579,20 @@ function Page() {
               {/* AUDIT TRAIL METADATA SECTION */}
               <div className="space-y-2.5 bg-slate-50/50 p-4 rounded-xl border border-dashed border-slate-200">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5 select-none">
-                  <Clock className="h-3.5 w-3.5 text-muted-foreground" /> Complete System Audit Trail
+                  <Clock className="h-3.5 w-3.5 text-muted-foreground" /> System Records
                 </h4>
                 
                 <div className="space-y-1.5 text-xs text-muted-foreground">
                   <div className="flex justify-between items-center">
-                    <span className="flex items-center gap-1"><User className="h-3 w-3" /> Created By</span>
-                    <span className="font-mono text-[10px] text-foreground font-semibold bg-white border px-1.5 py-0.5 rounded">
-                      {selectedSale.created_by ? `UID: ${selectedSale.created_by.substring(0, 8)}` : "System / Seeder"}
-                    </span>
-                  </div>
-
-                  <div className="flex justify-between items-center">
-                    <span>Created Timestamp</span>
+                    <span>Created At</span>
                     <span className="font-semibold text-foreground">
                       {new Date(selectedSale.created_at).toLocaleString()}
                     </span>
                   </div>
 
-                  {selectedSale.updated_by && (
-                    <div className="flex justify-between items-center border-t pt-1.5 mt-1.5">
-                      <span className="flex items-center gap-1"><User className="h-3 w-3" /> Last Updated By</span>
-                      <span className="font-mono text-[10px] text-foreground font-semibold bg-white border px-1.5 py-0.5 rounded">
-                        UID: {selectedSale.updated_by.substring(0, 8)}
-                      </span>
-                    </div>
-                  )}
-
                   {selectedSale.updated_at && selectedSale.updated_by && (
-                    <div className="flex justify-between items-center">
-                      <span>Last Updated Timestamp</span>
+                    <div className="flex justify-between items-center border-t pt-1.5 mt-1.5">
+                      <span>Last Updated At</span>
                       <span className="font-semibold text-foreground">
                         {new Date(selectedSale.updated_at).toLocaleString()}
                       </span>
@@ -608,14 +602,8 @@ function Page() {
                   {selectedSale.is_deleted && (
                     <div className="space-y-1.5 border-t border-destructive/25 pt-1.5 mt-1.5 bg-destructive/5 -mx-4 -mb-4 p-4 rounded-b-xl text-destructive-dark">
                       <div className="flex justify-between items-center">
-                        <span className="flex items-center gap-1"><User className="h-3 w-3" /> Voided/Deleted By</span>
-                        <span className="font-mono text-[10px] text-destructive-dark font-black bg-white border border-destructive/25 px-1.5 py-0.5 rounded">
-                          UID: {selectedSale.deleted_by?.substring(0, 8)}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span>Voided Timestamp</span>
-                        <span className="font-extrabold text-destructive-dark">
+                        <span>Voided At</span>
+                        <span className="font-extrabold text-destructive-dark text-right">
                           {selectedSale.deleted_at ? new Date(selectedSale.deleted_at).toLocaleString() : "—"}
                         </span>
                       </div>

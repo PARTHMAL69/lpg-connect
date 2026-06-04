@@ -66,7 +66,7 @@ const en = {
     products: "Products",
     payments: "Payments",
     expenses: "Expenses",
-    udhari: "Udhari",
+    udhari: "Credit Book",
     deliveryBoys: "Delivery Boys",
     cashbook: "Cash Book",
     reports: "Reports",
@@ -137,7 +137,7 @@ const en = {
     cash: "Cash",
     online: "Online",
     paytm: "Paytm",
-    credit: "Credit (Udhari)",
+    credit: "Credit",
   },
   payment: {
     title: "Payments",
@@ -214,7 +214,7 @@ const en = {
     cash: "Cash",
     online: "Online",
     paytm: "Paytm",
-    credit: "Credit (Udhari)",
+    credit: "Credit",
     saved: "Saved successfully",
   },
   payments: {
