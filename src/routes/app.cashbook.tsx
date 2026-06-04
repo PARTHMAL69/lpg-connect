@@ -172,14 +172,17 @@ function Page() {
           prepQty = Number(m.website_prepaid_qty);
         }
       } catch (_) {}
+      const quantity = Number(s.quantity);
+      const rate = Number(s.rate || 0);
+      const nonPrepaidGross = (quantity - prepQty) * rate;
       return {
         id: s.id,
         customer_name: s.customer?.name ?? "Walk-in",
         product_name: s.product?.name ?? "Cylinder",
-        quantity: Number(s.quantity),
-        rate: Number(s.rate || 0),
-        total: Number(s.gross_amount),
-        gross_amount: Number(s.gross_amount),
+        quantity,
+        rate,
+        total: nonPrepaidGross,
+        gross_amount: nonPrepaidGross,
         payment_mode: pm,
         commission_total: Number(s.commission_amount || 0),
         notes: s.notes,
@@ -327,7 +330,7 @@ function Page() {
     const onlineRecoveries = dailyPayments.filter(p => p.payment_mode === "online").reduce((a, r) => a + r.amount, 0);
     const chequeRecoveries = dailyPayments.filter(p => p.payment_mode === "cheque").reduce((a, r) => a + r.amount, 0);
 
-    const prepOutflow = prepSales;
+    const prepOutflow = 0;
     const upiOutflow = upiSales + paytmRecoveries + onlineRecoveries;
     const chequeOutflow = chequeSales + chequeRecoveries;
     const udhariOutflow = udhariSales;
@@ -574,9 +577,9 @@ function Page() {
       }
       right.push({ label: `${cat.replace("_", " ")}${note ? ` (${note})` : ""}`, qty: "", amt: Number(e.amount) });
     });
-    if (agg.prepOutflow > 0) {
-      right.push({ label: "Website Prepaid", qty: agg.prepQtyTotal, amt: agg.prepOutflow });
-      Object.values(agg.prepByDriver).forEach(d => right.push({ label: `  - ${d.name}`, qty: d.qty, amt: d.amount, sub: true }));
+    if (agg.prepQtyTotal > 0) {
+      right.push({ label: "Website Prepaid", qty: agg.prepQtyTotal, amt: 0 });
+      Object.values(agg.prepByDriver).forEach(d => right.push({ label: `  - ${d.name}`, qty: d.qty, amt: 0, sub: true }));
     }
     if (agg.upiOutflow > 0) {
       right.push({ label: "UPI", qty: agg.onlineQtyTotal, amt: agg.upiOutflow });
@@ -776,9 +779,9 @@ function Page() {
       }
       rRows.push({ label: `${cat.replace("_", " ")}${note ? ` (${note})` : ""}`, qty: "", amt: fmt(Number(e.amount)) });
     });
-    if (agg.prepOutflow > 0) {
-      rRows.push({ label: "Website Prepaid", qty: String(agg.prepQtyTotal), amt: fmt(agg.prepOutflow) });
-      Object.values(agg.prepByDriver).forEach(d => rRows.push({ label: `  - ${d.name}`, qty: String(d.qty), amt: fmt(d.amount), sub: true }));
+    if (agg.prepQtyTotal > 0) {
+      rRows.push({ label: "Website Prepaid", qty: String(agg.prepQtyTotal), amt: "—" });
+      Object.values(agg.prepByDriver).forEach(d => rRows.push({ label: `  - ${d.name}`, qty: String(d.qty), amt: "—", sub: true }));
     }
     if (agg.upiOutflow > 0) {
       rRows.push({ label: "UPI", qty: String(agg.onlineQtyTotal), amt: fmt(agg.upiOutflow) });
@@ -1106,17 +1109,17 @@ function Page() {
             })}
 
             {/* Website Prepaid */}
-            {agg.prepOutflow > 0 && (
+            {agg.prepQtyTotal > 0 && (
               <div className="px-5 py-3 flex flex-col hover:bg-slate-50/40">
                 <div className="flex justify-between items-center py-0.5">
                   <span className="font-semibold text-slate-600">Website Prepaid <span className="text-slate-400 font-normal">({agg.prepQtyTotal} units)</span></span>
-                  <span className="font-bold tabular-nums text-slate-700 text-sm">{fmtCurrency(agg.prepOutflow)}</span>
+                  <span className="font-bold tabular-nums text-slate-500 text-sm">—</span>
                 </div>
                 <div className="mt-1 pl-3 border-l-2 border-slate-200/80 space-y-0.5 text-[10px] text-slate-500 font-medium">
                   {Object.values(agg.prepByDriver).map((d) => (
                     <div key={d.name} className="flex justify-between py-0.5">
                       <span>{d.name} <span className="text-slate-400">({d.qty} units)</span></span>
-                      <span className="tabular-nums">{fmtCurrency(d.amount)}</span>
+                      <span className="tabular-nums text-slate-400">—</span>
                     </div>
                   ))}
                 </div>
