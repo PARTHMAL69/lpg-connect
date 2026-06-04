@@ -1380,12 +1380,12 @@ function Page() {
                     ? "text-emerald-600"
                     : "text-red-600"
                 )}>
-                  {fmtCurrency(agg.cashDifference)}
+                  {fmtCurrency(Math.abs(agg.cashDifference))}
                 </div>
                 <div className="text-[10px] text-muted-foreground">
                   {Math.abs(agg.cashDifference) < 0.01 ? "Cashbook is perfectly balanced." :
                     agg.cashDifference < 0 ? `Surplus: ₹${Math.abs(agg.cashDifference).toFixed(2)} more cash in hand than calculated` :
-                    `Shortage: ₹${agg.cashDifference.toFixed(2)} less cash in hand than calculated`}
+                    `Shortage: ₹${Math.abs(agg.cashDifference).toFixed(2)} less cash in hand than calculated`}
                 </div>
               </>
             )}
