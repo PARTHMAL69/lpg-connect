@@ -44,6 +44,7 @@ interface ExpenseRow {
   display_category?: string;
   display_notes?: string;
   custom_category_name?: string;
+  worker_name?: string;
 }
 
 const CATS = [
@@ -115,6 +116,8 @@ function Page() {
         let displayCategory = exp.category;
         let displayNotes = exp.notes ?? "";
         let customCategoryName = "";
+        let workerName = "";
+
         if (exp.notes && exp.notes.startsWith("[OTHER_CAT:")) {
           const match = exp.notes.match(/^\[OTHER_CAT:([^\]]+)\]/);
           if (match) {
@@ -122,12 +125,20 @@ function Page() {
             displayCategory = "other";
             displayNotes = exp.notes.replace(/^\[OTHER_CAT:[^\]]+\]\s*/, "");
           }
+        } else if (exp.notes && exp.notes.startsWith("[WORKER:")) {
+          const match = exp.notes.match(/^\[WORKER:([^\]]+)\]/);
+          if (match) {
+            workerName = match[1];
+            displayNotes = exp.notes.replace(/^\[WORKER:[^\]]+\]\s*/, "");
+          }
         }
+
         return {
           ...exp,
           display_category: displayCategory,
           display_notes: displayNotes,
-          custom_category_name: customCategoryName
+          custom_category_name: customCategoryName,
+          worker_name: workerName
         };
       });
       setRows(mapped as unknown as ExpenseRow[]);
@@ -256,6 +267,7 @@ function Page() {
                 <SheetTitle>{editExpense ? "Edit Expense details" : t("expenses.newExpense")}</SheetTitle>
               </SheetHeader>
               <ExpenseForm 
+                key={editExpense?.id ?? "new"}
                 editExpense={editExpense} 
                 onDone={() => { setOpen(false); setEditExpense(null); void load(); }} 
               />
@@ -352,7 +364,10 @@ function Page() {
                     <td className="p-4 font-bold">
                       <span className="inline-block px-2.5 py-1 rounded bg-muted font-medium text-xs">
                         {r.custom_category_name || catLabels[r.display_category ?? r.category] || r.category}
-                        {r.category === "delivery_boy_payment" && r.delivery_boy_id && ` (${boys.find(b => b.id === r.delivery_boy_id)?.name ?? "Boy " + r.delivery_boy_id.substring(0, 8)})`}
+                        {(r.category === "delivery_boy_payment" || r.category === "salary") && (
+                          r.worker_name ? ` (${r.worker_name})` : 
+                          (r.delivery_boy_id ? ` (${boys.find(b => b.id === r.delivery_boy_id)?.name ?? "Boy " + r.delivery_boy_id.substring(0, 8)})` : "")
+                        )}
                       </span>
                     </td>
                     <td className="p-4 text-muted-foreground text-xs italic truncate max-w-xs">{r.display_notes ?? "—"}</td>
@@ -454,11 +469,11 @@ function Page() {
                   <div className="text-muted-foreground">Category</div>
                   <div className="font-bold text-foreground text-right">{selectedExpense.custom_category_name || catLabels[selectedExpense.display_category ?? selectedExpense.category] || selectedExpense.category}</div>
 
-                  {selectedExpense.category === "delivery_boy_payment" && selectedExpense.delivery_boy_id && (
+                  {(selectedExpense.category === "delivery_boy_payment" || selectedExpense.category === "salary") && (selectedExpense.delivery_boy_id || selectedExpense.worker_name) && (
                     <>
-                      <div className="text-muted-foreground">Delivery Boy Payout</div>
+                      <div className="text-muted-foreground">Worker / Delivery Boy</div>
                       <div className="font-bold text-primary text-right">
-                        {boys.find(b => b.id === selectedExpense.delivery_boy_id)?.name ?? "Boy " + selectedExpense.delivery_boy_id.substring(0, 8)}
+                        {selectedExpense.worker_name ? selectedExpense.worker_name : (boys.find(b => b.id === selectedExpense.delivery_boy_id)?.name ?? "Boy " + selectedExpense.delivery_boy_id?.substring(0, 8))}
                       </div>
                     </>
                   )}
@@ -582,7 +597,14 @@ function ExpenseForm({ editExpense, onDone }: FormProps) {
   const [customCategoryName, setCustomCategoryName] = useState(initCustomName);
   const [amount, setAmount] = useState(editExpense?.amount ? String(editExpense.amount) : "");
   const [notes, setNotes] = useState(initNotes);
-  const [delivery_boy_id, setDeliveryBoyId] = useState(editExpense?.delivery_boy_id ?? "");
+  
+  const [delivery_boy_id, setDeliveryBoyId] = useState(() => {
+    if (editExpense?.delivery_boy_id) return editExpense.delivery_boy_id;
+    if (editExpense?.worker_name) return "manual";
+    return "";
+  });
+  const [manualWorkerName, setManualWorkerName] = useState(editExpense?.worker_name ?? "");
+
   const [boys, setBoys] = useState<Array<{ id: string; name: string }>>([]);
   const [busy, setBusy] = useState(false);
 
@@ -611,9 +633,15 @@ function ExpenseForm({ editExpense, onDone }: FormProps) {
       return;
     }
 
-    const isBoyPayment = category === "delivery_boy_payment";
-    if (isBoyPayment && !delivery_boy_id) {
-      toast.error("Please select a delivery boy.");
+    const isWorkerCategory = category === "delivery_boy_payment" || category === "salary";
+    if (isWorkerCategory && !delivery_boy_id) {
+      toast.error("Please select a worker / delivery boy.");
+      setBusy(false);
+      return;
+    }
+
+    if (isWorkerCategory && delivery_boy_id === "manual" && !manualWorkerName.trim()) {
+      toast.error("Please enter the worker's name.");
       setBusy(false);
       return;
     }
@@ -625,11 +653,17 @@ function ExpenseForm({ editExpense, onDone }: FormProps) {
       return;
     }
 
-    // Map "other" -> "miscellaneous" in DB, prefix notes with [OTHER_CAT:name]
+    // Map "other" -> "miscellaneous" in DB, prefix notes with [OTHER_CAT:name] or [WORKER:name]
     const dbCategory = isOther ? "miscellaneous" : category;
-    const dbNotes = isOther 
-      ? `[OTHER_CAT:${customCategoryName.trim()}]${notes ? " " + notes : ""}`
-      : (notes || null);
+    
+    let dbNotes = notes || null;
+    if (isOther) {
+      dbNotes = `[OTHER_CAT:${customCategoryName.trim()}]${notes ? " " + notes : ""}`;
+    } else if (isWorkerCategory && delivery_boy_id === "manual") {
+      dbNotes = `[WORKER:${manualWorkerName.trim()}]${notes ? " " + notes : ""}`;
+    }
+
+    const dbDeliveryBoyId = (isWorkerCategory && delivery_boy_id !== "manual") ? delivery_boy_id : null;
 
     const payload = {
       agency_id: agency.id,
@@ -637,7 +671,7 @@ function ExpenseForm({ editExpense, onDone }: FormProps) {
       category: dbCategory as any,
       amount: val,
       notes: dbNotes,
-      delivery_boy_id: isBoyPayment ? delivery_boy_id : null,
+      delivery_boy_id: dbDeliveryBoyId,
       updated_by: session?.user?.id
     };
 
@@ -685,7 +719,14 @@ function ExpenseForm({ editExpense, onDone }: FormProps) {
 
       <div className="space-y-1.5">
         <Label>{t("expenses.category")}</Label>
-        <Select value={category} onValueChange={(v) => { setCategory(v); if (v !== "delivery_boy_payment") setDeliveryBoyId(""); if (v !== "other") setCustomCategoryName(""); }}>
+        <Select value={category} onValueChange={(v) => {
+          setCategory(v);
+          if (v !== "delivery_boy_payment" && v !== "salary") {
+            setDeliveryBoyId("");
+            setManualWorkerName("");
+          }
+          if (v !== "other") setCustomCategoryName("");
+        }}>
           <SelectTrigger className="h-11"><SelectValue /></SelectTrigger>
           <SelectContent>
             {CATS.map((c) => (
@@ -709,19 +750,34 @@ function ExpenseForm({ editExpense, onDone }: FormProps) {
         </div>
       )}
 
-      {category === "delivery_boy_payment" && (
+      {(category === "delivery_boy_payment" || category === "salary") && (
         <div className="space-y-1.5 animate-fade-in">
-          <Label>Select Delivery Boy</Label>
+          <Label>Select Worker / Delivery Boy</Label>
           <Select value={delivery_boy_id} onValueChange={setDeliveryBoyId}>
             <SelectTrigger className="h-11">
-              <SelectValue placeholder="Select Delivery Boy..." />
+              <SelectValue placeholder="Select Worker / Delivery Boy..." />
             </SelectTrigger>
             <SelectContent>
               {boys.map((b) => (
                 <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
               ))}
+              <SelectItem value="manual">Other (Manual Name Entry)</SelectItem>
             </SelectContent>
           </Select>
+        </div>
+      )}
+
+      {(category === "delivery_boy_payment" || category === "salary") && delivery_boy_id === "manual" && (
+        <div className="space-y-1.5 animate-fade-in">
+          <Label>Worker Name</Label>
+          <Input 
+            required
+            type="text"
+            placeholder="Enter worker's manual name..."
+            value={manualWorkerName}
+            onChange={(e) => setManualWorkerName(e.target.value)}
+            className="h-11 font-medium"
+          />
         </div>
       )}
 

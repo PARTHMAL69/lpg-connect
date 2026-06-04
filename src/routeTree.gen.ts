@@ -24,6 +24,7 @@ import { Route as AppProductsRouteImport } from './routes/app.products'
 import { Route as AppPaymentsRouteImport } from './routes/app.payments'
 import { Route as AppPaymentOutflowRouteImport } from './routes/app.payment-outflow'
 import { Route as AppPaymentInflowRouteImport } from './routes/app.payment-inflow'
+import { Route as AppOutstandingRouteImport } from './routes/app.outstanding'
 import { Route as AppExpensesRouteImport } from './routes/app.expenses'
 import { Route as AppDeliveryBoysRouteImport } from './routes/app.delivery-boys'
 import { Route as AppDashboardRouteImport } from './routes/app.dashboard'
@@ -106,6 +107,11 @@ const AppPaymentInflowRoute = AppPaymentInflowRouteImport.update({
   path: '/payment-inflow',
   getParentRoute: () => AppRoute,
 } as any)
+const AppOutstandingRoute = AppOutstandingRouteImport.update({
+  id: '/outstanding',
+  path: '/outstanding',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppExpensesRoute = AppExpensesRouteImport.update({
   id: '/expenses',
   path: '/expenses',
@@ -147,6 +153,7 @@ export interface FileRoutesByFullPath {
   '/app/dashboard': typeof AppDashboardRoute
   '/app/delivery-boys': typeof AppDeliveryBoysRoute
   '/app/expenses': typeof AppExpensesRoute
+  '/app/outstanding': typeof AppOutstandingRoute
   '/app/payment-inflow': typeof AppPaymentInflowRoute
   '/app/payment-outflow': typeof AppPaymentOutflowRoute
   '/app/payments': typeof AppPaymentsRoute
@@ -168,6 +175,7 @@ export interface FileRoutesByTo {
   '/app/dashboard': typeof AppDashboardRoute
   '/app/delivery-boys': typeof AppDeliveryBoysRoute
   '/app/expenses': typeof AppExpensesRoute
+  '/app/outstanding': typeof AppOutstandingRoute
   '/app/payment-inflow': typeof AppPaymentInflowRoute
   '/app/payment-outflow': typeof AppPaymentOutflowRoute
   '/app/payments': typeof AppPaymentsRoute
@@ -192,6 +200,7 @@ export interface FileRoutesById {
   '/app/dashboard': typeof AppDashboardRoute
   '/app/delivery-boys': typeof AppDeliveryBoysRoute
   '/app/expenses': typeof AppExpensesRoute
+  '/app/outstanding': typeof AppOutstandingRoute
   '/app/payment-inflow': typeof AppPaymentInflowRoute
   '/app/payment-outflow': typeof AppPaymentOutflowRoute
   '/app/payments': typeof AppPaymentsRoute
@@ -217,6 +226,7 @@ export interface FileRouteTypes {
     | '/app/dashboard'
     | '/app/delivery-boys'
     | '/app/expenses'
+    | '/app/outstanding'
     | '/app/payment-inflow'
     | '/app/payment-outflow'
     | '/app/payments'
@@ -238,6 +248,7 @@ export interface FileRouteTypes {
     | '/app/dashboard'
     | '/app/delivery-boys'
     | '/app/expenses'
+    | '/app/outstanding'
     | '/app/payment-inflow'
     | '/app/payment-outflow'
     | '/app/payments'
@@ -261,6 +272,7 @@ export interface FileRouteTypes {
     | '/app/dashboard'
     | '/app/delivery-boys'
     | '/app/expenses'
+    | '/app/outstanding'
     | '/app/payment-inflow'
     | '/app/payment-outflow'
     | '/app/payments'
@@ -389,6 +401,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppPaymentInflowRouteImport
       parentRoute: typeof AppRoute
     }
+    '/app/outstanding': {
+      id: '/app/outstanding'
+      path: '/outstanding'
+      fullPath: '/app/outstanding'
+      preLoaderRoute: typeof AppOutstandingRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/app/expenses': {
       id: '/app/expenses'
       path: '/expenses'
@@ -452,6 +471,7 @@ interface AppRouteChildren {
   AppDashboardRoute: typeof AppDashboardRoute
   AppDeliveryBoysRoute: typeof AppDeliveryBoysRoute
   AppExpensesRoute: typeof AppExpensesRoute
+  AppOutstandingRoute: typeof AppOutstandingRoute
   AppPaymentInflowRoute: typeof AppPaymentInflowRoute
   AppPaymentOutflowRoute: typeof AppPaymentOutflowRoute
   AppPaymentsRoute: typeof AppPaymentsRoute
@@ -469,6 +489,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppDashboardRoute: AppDashboardRoute,
   AppDeliveryBoysRoute: AppDeliveryBoysRoute,
   AppExpensesRoute: AppExpensesRoute,
+  AppOutstandingRoute: AppOutstandingRoute,
   AppPaymentInflowRoute: AppPaymentInflowRoute,
   AppPaymentOutflowRoute: AppPaymentOutflowRoute,
   AppPaymentsRoute: AppPaymentsRoute,

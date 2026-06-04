@@ -680,10 +680,10 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
 
   const [f, setF] = useState({
     sale_date: todayISO(), customer_id: "", product_id: "", quantity: "1", rate: "",
-    payment_mode: "cash", delivery_boy_id: "", commission_rate: "0", notes: "",
+    payment_mode: "split", delivery_boy_id: "", commission_rate: "0", notes: "",
   });
 
-  const [isSplit, setIsSplit] = useState(false);
+  const [isSplit, setIsSplit] = useState(true);
   const [splitCash, setSplitCash] = useState("0");
   const [splitOnline, setSplitOnline] = useState("0");
   const [splitCredit, setSplitCredit] = useState("0");
@@ -792,14 +792,14 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
         notes: remarks,
       });
     } else {
-      setIsSplit(false);
+      setIsSplit(true);
       setSplitCash("0");
       setSplitOnline("0");
       setSplitCredit("0");
       setPrepaidQty("0");
       setF({
         sale_date: todayISO(), customer_id: "", product_id: "", quantity: "1", rate: "",
-        payment_mode: "cash", delivery_boy_id: "", commission_rate: "0", notes: "",
+        payment_mode: "split", delivery_boy_id: "", commission_rate: "0", notes: "",
       });
     }
   }, [editSale]);
@@ -1063,12 +1063,11 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="cash">{t("sales.cash")}</SelectItem>
-            <SelectItem value="online">{t("sales.online")}</SelectItem>
-            <SelectItem value="paytm">{t("sales.paytm")}</SelectItem>
-            <SelectItem value="cheque">Cheque</SelectItem>
-            <SelectItem value="credit">{t("sales.credit")}</SelectItem>
             <SelectItem value="split">Split Payment (Mix Cash/Online/Udhari)</SelectItem>
+            <SelectItem value="cheque">Cheque</SelectItem>
+            {f.payment_mode !== "split" && f.payment_mode !== "cheque" && (
+              <SelectItem value={f.payment_mode}>{f.payment_mode.toUpperCase()}</SelectItem>
+            )}
           </SelectContent>
         </Select>
       </div>

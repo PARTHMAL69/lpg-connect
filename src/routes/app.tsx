@@ -8,7 +8,7 @@ import { useAuth } from "@/lib/auth-context";
 import {
   LayoutDashboard, ShoppingCart, Users, Package, IndianRupee,
   Receipt, Wallet, Truck, BookOpen, LogOut, Flame, Menu, UserCog,
-  ArrowDownToLine, ArrowUpFromLine,
+  ArrowDownToLine, ArrowUpFromLine, Coins,
 } from "lucide-react";
 import { useState, useMemo, useEffect } from "react";
 import { cn } from "@/lib/utils";
@@ -34,6 +34,7 @@ const NAV = [
   { to: "/app/cashbook", label: "Cash Book", icon: BookOpen },
   { to: "/app/payment-inflow", label: "Payment Inflow", icon: ArrowDownToLine },
   { to: "/app/payment-outflow", label: "Payment Outflow", icon: ArrowUpFromLine },
+  { to: "/app/outstanding", label: "Outstanding", icon: Coins },
 ] as const;
 
 function AppLayout() {

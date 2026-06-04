@@ -21,6 +21,7 @@ import { jsPDF } from "jspdf";
 import "jspdf-autotable";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/app/cashbook")({ component: () => <RequireAgencyUser><Page /></RequireAgencyUser> });
 
@@ -32,6 +33,7 @@ interface CashSaleItem {
   quantity: number;
   rate: number;
   total: number;
+  gross_amount: number;
   payment_mode: string;
   commission_total: number;
   notes: string | null;
@@ -71,6 +73,7 @@ function Page() {
   const [magilBills, setMagilBills] = useState<BillItem[]>([]);
   const [paymentInflows, setPaymentInflows] = useState<OtherReceiptItem[]>([]);
   const [paymentOutflows, setPaymentOutflows] = useState<OtherReceiptItem[]>([]);
+  const [outstandingEntries, setOutstandingEntries] = useState<any[]>([]);
 
   // DB records
   const [dailySales, setDailySales] = useState<CashSaleItem[]>([]);
@@ -98,6 +101,7 @@ function Page() {
       magil_bills: magilBills,
       payment_inflows: paymentInflows,
       payment_outflows: paymentOutflows,
+      outstanding_entries: outstandingEntries,
       manual_cash_entry: manualCashEntry === "" ? null : Number(manualCashEntry),
       daily_note: dailyNote,
       calculated_closing: 0, // will be overwritten after balance calc
@@ -126,6 +130,7 @@ function Page() {
           setMagilBills(Array.isArray(m.magil_bills) ? m.magil_bills : []);
           setPaymentInflows(Array.isArray(m.payment_inflows) ? m.payment_inflows : []);
           setPaymentOutflows(Array.isArray(m.payment_outflows) ? m.payment_outflows : []);
+          setOutstandingEntries(Array.isArray(m.outstanding_entries) ? m.outstanding_entries : []);
           setManualCashEntry(m.manual_cash_entry != null ? String(m.manual_cash_entry) : "");
           setDailyNote(m.daily_note ?? "");
         } catch (_) {}
@@ -145,7 +150,7 @@ function Page() {
       }
       setOpening(String(oc));
       setOtherReceiptsList([]); setPendingBills([]); setMagilBills([]);
-      setPaymentInflows([]); setPaymentOutflows([]);
+      setPaymentInflows([]); setPaymentOutflows([]); setOutstandingEntries([]);
       setManualCashEntry(""); setDailyNote("");
     }
 
@@ -174,6 +179,7 @@ function Page() {
         quantity: Number(s.quantity),
         rate: Number(s.rate || 0),
         total: Number(s.gross_amount) + (prepQty * Number(s.rate || 0)),
+        gross_amount: Number(s.gross_amount),
         payment_mode: pm,
         commission_total: Number(s.commission_amount || 0),
         notes: s.notes,
@@ -226,23 +232,6 @@ function Page() {
       const isMain = nl.includes("14.2") || nl.includes("domestic") || nl.includes("cylinder") || nl === "lpg" || nl === "gas";
       const isCNC = !s.delivery_boy_id || nl.includes("cnc");
 
-      if (isMain) {
-        if (isCNC) { cncTotal += s.total; cncQty += s.quantity; }
-        else { homeTotal += s.total; homeQty += s.quantity; }
-      } else {
-        if (!productSalesTotals[s.product_name]) productSalesTotals[s.product_name] = { quantity: 0, total: 0 };
-        productSalesTotals[s.product_name].quantity += s.quantity;
-        productSalesTotals[s.product_name].total += s.total;
-      }
-
-      // Commission per driver with qty
-      if (s.commission_total > 0 && s.delivery_boy_name) {
-        const n = s.delivery_boy_name;
-        if (!commissionByDriver[n]) commissionByDriver[n] = { name: n, amount: 0, qty: 0 };
-        commissionByDriver[n].amount += s.commission_total;
-        commissionByDriver[n].qty += s.quantity;
-      }
-
       // Parse notes JSON
       let isSplit = false;
       let onlineAmt = 0;
@@ -260,6 +249,32 @@ function Page() {
         }
       } catch (_) {}
 
+      // Calculate cash quantity: Left side only adds cash qty, rest don't add for split
+      let cashQty = s.quantity;
+      if (isSplit) {
+        cashQty = s.quantity - prepQty - Math.round(onlineAmt / (s.rate || 1)) - Math.round(creditAmt / (s.rate || 1));
+        if (cashQty < 0) cashQty = 0;
+      } else if (s.payment_mode === "cheque" || s.payment_mode === "online" || s.payment_mode === "credit" || s.payment_mode === "paytm") {
+        cashQty = 0;
+      }
+
+      if (isMain) {
+        if (isCNC) { cncTotal += s.total; cncQty += cashQty; }
+        else { homeTotal += s.total; homeQty += cashQty; }
+      } else {
+        if (!productSalesTotals[s.product_name]) productSalesTotals[s.product_name] = { quantity: 0, total: 0 };
+        productSalesTotals[s.product_name].quantity += cashQty;
+        productSalesTotals[s.product_name].total += s.total;
+      }
+
+      // Commission per driver with qty
+      if (s.commission_total > 0 && s.delivery_boy_name) {
+        const n = s.delivery_boy_name;
+        if (!commissionByDriver[n]) commissionByDriver[n] = { name: n, amount: 0, qty: 0 };
+        commissionByDriver[n].amount += s.commission_total;
+        commissionByDriver[n].qty += s.quantity;
+      }
+
       // 1. Website Prepaid (govt website prepaid orders)
       if (prepQty > 0) {
         const prepAmt = prepQty * Number(s.rate);
@@ -270,11 +285,11 @@ function Page() {
         prepQtyTotal += prepQty;
       }
 
-      // 2. Online UPI (local QR code payments directly to agency)
-      const isOnlineSale = !isSplit && s.payment_mode === "online";
-      const effectiveOnline = isSplit ? onlineAmt : (isOnlineSale ? (s.total - s.commission_total) : 0);
+      // 2. UPI (online UPI or paytm) - Group both legacy online/paytm payments here. Labeled simply as UPI.
+      const isOnlineOrPaytmSale = !isSplit && (s.payment_mode === "online" || s.payment_mode === "paytm");
+      const effectiveOnline = isSplit ? onlineAmt : (isOnlineOrPaytmSale ? (s.gross_amount - s.commission_total) : 0);
       if (effectiveOnline > 0) {
-        const qrQty = isSplit ? Math.round(effectiveOnline / Number(s.rate || 1)) : s.quantity;
+        const qrQty = isSplit ? 0 : s.quantity; // do NOT add qty for split payment
         const dbKey = s.delivery_boy_name ?? "Counter / Walk-in";
         if (!onlineByDriver[dbKey]) onlineByDriver[dbKey] = { name: dbKey, qty: 0, amount: 0 };
         onlineByDriver[dbKey].qty += qrQty;
@@ -283,7 +298,7 @@ function Page() {
       }
 
       // Udhari per customer
-      const effectiveCredit = isSplit ? creditAmt : (s.payment_mode === "credit" ? (s.total - s.commission_total) : 0);
+      const effectiveCredit = isSplit ? creditAmt : (s.payment_mode === "credit" ? (s.gross_amount - s.commission_total) : 0);
       if (effectiveCredit > 0) {
         const cn = s.customer_name ?? "Unknown";
         if (!udhariByCustomer[cn]) udhariByCustomer[cn] = { name: cn, amount: 0 };
@@ -303,25 +318,24 @@ function Page() {
     const commissionsTotal = Object.values(commissionByDriver).reduce((s, d) => s + d.amount, 0);
 
     // Mode outflows from sales (net of delivery boy commission for cashbook balance adjustments)
-    const paytmSales = dailySales.filter(s => s.payment_mode === "paytm").reduce((a, r) => a + (r.total - r.commission_total), 0);
     const prepSales = Object.values(prepByDriver).reduce((s, d) => s + d.amount, 0);
-    const onlineSales = Object.values(onlineByDriver).reduce((s, d) => s + d.amount, 0);
-    const chequeSales = dailySales.filter(s => s.payment_mode === "cheque").reduce((a, r) => a + (r.total - r.commission_total), 0);
+    const upiSales = Object.values(onlineByDriver).reduce((s, d) => s + d.amount, 0);
+    const chequeSales = dailySales.filter(s => s.payment_mode === "cheque").reduce((a, r) => a + (r.gross_amount - r.commission_total), 0);
     const udhariSales = Object.values(udhariByCustomer).reduce((s, c) => s + c.amount, 0);
 
     const paytmRecoveries = dailyPayments.filter(p => p.payment_mode === "paytm").reduce((a, r) => a + r.amount, 0);
     const onlineRecoveries = dailyPayments.filter(p => p.payment_mode === "online").reduce((a, r) => a + r.amount, 0);
     const chequeRecoveries = dailyPayments.filter(p => p.payment_mode === "cheque").reduce((a, r) => a + r.amount, 0);
 
-    const paytmOutflow = paytmSales + paytmRecoveries;
     const prepOutflow = prepSales;
-    const onlineOutflow = onlineSales + onlineRecoveries;
+    const upiOutflow = upiSales + paytmRecoveries + onlineRecoveries;
     const chequeOutflow = chequeSales + chequeRecoveries;
     const udhariOutflow = udhariSales;
     const magilBillsTotal = magilBills.reduce((s, b) => s + b.amount, 0);
     const paymentOutflowsTotal = paymentOutflows.reduce((s, p) => s + p.amount, 0);
+    const outstandingTotal = outstandingEntries.reduce((s, o) => s + o.amount, 0);
 
-    const totalOutflows = expensesTotal + paytmOutflow + prepOutflow + onlineOutflow + chequeOutflow + udhariOutflow + commissionsTotal + magilBillsTotal + paymentOutflowsTotal;
+    const totalOutflows = expensesTotal + prepOutflow + upiOutflow + chequeOutflow + udhariOutflow + commissionsTotal + magilBillsTotal + paymentOutflowsTotal + outstandingTotal;
     const cashBalance = leftGrandTotal - totalOutflows;
     const manualNum = manualCashEntry === "" ? null : Number(manualCashEntry);
     const cashDifference = manualNum != null ? cashBalance - manualNum : null;
@@ -333,12 +347,13 @@ function Page() {
       leftGrandTotal, expensesTotal, commissionsTotal,
       commissionByDriver, onlineByDriver, onlineQtyTotal,
       prepOutflow, prepByDriver, prepQtyTotal,
-      udhariByCustomer, udhariOutflow, paytmOutflow, onlineOutflow,
+      udhariByCustomer, udhariOutflow, upiOutflow,
       chequeOutflow, magilBillsTotal, paymentOutflowsTotal,
+      outstandingTotal, outstandingEntries,
       totalOutflows, cashBalance, cashDifference,
     };
   }, [dailySales, dailyPayments, dailyExpenses, opening, manualCashEntry,
-    otherReceiptsList, pendingBills, magilBills, paymentInflows, paymentOutflows]);
+    otherReceiptsList, pendingBills, magilBills, paymentInflows, paymentOutflows, outstandingEntries]);
 
   /* ─── Persist helper ─── */
   const persist = async (patches: Record<string, any> = {}) => {
@@ -350,6 +365,7 @@ function Page() {
       magil_bills: magilBills,
       payment_inflows: paymentInflows,
       payment_outflows: paymentOutflows,
+      outstanding_entries: outstandingEntries,
       manual_cash_entry: manualCashEntry === "" ? null : Number(manualCashEntry),
       daily_note: dailyNote,
       calculated_closing: agg.cashBalance,
@@ -538,37 +554,46 @@ function Page() {
 
     // LEFT side
     left.push({ label: "Opening Cash Balance", qty: "", amt: agg.openingCash });
-    if (agg.homeTotal > 0) left.push({ label: "14 KG Home Delivery Sales", qty: agg.homeQty, amt: agg.homeTotal });
-    if (agg.cncTotal > 0)  left.push({ label: "14 KG CNC Counter Sales",   qty: agg.cncQty,  amt: agg.cncTotal });
     Object.entries(agg.productSalesTotals).forEach(([n, s]) => left.push({ label: `${n} Sales`, qty: s.quantity, amt: s.total }));
     if (agg.collectionsTotal > 0) left.push({ label: "Outstanding Customer Collections", qty: "", amt: agg.collectionsTotal });
     otherReceiptsList.forEach(r => left.push({ label: r.particular, qty: "", amt: r.amount }));
     pendingBills.forEach(b => left.push({ label: `Pending — ${b.label} (${b.qty}×₹${b.rate})`, qty: b.qty, amt: b.amount }));
     paymentInflows.forEach(p => left.push({ label: p.particular + ((p as any).note ? ` (${(p as any).note})` : ""), qty: "", amt: p.amount }));
+    if (agg.homeTotal > 0) left.push({ label: "14 KG Home Delivery Sales", qty: agg.homeQty, amt: agg.homeTotal });
+    if (agg.cncTotal > 0)  left.push({ label: "14 KG CNC Sales",           qty: agg.cncQty,  amt: agg.cncTotal });
 
     // RIGHT side (NO Calculated Cash Balance)
     dailyExpenses.forEach(e => {
       let cat = e.category, note = e.notes ?? "";
-      if (note.startsWith("[OTHER_CAT:")) { const m = note.match(/^\[OTHER_CAT:([^\]]+)\]/); if (m) { cat = m[1]; note = note.replace(/^\[OTHER_CAT:[^\]]+\]\s*/, ""); } }
+      if (note.startsWith("[OTHER_CAT:")) {
+        const m = note.match(/^\[OTHER_CAT:([^\]]+)\]/);
+        if (m) { cat = m[1]; note = note.replace(/^\[OTHER_CAT:[^\]]+\]\s*/, ""); }
+      } else if (note.startsWith("[WORKER:")) {
+        const m = note.match(/^\[WORKER:([^\]]+)\]/);
+        if (m) { cat = `${cat.replace("_", " ")} (${m[1]})`; note = note.replace(/^\[WORKER:[^\]]+\]\s*/, ""); }
+      }
       right.push({ label: `${cat.replace("_", " ")}${note ? ` (${note})` : ""}`, qty: "", amt: Number(e.amount) });
     });
-    if (agg.paytmOutflow > 0) right.push({ label: "Paytm Digital Account (Sales + Recovery)", qty: "", amt: agg.paytmOutflow });
     if (agg.prepOutflow > 0) {
       right.push({ label: "Website Prepaid", qty: agg.prepQtyTotal, amt: agg.prepOutflow });
-      Object.values(agg.prepByDriver).forEach(d => right.push({ label: `  └ ${d.name}`, qty: d.qty, amt: d.amount, sub: true }));
+      Object.values(agg.prepByDriver).forEach(d => right.push({ label: `  - ${d.name}`, qty: d.qty, amt: d.amount, sub: true }));
     }
-    if (agg.onlineOutflow > 0) {
-      right.push({ label: "Online UPI (QR Code)", qty: agg.onlineQtyTotal, amt: agg.onlineOutflow });
-      Object.values(agg.onlineByDriver).forEach(d => right.push({ label: `  └ ${d.name}`, qty: d.qty, amt: d.amount, sub: true }));
+    if (agg.upiOutflow > 0) {
+      right.push({ label: "UPI", qty: agg.onlineQtyTotal, amt: agg.upiOutflow });
+      Object.values(agg.onlineByDriver).forEach(d => right.push({ label: `  - ${d.name}`, qty: d.qty, amt: d.amount, sub: true }));
     }
-    if (agg.chequeOutflow > 0) right.push({ label: "Bank Cheque Collections", qty: "", amt: agg.chequeOutflow });
+    if (agg.chequeOutflow > 0) right.push({ label: "Cheque", qty: "", amt: agg.chequeOutflow });
     if (agg.udhariOutflow > 0) {
-      right.push({ label: "Credit Sales", qty: "", amt: agg.udhariOutflow });
-      Object.values(agg.udhariByCustomer).forEach(c => right.push({ label: `  └ ${c.name}`, qty: "", amt: c.amount, sub: true }));
+      right.push({ label: "Udhari", qty: "", amt: agg.udhariOutflow });
+      Object.values(agg.udhariByCustomer).forEach(c => right.push({ label: `  - ${c.name}`, qty: "", amt: c.amount, sub: true }));
     }
     if (agg.commissionsTotal > 0) {
       right.push({ label: "Route Commission Paid", qty: "", amt: agg.commissionsTotal });
-      Object.values(agg.commissionByDriver).forEach(d => right.push({ label: `  └ ${d.name}`, qty: d.qty, amt: d.amount, sub: true }));
+      Object.values(agg.commissionByDriver).forEach(d => right.push({ label: `  - ${d.name}`, qty: d.qty, amt: d.amount, sub: true }));
+    }
+    if (agg.outstandingTotal > 0) {
+      right.push({ label: "Outstanding (Loans/Udhari Given)", qty: "", amt: agg.outstandingTotal });
+      agg.outstandingEntries.forEach(o => right.push({ label: `  - ${o.customer_name}${o.note ? ` (${o.note})` : ""}`, qty: "", amt: o.amount, sub: true }));
     }
     magilBills.forEach(b => right.push({ label: `Magil — ${b.label} (${b.qty}×₹${b.rate})`, qty: b.qty, amt: b.amount }));
     paymentOutflows.forEach(p => right.push({ label: p.particular + ((p as any).note ? ` (${(p as any).note})` : ""), qty: "", amt: p.amount }));
@@ -732,36 +757,45 @@ function Page() {
     const fmt = (n: number) => n === 0 && !n ? "" : n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
     lRows.push({ label: "Opening Cash Balance", qty: "", amt: fmt(agg.openingCash) });
-    if (agg.homeTotal > 0) lRows.push({ label: "14 KG Home Delivery Sales", qty: String(agg.homeQty), amt: fmt(agg.homeTotal) });
-    if (agg.cncTotal > 0)  lRows.push({ label: "14 KG CNC Counter Sales",   qty: String(agg.cncQty),  amt: fmt(agg.cncTotal) });
     Object.entries(agg.productSalesTotals).forEach(([n, s]) => lRows.push({ label: `${n} Sales`, qty: String(s.quantity), amt: fmt(s.total) }));
     if (agg.collectionsTotal > 0) lRows.push({ label: "Outstanding Customer Collections", qty: "", amt: fmt(agg.collectionsTotal) });
     otherReceiptsList.forEach(r => lRows.push({ label: r.particular, qty: "", amt: fmt(r.amount) }));
     pendingBills.forEach(b => lRows.push({ label: `Pending — ${b.label} (${b.qty}×₹${b.rate})`, qty: String(b.qty), amt: fmt(b.amount) }));
     paymentInflows.forEach(p => lRows.push({ label: p.particular + ((p as any).note ? ` (${(p as any).note})` : ""), qty: "", amt: fmt(p.amount) }));
+    if (agg.homeTotal > 0) lRows.push({ label: "14 KG Home Delivery Sales", qty: String(agg.homeQty), amt: fmt(agg.homeTotal) });
+    if (agg.cncTotal > 0)  lRows.push({ label: "14 KG CNC Sales",           qty: String(agg.cncQty),  amt: fmt(agg.cncTotal) });
 
     dailyExpenses.forEach(e => {
       let cat = e.category, note = e.notes ?? "";
-      if (note.startsWith("[OTHER_CAT:")) { const m = note.match(/^\[OTHER_CAT:([^\]]+)\]/); if (m) { cat = m[1]; note = note.replace(/^\[OTHER_CAT:[^\]]+\]\s*/, ""); } }
+      if (note.startsWith("[OTHER_CAT:")) {
+        const m = note.match(/^\[OTHER_CAT:([^\]]+)\]/);
+        if (m) { cat = m[1]; note = note.replace(/^\[OTHER_CAT:[^\]]+\]\s*/, ""); }
+      } else if (note.startsWith("[WORKER:")) {
+        const m = note.match(/^\[WORKER:([^\]]+)\]/);
+        if (m) { cat = `${cat.replace("_", " ")} (${m[1]})`; note = note.replace(/^\[WORKER:[^\]]+\]\s*/, ""); }
+      }
       rRows.push({ label: `${cat.replace("_", " ")}${note ? ` (${note})` : ""}`, qty: "", amt: fmt(Number(e.amount)) });
     });
-    if (agg.paytmOutflow > 0) rRows.push({ label: "Paytm Digital Account (Sales + Recovery)", qty: "", amt: fmt(agg.paytmOutflow) });
     if (agg.prepOutflow > 0) {
       rRows.push({ label: "Website Prepaid", qty: String(agg.prepQtyTotal), amt: fmt(agg.prepOutflow) });
-      Object.values(agg.prepByDriver).forEach(d => rRows.push({ label: `  └ ${d.name}`, qty: String(d.qty), amt: fmt(d.amount), sub: true }));
+      Object.values(agg.prepByDriver).forEach(d => rRows.push({ label: `  - ${d.name}`, qty: String(d.qty), amt: fmt(d.amount), sub: true }));
     }
-    if (agg.onlineOutflow > 0) {
-      rRows.push({ label: "Online UPI (QR Code)", qty: String(agg.onlineQtyTotal), amt: fmt(agg.onlineOutflow) });
-      Object.values(agg.onlineByDriver).forEach(d => rRows.push({ label: `  └ ${d.name}`, qty: String(d.qty), amt: fmt(d.amount), sub: true }));
+    if (agg.upiOutflow > 0) {
+      rRows.push({ label: "UPI", qty: String(agg.onlineQtyTotal), amt: fmt(agg.upiOutflow) });
+      Object.values(agg.onlineByDriver).forEach(d => rRows.push({ label: `  - ${d.name}`, qty: String(d.qty), amt: fmt(d.amount), sub: true }));
     }
-    if (agg.chequeOutflow > 0) rRows.push({ label: "Bank Cheque Collections", qty: "", amt: fmt(agg.chequeOutflow) });
+    if (agg.chequeOutflow > 0) rRows.push({ label: "Cheque", qty: "", amt: fmt(agg.chequeOutflow) });
     if (agg.udhariOutflow > 0) {
-      rRows.push({ label: "Credit Sales", qty: "", amt: fmt(agg.udhariOutflow) });
-      Object.values(agg.udhariByCustomer).forEach(c => rRows.push({ label: `  └ ${c.name}`, qty: "", amt: fmt(c.amount), sub: true }));
+      rRows.push({ label: "Udhari", qty: "", amt: fmt(agg.udhariOutflow) });
+      Object.values(agg.udhariByCustomer).forEach(c => rRows.push({ label: `  - ${c.name}`, qty: "", amt: fmt(c.amount), sub: true }));
     }
     if (agg.commissionsTotal > 0) {
       rRows.push({ label: "Route Commission Paid", qty: "", amt: fmt(agg.commissionsTotal) });
-      Object.values(agg.commissionByDriver).forEach(d => rRows.push({ label: `  └ ${d.name}`, qty: String(d.qty), amt: fmt(d.amount), sub: true }));
+      Object.values(agg.commissionByDriver).forEach(d => rRows.push({ label: `  - ${d.name}`, qty: String(d.qty), amt: fmt(d.amount), sub: true }));
+    }
+    if (agg.outstandingTotal > 0) {
+      rRows.push({ label: "Outstanding (Loans/Udhari Given)", qty: "", amt: fmt(agg.outstandingTotal) });
+      agg.outstandingEntries.forEach(o => rRows.push({ label: `  - ${o.customer_name}${o.note ? ` (${o.note})` : ""}`, qty: "", amt: fmt(o.amount), sub: true }));
     }
     magilBills.forEach(b => rRows.push({ label: `Magil — ${b.label} (${b.qty}×₹${b.rate})`, qty: String(b.qty), amt: fmt(b.amount) }));
     paymentOutflows.forEach(p => rRows.push({ label: p.particular + ((p as any).note ? ` (${(p as any).note})` : ""), qty: "", amt: fmt(p.amount) }));
@@ -857,6 +891,29 @@ function Page() {
     doc.save(`cashbook_${date}.pdf`);
   };
 
+  const balanceColors = useMemo(() => {
+    const bal = agg.cashBalance;
+    if (bal < 0) {
+      return {
+        bg: "bg-emerald-50 border-emerald-200/80",
+        text: "text-emerald-600",
+        label: "text-emerald-700",
+      };
+    } else if (bal > 0) {
+      return {
+        bg: "bg-red-50 border-red-200/80",
+        text: "text-red-600",
+        label: "text-red-700",
+      };
+    } else {
+      return {
+        bg: "bg-amber-50 border-amber-200/80",
+        text: "text-amber-600",
+        label: "text-amber-700",
+      };
+    }
+  }, [agg.cashBalance]);
+
   /* ─── Opening cash blur persist ─── */
   const onOpeningBlur = async () => { await persist({}); };
 
@@ -932,21 +989,6 @@ function Page() {
                 />
               </div>
             </div>
-            {/* Home Delivery */}
-            {agg.homeTotal > 0 && (
-              <div className="px-5 py-3.5 flex justify-between items-center hover:bg-slate-50/40">
-                <span className="font-semibold text-slate-600">14 KG Home Delivery Sales <span className="text-slate-400 font-normal">({agg.homeQty} units)</span></span>
-                <span className="font-bold tabular-nums text-slate-800 text-sm">{fmtCurrency(agg.homeTotal)}</span>
-              </div>
-            )}
-
-            {/* CNC */}
-            {agg.cncTotal > 0 && (
-              <div className="px-5 py-3.5 flex justify-between items-center hover:bg-slate-50/40">
-                <span className="font-semibold text-slate-600">14 KG CNC Sales <span className="text-slate-400 font-normal">({agg.cncQty} units)</span></span>
-                <span className="font-bold tabular-nums text-slate-800 text-sm">{fmtCurrency(agg.cncTotal)}</span>
-              </div>
-            )}
 
             {/* Other Products */}
             {Object.entries(agg.productSalesTotals).map(([pName, stats]) => (
@@ -1004,6 +1046,22 @@ function Page() {
               </div>
             ))}
 
+            {/* Home Delivery */}
+            {agg.homeTotal > 0 && (
+              <div className="px-5 py-3.5 flex justify-between items-center hover:bg-slate-50/40">
+                <span className="font-semibold text-slate-600">14 KG Home Delivery Sales <span className="text-slate-400 font-normal">({agg.homeQty} units)</span></span>
+                <span className="font-bold tabular-nums text-slate-800 text-sm">{fmtCurrency(agg.homeTotal)}</span>
+              </div>
+            )}
+
+            {/* CNC */}
+            {agg.cncTotal > 0 && (
+              <div className="px-5 py-3.5 flex justify-between items-center hover:bg-slate-50/40">
+                <span className="font-semibold text-slate-600">14 KG CNC Sales <span className="text-slate-400 font-normal">({agg.cncQty} units)</span></span>
+                <span className="font-bold tabular-nums text-slate-800 text-sm">{fmtCurrency(agg.cncTotal)}</span>
+              </div>
+            )}
+
             {dailySales.length === 0 && otherReceiptsList.length === 0 && pendingBills.length === 0 && (
               <div className="p-8 text-center text-muted-foreground italic text-[11px]">No transactions received today.</div>
             )}
@@ -1035,6 +1093,9 @@ function Page() {
               if (note.startsWith("[OTHER_CAT:")) {
                 const m = note.match(/^\[OTHER_CAT:([^\]]+)\]/);
                 if (m) { cat = m[1]; note = note.replace(/^\[OTHER_CAT:[^\]]+\]\s*/, ""); }
+              } else if (note.startsWith("[WORKER:")) {
+                const m = note.match(/^\[WORKER:([^\]]+)\]/);
+                if (m) { cat = `${cat.replace("_", " ")} (${m[1]})`; note = note.replace(/^\[WORKER:[^\]]+\]\s*/, ""); }
               }
               return (
                 <div key={exp.id} className="px-5 py-3.5 flex justify-between items-center hover:bg-slate-50/40">
@@ -1043,14 +1104,6 @@ function Page() {
                 </div>
               );
             })}
-
-            {/* Paytm */}
-            {agg.paytmOutflow > 0 && (
-              <div className="px-5 py-3.5 flex justify-between items-center hover:bg-slate-50/40">
-                <span className="font-semibold text-slate-600">Paytm Digital Account <span className="text-slate-400 font-normal">(Sales + Recovery)</span></span>
-                <span className="font-bold tabular-nums text-slate-700 text-sm">{fmtCurrency(agg.paytmOutflow)}</span>
-              </div>
-            )}
 
             {/* Website Prepaid */}
             {agg.prepOutflow > 0 && (
@@ -1070,12 +1123,12 @@ function Page() {
               </div>
             )}
 
-            {/* Online UPI (QR Code) */}
-            {agg.onlineOutflow > 0 && (
+            {/* UPI */}
+            {agg.upiOutflow > 0 && (
               <div className="px-5 py-3 flex flex-col hover:bg-slate-50/40">
                 <div className="flex justify-between items-center py-0.5">
-                  <span className="font-semibold text-slate-600">Online UPI (QR Code) <span className="text-slate-400 font-normal">({agg.onlineQtyTotal} units)</span></span>
-                  <span className="font-bold tabular-nums text-slate-700 text-sm">{fmtCurrency(agg.onlineOutflow)}</span>
+                  <span className="font-semibold text-slate-600">UPI <span className="text-slate-400 font-normal">({agg.onlineQtyTotal} units)</span></span>
+                  <span className="font-bold tabular-nums text-slate-700 text-sm">{fmtCurrency(agg.upiOutflow)}</span>
                 </div>
                 <div className="mt-1 pl-3 border-l-2 border-slate-200/80 space-y-0.5 text-[10px] text-slate-500 font-medium">
                   {Object.values(agg.onlineByDriver).map((d) => (
@@ -1091,7 +1144,7 @@ function Page() {
             {/* Cheque */}
             {agg.chequeOutflow > 0 && (
               <div className="px-5 py-3.5 flex justify-between items-center hover:bg-slate-50/40">
-                <span className="font-semibold text-slate-600">Bank Cheque Collections</span>
+                <span className="font-semibold text-slate-600">Cheque</span>
                 <span className="font-bold tabular-nums text-slate-700 text-sm">{fmtCurrency(agg.chequeOutflow)}</span>
               </div>
             )}
@@ -1100,7 +1153,7 @@ function Page() {
             {agg.udhariOutflow > 0 && (
               <div className="px-5 py-3 flex flex-col hover:bg-slate-50/40">
                 <div className="flex justify-between items-center py-0.5">
-                  <span className="font-semibold text-slate-600">Credit Sales</span>
+                  <span className="font-semibold text-slate-600">Udhari</span>
                   <span className="font-bold tabular-nums text-slate-700 text-sm">{fmtCurrency(agg.udhariOutflow)}</span>
                 </div>
                 <div className="mt-1 pl-3 border-l-2 border-slate-200/80 space-y-0.5 text-[10px] text-slate-500 font-medium">
@@ -1131,6 +1184,20 @@ function Page() {
                 </div>
               </div>
             )}
+
+            {/* Outstanding manual entries */}
+            {outstandingEntries.map((item: any) => (
+              <div key={item.id} className="px-5 py-3 flex justify-between items-center hover:bg-slate-50/40 group">
+                <span className="font-semibold text-slate-600 flex flex-col gap-0.5 min-w-0">
+                  <span className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[9px] font-black uppercase bg-orange-100 text-orange-700 px-1 rounded shrink-0">Outstanding</span>
+                    <span className="break-all">{item.customer_name}</span>
+                  </span>
+                  {item.note && <span className="text-[10px] text-slate-400 font-normal ml-0 sm:ml-14 break-all">{item.note}</span>}
+                </span>
+                <span className="font-bold tabular-nums text-red-600 text-sm shrink-0 ml-2">{fmtCurrency(item.amount)}</span>
+              </div>
+            ))}
 
             {/* Payment Outflows (from dedicated page) */}
             {paymentOutflows.map((item: any) => (
@@ -1180,9 +1247,9 @@ function Page() {
               <span className="text-xs font-extrabold uppercase tracking-wider text-blue-700">Total Paid Outflow</span>
               <span className="tabular-nums font-black text-sm text-blue-700">{fmtCurrency(agg.totalOutflows)}</span>
             </div>
-            <div className="bg-emerald-50 px-5 py-4 flex justify-between items-center">
-              <span className="text-xs font-extrabold uppercase tracking-wider text-emerald-700">Calculated Cash Balance</span>
-              <span className="tabular-nums font-black text-base text-emerald-600">{fmtCurrency(agg.cashBalance)}</span>
+            <div className={cn("px-5 py-4 flex justify-between items-center border-t", balanceColors.bg)}>
+              <span className={cn("text-xs font-extrabold uppercase tracking-wider", balanceColors.label)}>Calculated Cash Balance</span>
+              <span className={cn("tabular-nums font-black text-base", balanceColors.text)}>{fmtCurrency(agg.cashBalance)}</span>
             </div>
           </div>
         </div>
@@ -1257,9 +1324,9 @@ function Page() {
               <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Total Paid (Outflows)</span>
               <div className="text-2xl font-black text-red-600 tabular-nums">{fmtCurrency(agg.totalOutflows)}</div>
             </div>
-            <div className="space-y-1 bg-emerald-50 p-4 rounded-xl border border-emerald-200">
-              <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider">Closing Cash Balance</span>
-              <div className="text-2xl font-black text-emerald-600 tabular-nums mt-0.5">{fmtCurrency(agg.cashBalance)}</div>
+            <div className={cn("space-y-1 p-4 rounded-xl border", balanceColors.bg)}>
+              <span className={cn("text-xs font-bold uppercase tracking-wider", balanceColors.label)}>Closing Cash Balance</span>
+              <div className={cn("text-2xl font-black tabular-nums mt-0.5", balanceColors.text)}>{fmtCurrency(agg.cashBalance)}</div>
             </div>
             <div className="flex md:justify-end mt-4 md:mt-0 md:col-span-3 border-t pt-4">
               <Button onClick={saveCashBook} disabled={busy} className="h-11 shadow-sm font-bold uppercase tracking-wider text-xs px-6">
