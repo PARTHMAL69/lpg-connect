@@ -862,22 +862,30 @@ function Page() {
         {/* LEFT: Payment Received */}
         <div className="flex flex-col border-r border-border/80 min-h-[520px]">
           {/* Header */}
-          <div className="bg-slate-50 border-b border-border/80 px-5 py-2 flex flex-col xs:flex-row justify-between items-start xs:items-center gap-2 select-none sm:h-14">
-            <h3 className="font-extrabold text-xs uppercase tracking-wider text-slate-700 flex items-center gap-1.5 py-1">
+          <div className="bg-slate-50 border-b border-border/80 px-5 py-3 flex justify-between items-center select-none h-12">
+            <h3 className="font-extrabold text-xs uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
               <ArrowUpRight className="h-4.5 w-4.5 text-emerald-500 shrink-0" /> Payment Received (Paisa Aaya)
             </h3>
-            <div className="flex items-center gap-2 w-full xs:w-auto justify-between xs:justify-end py-1">
-              <Label htmlFor="opening-cash-input" className="text-[10px] font-bold text-slate-600 uppercase shrink-0">Opening Cash:</Label>
-              <Input
-                id="opening-cash-input" type="number" step="any" min="0"
-                value={opening} onChange={(e) => setOpening(e.target.value)}
-                onBlur={onOpeningBlur}
-                className="h-8 w-24 font-bold text-right text-xs text-primary focus-visible:ring-primary shrink-0"
-              />
-            </div>
+            <span className="text-xs font-black text-slate-400">₹ INR</span>
           </div>
 
           <div className="flex-1 divide-y divide-slate-100 text-xs">
+            {/* Opening Cash Balance (Manual input) */}
+            <div className="px-5 py-3 flex justify-between items-center bg-slate-50/40 hover:bg-slate-50/60 transition-colors">
+              <span className="font-semibold text-slate-700 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                Opening Cash Balance
+              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-slate-400 font-medium">₹</span>
+                <Input
+                  id="opening-cash-input" type="number" step="any" min="0"
+                  value={opening} onChange={(e) => setOpening(e.target.value)}
+                  onBlur={onOpeningBlur}
+                  className="h-8 w-28 font-bold text-right text-xs text-primary focus-visible:ring-primary bg-white shadow-soft"
+                />
+              </div>
+            </div>
             {/* Home Delivery */}
             {agg.homeTotal > 0 && (
               <div className="px-5 py-3.5 flex justify-between items-center hover:bg-slate-50/40">
@@ -967,11 +975,11 @@ function Page() {
 
         {/* RIGHT: Money Paid */}
         <div className="flex flex-col min-h-[520px]">
-          <div className="bg-slate-50 border-b border-border/80 px-5 py-2.5 flex justify-between items-center select-none sm:h-14">
-            <h3 className="font-extrabold text-xs uppercase tracking-wider text-slate-700 flex items-center gap-1.5 py-1">
+          <div className="bg-slate-50 border-b border-border/80 px-5 py-3 flex justify-between items-center select-none h-12">
+            <h3 className="font-extrabold text-xs uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
               <ArrowDownRight className="h-4.5 w-4.5 text-red-500 shrink-0" /> Money Paid (Paisa Gaya)
             </h3>
-            <span className="text-xs font-black text-slate-400 py-1 shrink-0">₹ INR</span>
+            <span className="text-xs font-black text-slate-400">₹ INR</span>
           </div>
 
           <div className="flex-1 divide-y divide-slate-100 text-xs">
