@@ -254,22 +254,33 @@ function Page() {
         }
       } catch (_) {}
 
-      // Calculate cash quantity: Left side only adds cash qty, rest don't add for split
+      // Calculate cash quantity & cash amount: Left side only adds cash qty/amount
       let cashQty = s.quantity;
+      let cashAmt = s.total; // start with full amount, then subtract non-cash
       if (isSplit) {
+        // For split: cash portion = total - prepaid - online - credit
+        const prepAmt = prepQty * Number(s.rate);
+        cashAmt = s.total - prepAmt - onlineAmt - creditAmt;
+        if (cashAmt < 0) cashAmt = 0;
         cashQty = s.quantity - prepQty - Math.round(onlineAmt / (s.rate || 1)) - Math.round(creditAmt / (s.rate || 1));
         if (cashQty < 0) cashQty = 0;
       } else if (s.payment_mode === "cheque" || s.payment_mode === "online" || s.payment_mode === "credit" || s.payment_mode === "paytm") {
+        // Fully non-cash sale: zero on left side
+        cashAmt = 0;
+        cashQty = 0;
+      } else if (prepQty > 0) {
+        // Full prepaid website order: zero on left side
+        cashAmt = 0;
         cashQty = 0;
       }
 
       if (isMain) {
-        if (isCNC) { cncTotal += s.total; cncQty += cashQty; }
-        else { homeTotal += s.total; homeQty += cashQty; }
+        if (isCNC) { cncTotal += cashAmt; cncQty += cashQty; }
+        else { homeTotal += cashAmt; homeQty += cashQty; }
       } else {
         if (!productSalesTotals[s.product_name]) productSalesTotals[s.product_name] = { quantity: 0, total: 0 };
         productSalesTotals[s.product_name].quantity += cashQty;
-        productSalesTotals[s.product_name].total += s.total;
+        productSalesTotals[s.product_name].total += cashAmt;
       }
 
       // Commission per driver with qty
