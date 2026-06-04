@@ -314,12 +314,6 @@ function Page() {
     const pendingBillsTotal = pendingBills.reduce((s, b) => s + b.amount, 0);
     const paymentInflowsTotal = paymentInflows.reduce((s, p) => s + p.amount, 0);
 
-    const otherProductSalesSum = Object.values(productSalesTotals).reduce((s, r) => s + r.total, 0);
-    const leftGrandTotal = openingCash + homeTotal + cncTotal + otherProductSalesSum + collectionsTotal + otherInflowsSum + pendingBillsTotal + paymentInflowsTotal;
-
-    const expensesTotal = dailyExpenses.reduce((s, e) => s + Number(e.amount), 0);
-    const commissionsTotal = Object.values(commissionByDriver).reduce((s, d) => s + d.amount, 0);
-
     // Mode outflows from sales (net of delivery boy commission for cashbook balance adjustments)
     const prepSales = Object.values(prepByDriver).reduce((s, d) => s + d.amount, 0);
     const upiSales = Object.values(onlineByDriver).reduce((s, d) => s + d.amount, 0);
@@ -330,10 +324,16 @@ function Page() {
     const onlineRecoveries = dailyPayments.filter(p => p.payment_mode === "online").reduce((a, r) => a + r.amount, 0);
     const chequeRecoveries = dailyPayments.filter(p => p.payment_mode === "cheque").reduce((a, r) => a + r.amount, 0);
 
-    const prepOutflow = 0;
+    const prepOutflow = prepSales;
     const upiOutflow = upiSales + paytmRecoveries + onlineRecoveries;
     const chequeOutflow = chequeSales + chequeRecoveries;
     const udhariOutflow = udhariSales;
+
+    const otherProductSalesSum = Object.values(productSalesTotals).reduce((s, r) => s + r.total, 0);
+    const leftGrandTotal = openingCash + homeTotal + cncTotal + otherProductSalesSum + collectionsTotal + otherInflowsSum + pendingBillsTotal + paymentInflowsTotal + prepOutflow;
+
+    const expensesTotal = dailyExpenses.reduce((s, e) => s + Number(e.amount), 0);
+    const commissionsTotal = Object.values(commissionByDriver).reduce((s, d) => s + d.amount, 0);
     const magilBillsTotal = magilBills.reduce((s, b) => s + b.amount, 0);
     const paymentOutflowsTotal = paymentOutflows.reduce((s, p) => s + p.amount, 0);
     const outstandingTotal = outstandingEntries.reduce((s, o) => s + o.amount, 0);
@@ -459,6 +459,8 @@ function Page() {
       sumHdrFg:  "FFFFFF",
       sumBalBg:  "C6EFCE",   // light green
       sumBalFg:  "375623",
+      sumBalYelBg: "FFF2CC", // light yellow
+      sumBalYelFg: "7F6000", // dark yellow
       sumDiffBg: "FFC7CE",   // light red
       sumDiffFg: "9C0006",
       altRowBg:  "EBF3FB",   // very light blue
@@ -558,7 +560,14 @@ function Page() {
     // LEFT side
     left.push({ label: "Opening Cash Balance", qty: "", amt: agg.openingCash });
     Object.entries(agg.productSalesTotals).forEach(([n, s]) => left.push({ label: `${n} Sales`, qty: s.quantity, amt: s.total }));
-    if (agg.collectionsTotal > 0) left.push({ label: "Outstanding Customer Collections", qty: "", amt: agg.collectionsTotal });
+    if (agg.collectionsTotal > 0) {
+      left.push({ label: "Credit Recovery / Outstanding Collections", qty: "", amt: agg.collectionsTotal });
+      dailyPayments.forEach(p => left.push({ label: `  - ${p.customer_name} (${p.payment_mode})`, qty: "", amt: p.amount, sub: true }));
+    }
+    if (agg.prepQtyTotal > 0) {
+      left.push({ label: "Website Prepaid", qty: agg.prepQtyTotal, amt: agg.prepOutflow });
+      Object.values(agg.prepByDriver).forEach(d => left.push({ label: `  - ${d.name}`, qty: d.qty, amt: d.amount, sub: true }));
+    }
     otherReceiptsList.forEach(r => left.push({ label: r.particular, qty: "", amt: r.amount }));
     pendingBills.forEach(b => left.push({ label: `Pending — ${b.label} (${b.qty}×₹${b.rate})`, qty: b.qty, amt: b.amount }));
     paymentInflows.forEach(p => left.push({ label: p.particular + ((p as any).note ? ` (${(p as any).note})` : ""), qty: "", amt: p.amount }));
@@ -578,8 +587,8 @@ function Page() {
       right.push({ label: `${cat.replace("_", " ")}${note ? ` (${note})` : ""}`, qty: "", amt: Number(e.amount) });
     });
     if (agg.prepQtyTotal > 0) {
-      right.push({ label: "Website Prepaid", qty: agg.prepQtyTotal, amt: 0 });
-      Object.values(agg.prepByDriver).forEach(d => right.push({ label: `  - ${d.name}`, qty: d.qty, amt: 0, sub: true }));
+      right.push({ label: "Website Prepaid", qty: agg.prepQtyTotal, amt: agg.prepOutflow });
+      Object.values(agg.prepByDriver).forEach(d => right.push({ label: `  - ${d.name}`, qty: d.qty, amt: d.amount, sub: true }));
     }
     if (agg.upiOutflow > 0) {
       right.push({ label: "UPI", qty: agg.onlineQtyTotal, amt: agg.upiOutflow });
@@ -673,9 +682,12 @@ function Page() {
 
     if (agg.cashDifference !== null) {
       W(row, 0, "Manual Cash Entry (Physical Count)"); BLANK(row, 1); W(row, 2, Number(manualCashEntry)); row++;
-      const diffBg = Math.abs(agg.cashDifference) < 0.01 ? C.sumBalBg : C.sumDiffBg;
-      const diffFg = Math.abs(agg.cashDifference) < 0.01 ? C.sumBalFg : C.sumDiffFg;
-      W(row, 0, "Cash Difference (Calculated − Manual)", { bold: true, fg: diffFg, bg: diffBg, border: thickBorder });
+      const isBalanced = Math.abs(agg.cashDifference) < 0.01;
+      const isSurplus = agg.cashDifference < 0;
+      const diffBg = isBalanced ? C.sumBalYelBg : isSurplus ? C.sumBalBg : C.sumDiffBg;
+      const diffFg = isBalanced ? C.sumBalYelFg : isSurplus ? C.sumBalFg : C.sumDiffFg;
+      const diffLabel = isBalanced ? "Cash Difference (Balanced)" : isSurplus ? "Cash Difference (Surplus)" : "Cash Difference (Shortage)";
+      W(row, 0, diffLabel, { bold: true, fg: diffFg, bg: diffBg, border: thickBorder });
       BLANK(row, 1, diffBg);
       W(row, 2, agg.cashDifference, { bold: true, fg: diffFg, bg: diffBg, border: thickBorder });
       row++;
@@ -761,7 +773,14 @@ function Page() {
 
     lRows.push({ label: "Opening Cash Balance", qty: "", amt: fmt(agg.openingCash) });
     Object.entries(agg.productSalesTotals).forEach(([n, s]) => lRows.push({ label: `${n} Sales`, qty: String(s.quantity), amt: fmt(s.total) }));
-    if (agg.collectionsTotal > 0) lRows.push({ label: "Outstanding Customer Collections", qty: "", amt: fmt(agg.collectionsTotal) });
+    if (agg.collectionsTotal > 0) {
+      lRows.push({ label: "Credit Recovery / Outstanding Collections", qty: "", amt: fmt(agg.collectionsTotal) });
+      dailyPayments.forEach(p => lRows.push({ label: `  - ${p.customer_name} (${p.payment_mode})`, qty: "", amt: fmt(p.amount), sub: true }));
+    }
+    if (agg.prepQtyTotal > 0) {
+      lRows.push({ label: "Website Prepaid", qty: String(agg.prepQtyTotal), amt: fmt(agg.prepOutflow) });
+      Object.values(agg.prepByDriver).forEach(d => lRows.push({ label: `  - ${d.name}`, qty: String(d.qty), amt: fmt(d.amount), sub: true }));
+    }
     otherReceiptsList.forEach(r => lRows.push({ label: r.particular, qty: "", amt: fmt(r.amount) }));
     pendingBills.forEach(b => lRows.push({ label: `Pending — ${b.label} (${b.qty}×₹${b.rate})`, qty: String(b.qty), amt: fmt(b.amount) }));
     paymentInflows.forEach(p => lRows.push({ label: p.particular + ((p as any).note ? ` (${(p as any).note})` : ""), qty: "", amt: fmt(p.amount) }));
@@ -780,8 +799,8 @@ function Page() {
       rRows.push({ label: `${cat.replace("_", " ")}${note ? ` (${note})` : ""}`, qty: "", amt: fmt(Number(e.amount)) });
     });
     if (agg.prepQtyTotal > 0) {
-      rRows.push({ label: "Website Prepaid", qty: String(agg.prepQtyTotal), amt: "—" });
-      Object.values(agg.prepByDriver).forEach(d => rRows.push({ label: `  - ${d.name}`, qty: String(d.qty), amt: "—", sub: true }));
+      rRows.push({ label: "Website Prepaid", qty: String(agg.prepQtyTotal), amt: fmt(agg.prepOutflow) });
+      Object.values(agg.prepByDriver).forEach(d => rRows.push({ label: `  - ${d.name}`, qty: String(d.qty), amt: fmt(d.amount), sub: true }));
     }
     if (agg.upiOutflow > 0) {
       rRows.push({ label: "UPI", qty: String(agg.onlineQtyTotal), amt: fmt(agg.upiOutflow) });
@@ -871,9 +890,12 @@ function Page() {
     sumRow("Calculated Cash Balance",   fmt(agg.cashBalance),    LGRN, true, [31,122,77]);
     if (agg.cashDifference !== null) {
       sumRow("Manual Cash Count",       fmt(Number(manualCashEntry)), WHITE);
-      const diffBg = Math.abs(agg.cashDifference) < 0.01 ? LGRN : LRED;
-      const diffFg = (Math.abs(agg.cashDifference) < 0.01 ? [31,122,77] : [156,0,6]) as [number, number, number];
-      sumRow("Cash Difference (Calc − Manual)", fmt(agg.cashDifference), diffBg, true, diffFg);
+      const isBalanced = Math.abs(agg.cashDifference) < 0.01;
+      const isSurplus = agg.cashDifference < 0;
+      const diffBg = isBalanced ? [255,251,230] as [number,number,number] : isSurplus ? LGRN : LRED;
+      const diffFg = (isBalanced ? [212,136,6] : isSurplus ? [31,122,77] : [156,0,6]) as [number, number, number];
+      const diffLabel = isBalanced ? "Cash Difference (Balanced)" : isSurplus ? "Cash Difference (Surplus)" : "Cash Difference (Shortage)";
+      sumRow(diffLabel, fmt(agg.cashDifference), diffBg, true, diffFg);
     }
     if (dailyNote.trim()) {
       y += 3;
@@ -1001,11 +1023,39 @@ function Page() {
               </div>
             ))}
 
+            {/* Website Prepaid Inflow */}
+            {agg.prepQtyTotal > 0 && (
+              <div className="px-5 py-3 flex flex-col hover:bg-slate-50/40">
+                <div className="flex justify-between items-center py-0.5">
+                  <span className="font-semibold text-slate-600">Website Prepaid <span className="text-slate-400 font-normal">({agg.prepQtyTotal} units)</span></span>
+                  <span className="font-bold tabular-nums text-emerald-600 text-sm">{fmtCurrency(agg.prepOutflow)}</span>
+                </div>
+                <div className="mt-1 pl-3 border-l-2 border-slate-200/80 space-y-0.5 text-[10px] text-slate-500 font-medium">
+                  {Object.values(agg.prepByDriver).map((d) => (
+                    <div key={d.name} className="flex justify-between py-0.5">
+                      <span>{d.name} <span className="text-slate-400">({d.qty} units)</span></span>
+                      <span className="tabular-nums">{fmtCurrency(d.amount)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Collections */}
             {agg.collectionsTotal > 0 && (
-              <div className="px-5 py-3.5 flex justify-between items-center hover:bg-slate-50/40">
-                <span className="font-semibold text-slate-600">Credit Recovery / Outstanding Collections</span>
-                <span className="font-bold tabular-nums text-slate-800 text-sm">{fmtCurrency(agg.collectionsTotal)}</span>
+              <div className="px-5 py-3 flex flex-col hover:bg-slate-50/40">
+                <div className="flex justify-between items-center py-0.5">
+                  <span className="font-semibold text-slate-600">Credit Recovery / Outstanding Collections</span>
+                  <span className="font-bold tabular-nums text-slate-800 text-sm">{fmtCurrency(agg.collectionsTotal)}</span>
+                </div>
+                <div className="mt-1 pl-3 border-l-2 border-slate-200/80 space-y-0.5 text-[10px] text-slate-500 font-medium">
+                  {dailyPayments.map((p) => (
+                    <div key={p.id} className="flex justify-between py-0.5">
+                      <span>{p.customer_name} <span className="text-slate-400 capitalize">({p.payment_mode})</span></span>
+                      <span className="tabular-nums">{fmtCurrency(p.amount)}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
@@ -1113,13 +1163,13 @@ function Page() {
               <div className="px-5 py-3 flex flex-col hover:bg-slate-50/40">
                 <div className="flex justify-between items-center py-0.5">
                   <span className="font-semibold text-slate-600">Website Prepaid <span className="text-slate-400 font-normal">({agg.prepQtyTotal} units)</span></span>
-                  <span className="font-bold tabular-nums text-slate-500 text-sm">—</span>
+                  <span className="font-bold tabular-nums text-red-600 text-sm">{fmtCurrency(agg.prepOutflow)}</span>
                 </div>
                 <div className="mt-1 pl-3 border-l-2 border-slate-200/80 space-y-0.5 text-[10px] text-slate-500 font-medium">
                   {Object.values(agg.prepByDriver).map((d) => (
                     <div key={d.name} className="flex justify-between py-0.5">
                       <span>{d.name} <span className="text-slate-400">({d.qty} units)</span></span>
-                      <span className="tabular-nums text-slate-400">—</span>
+                      <span className="tabular-nums">{fmtCurrency(d.amount)}</span>
                     </div>
                   ))}
                 </div>
@@ -1273,21 +1323,47 @@ function Page() {
           </CardContent>
         </Card>
 
-        <Card className={`border shadow-soft ${agg.cashDifference === null ? "bg-slate-50" : Math.abs(agg.cashDifference) < 0.01 ? "bg-emerald-50 border-emerald-200" : "bg-red-50 border-red-300"}`}>
+        <Card className={cn(
+          "border shadow-soft",
+          agg.cashDifference === null
+            ? "bg-slate-50 border-slate-200"
+            : Math.abs(agg.cashDifference) < 0.01
+            ? "bg-amber-50 border-amber-200/80"
+            : agg.cashDifference < 0
+            ? "bg-emerald-50 border-emerald-200/80"
+            : "bg-red-50 border-red-200/80"
+        )}>
           <CardContent className="p-4 space-y-1">
-            <div className="text-xs font-bold uppercase tracking-wider text-slate-600">
-              {agg.cashDifference === null ? "Difference (Calculated − Manual)" : Math.abs(agg.cashDifference) < 0.01 ? "✅ Balanced" : "⚠️ Cash Difference"}
+            <div className={cn(
+              "text-xs font-bold uppercase tracking-wider",
+              agg.cashDifference === null
+                ? "text-slate-600"
+                : Math.abs(agg.cashDifference) < 0.01
+                ? "text-amber-700"
+                : agg.cashDifference < 0
+                ? "text-emerald-700"
+                : "text-red-700"
+            )}>
+              {agg.cashDifference === null ? "Difference (Calculated − Manual)" : Math.abs(agg.cashDifference) < 0.01 ? "✅ Balanced" : agg.cashDifference < 0 ? "✅ Cash Surplus (Excess)" : "⚠️ Cash Shortage"}
             </div>
             {agg.cashDifference === null ? (
               <div className="text-sm text-muted-foreground italic">Enter manual cash count to see difference</div>
             ) : (
               <>
-                <div className={`text-2xl font-black tabular-nums mt-1 ${Math.abs(agg.cashDifference) < 0.01 ? "text-emerald-600" : "text-red-600"}`}>
+                <div className={cn(
+                  "text-2xl font-black tabular-nums mt-1",
+                  Math.abs(agg.cashDifference) < 0.01
+                    ? "text-amber-600"
+                    : agg.cashDifference < 0
+                    ? "text-emerald-600"
+                    : "text-red-600"
+                )}>
                   {fmtCurrency(agg.cashDifference)}
                 </div>
                 <div className="text-[10px] text-muted-foreground">
                   {Math.abs(agg.cashDifference) < 0.01 ? "Cashbook is perfectly balanced." :
-                    agg.cashDifference > 0 ? `Excess: ₹${agg.cashDifference.toFixed(2)} more than counted` : `Short: ₹${Math.abs(agg.cashDifference).toFixed(2)} less than calculated`}
+                    agg.cashDifference < 0 ? `Surplus: ₹${Math.abs(agg.cashDifference).toFixed(2)} more cash in hand than calculated` :
+                    `Shortage: ₹${agg.cashDifference.toFixed(2)} less cash in hand than calculated`}
                 </div>
               </>
             )}
