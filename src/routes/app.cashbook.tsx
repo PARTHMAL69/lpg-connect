@@ -234,7 +234,7 @@ function Page() {
 
     dailySales.forEach((s) => {
       const nl = s.product_name.toLowerCase();
-      const isMain = nl.includes("14.2") || nl.includes("domestic") || nl.includes("cylinder") || nl === "lpg" || nl === "gas";
+      const isMain = nl.includes("14.2") || nl.includes("14 kg") || nl.includes("domestic") || nl.includes("cylinder") || nl === "lpg" || nl === "gas";
       const isCNC = !s.delivery_boy_id || nl.includes("cnc");
 
       // Parse notes JSON
@@ -1096,6 +1096,7 @@ function Page() {
               </div>
             ))}
 
+
             {/* Pending Bills */}
             {pendingBills.map((b) => (
               <div key={b.id} className="px-5 py-3 flex justify-between items-center hover:bg-slate-50/40 group">
@@ -1110,7 +1111,7 @@ function Page() {
               </div>
             ))}
 
-            {/* Home Delivery */}
+            {/* Home Delivery — shown last */}
             {agg.homeTotal > 0 && (
               <div className="px-5 py-3.5 flex justify-between items-center hover:bg-slate-50/40">
                 <span className="font-semibold text-slate-600">14 KG Home Delivery Sales <span className="text-slate-400 font-normal">({agg.homeQty} units)</span></span>
@@ -1118,7 +1119,7 @@ function Page() {
               </div>
             )}
 
-            {/* CNC */}
+            {/* CNC — shown last */}
             {agg.cncTotal > 0 && (
               <div className="px-5 py-3.5 flex justify-between items-center hover:bg-slate-50/40">
                 <span className="font-semibold text-slate-600">14 KG CNC Sales <span className="text-slate-400 font-normal">({agg.cncQty} units)</span></span>
