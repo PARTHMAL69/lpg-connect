@@ -14,6 +14,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { toast } from "sonner";
 import { fmtCurrency, fmtDate, todayISO } from "@/lib/format";
 import { Calendar, Plus, Trash2, Coins, Loader2 } from "lucide-react";
+import { reconcileCustomerOutstanding } from "@/lib/accounting";
+import { useQueryClient } from "@tanstack/react-query";
 
 export const Route = createFileRoute("/app/outstanding")({
   component: () => <RequireAgencyUser><OutstandingPage /></RequireAgencyUser>,
@@ -39,6 +41,7 @@ function newId() { return "out-udhar-" + Date.now() + "-" + Math.random().toStri
 
 function OutstandingPage() {
   const { agency } = useAuth();
+  const qc = useQueryClient();
   const [date, setDate] = useState(todayISO());
   const [items, setItems] = useState<OutstandingItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -49,6 +52,7 @@ function OutstandingPage() {
 
   // Dialog
   const [isOpen, setIsOpen] = useState(false);
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [customerName, setCustomerName] = useState("");
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
@@ -65,7 +69,7 @@ function OutstandingPage() {
   }, [agency]);
 
   const customerOptions = customers.map(c => ({
-    value: c.name,
+    value: c.id,
     label: c.name,
     sublabel: [c.mobile, c.village].filter(Boolean).join(" · ") || undefined,
   }));
@@ -119,9 +123,37 @@ function OutstandingPage() {
     e.preventDefault();
     const amt = Number(amount);
     if (!customerName.trim() || !amt || amt <= 0) { toast.error("Enter customer name and amount."); return; }
+    if (!agency) return;
     setBusy(true);
+
+    const itemId = newId();
+
+    if (selectedCustomerId) {
+      try {
+        const { error: ledgerErr } = await supabase.from("customer_ledger").insert({
+          agency_id: agency.id,
+          customer_id: selectedCustomerId,
+          entry_date: date,
+          kind: "adjustment",
+          debit: amt,
+          credit: 0,
+          description: note.trim() || "Manual Outstanding Entry",
+          reference: itemId,
+        });
+        if (ledgerErr) throw ledgerErr;
+
+        await reconcileCustomerOutstanding(selectedCustomerId);
+        qc.invalidateQueries({ queryKey: ["udhari-aging"] });
+        qc.invalidateQueries({ queryKey: ["customer-ledger"] });
+      } catch (err: any) {
+        toast.error("Failed to update credit book: " + err.message);
+        setBusy(false);
+        return;
+      }
+    }
+
     const item: OutstandingItem = {
-      id: newId(),
+      id: itemId,
       customer_name: customerName.trim(),
       amount: amt,
       note: note.trim(),
@@ -131,15 +163,39 @@ function OutstandingPage() {
     setItems(updated);
     await saveItems(updated);
     toast.success("Outstanding entry recorded successfully.");
-    setIsOpen(false); setCustomerName(""); setAmount(""); setNote("");
+    setIsOpen(false); setCustomerName(""); setAmount(""); setNote(""); setSelectedCustomerId(null);
     setBusy(false);
   };
 
   const deleteItem = async (id: string) => {
+    setBusy(true);
+    try {
+      const { data: deletedRows, error: delErr } = await supabase
+        .from("customer_ledger")
+        .delete()
+        .eq("reference", id)
+        .select("customer_id");
+
+      if (delErr) throw delErr;
+
+      if (deletedRows && deletedRows.length > 0) {
+        for (const row of deletedRows) {
+          if (row.customer_id) {
+            await reconcileCustomerOutstanding(row.customer_id);
+          }
+        }
+        qc.invalidateQueries({ queryKey: ["udhari-aging"] });
+        qc.invalidateQueries({ queryKey: ["customer-ledger"] });
+      }
+    } catch (err: any) {
+      toast.error("Failed to update credit book: " + err.message);
+    }
+
     const updated = items.filter(i => i.id !== id);
     setItems(updated);
     await saveItems(updated);
     toast.success("Entry removed.");
+    setBusy(false);
   };
 
   const total = items.reduce((s, i) => s + i.amount, 0);
@@ -200,8 +256,8 @@ function OutstandingPage() {
                     </div>
                     <div className="flex items-center gap-3">
                       <span className="font-black text-red-600 tabular-nums text-base">{fmtCurrency(item.amount)}</span>
-                      <button type="button" onClick={() => deleteItem(item.id)}
-                        className="h-8 w-8 rounded-lg border border-red-200 text-red-500 hover:bg-red-50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button type="button" onClick={() => deleteItem(item.id)} disabled={busy}
+                        className="h-8 w-8 rounded-lg border border-red-200 text-red-500 hover:bg-red-50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50">
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>
@@ -236,8 +292,12 @@ function OutstandingPage() {
                 <>
                   <Combobox
                     options={customerOptions}
-                    value={customerName}
-                    onValueChange={setCustomerName}
+                    value={selectedCustomerId || ""}
+                    onValueChange={(val) => {
+                      setSelectedCustomerId(val || null);
+                      const cust = customers.find(c => c.id === val);
+                      setCustomerName(cust ? cust.name : "");
+                    }}
                     placeholder="Select customer from list..."
                     searchPlaceholder="Search customer..."
                     emptyMessage="No customer found."
@@ -245,7 +305,10 @@ function OutstandingPage() {
                   {/* Allow manual override if not in list */}
                   <Input
                     value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
+                    onChange={(e) => {
+                      setCustomerName(e.target.value);
+                      setSelectedCustomerId(null);
+                    }}
                     placeholder="Or type name manually..."
                     className="h-9 text-xs mt-1"
                   />
