@@ -391,39 +391,38 @@ function ProfilePage() {
         let outstandingEntries: any[] = [];
         let manualCashEntry = "";
         let dailyNote = "";
-
         if (dayRecord) {
           opening = dayRecord.opening_cash ?? 0;
           if (dayRecord.notes) {
             try {
               const m = JSON.parse(dayRecord.notes);
-              otherReceiptsList = (Array.isArray(m.other_receipts) ? m.other_receipts : []).map((r: any) => ({
+              otherReceiptsList = (Array.isArray(m.other_receipts) ? m.other_receipts : []).filter(Boolean).map((r: any) => ({
                 ...r,
                 amount: Number(r.amount || 0)
               }));
-              pendingBills = (Array.isArray(m.pending_bills) ? m.pending_bills : []).map((b: any) => ({
+              pendingBills = (Array.isArray(m.pending_bills) ? m.pending_bills : []).filter(Boolean).map((b: any) => ({
                 ...b,
                 qty: Number(b.qty || 0),
                 rate: Number(b.rate || 0),
                 amount: Number(b.amount || 0)
               }));
-              magilBills = (Array.isArray(m.magil_bills) ? m.magil_bills : []).map((b: any) => ({
+              magilBills = (Array.isArray(m.magil_bills) ? m.magil_bills : []).filter(Boolean).map((b: any) => ({
                 ...b,
                 qty: Number(b.qty || 0),
                 rate: Number(b.rate || 0),
                 amount: Number(b.amount || 0)
               }));
-              paymentInflows = (Array.isArray(m.payment_inflows) ? m.payment_inflows : []).map((p: any) => ({
+              paymentInflows = (Array.isArray(m.payment_inflows) ? m.payment_inflows : []).filter(Boolean).map((p: any) => ({
                 ...p,
                 amount: Number(p.amount || 0),
                 split_online: Number(p.split_online || 0),
                 split_credit: Number(p.split_credit || 0)
               }));
-              paymentOutflows = (Array.isArray(m.payment_outflows) ? m.payment_outflows : []).map((p: any) => ({
+              paymentOutflows = (Array.isArray(m.payment_outflows) ? m.payment_outflows : []).filter(Boolean).map((p: any) => ({
                 ...p,
                 amount: Number(p.amount || 0)
               }));
-              outstandingEntries = (Array.isArray(m.outstanding_entries) ? m.outstanding_entries : []).map((o: any) => ({
+              outstandingEntries = (Array.isArray(m.outstanding_entries) ? m.outstanding_entries : []).filter(Boolean).map((o: any) => ({
                 ...o,
                 amount: Number(o.amount || 0)
               }));
@@ -432,7 +431,6 @@ function ProfilePage() {
             } catch (_) {}
           }
         }
-
         const rawSales = salesByDate[dStr] ?? [];
         const dailySales = rawSales.map((s: any) => {
           let pm = s.payment_mode?.toLowerCase() || "cash";
@@ -1006,18 +1004,8 @@ function ProfilePage() {
       });
 
       XLSXStyle.utils.book_append_sheet(wb, ws, "Financial History");
-      
       const fileName = `ledger_history_${minDate}_to_${maxDate}.xlsx`;
-      // Use browser-compatible download via Blob + anchor element
-      const wbOut = XLSXStyle.write(wb, { bookType: "xlsx", type: "array" });
-      const blob = new Blob([wbOut], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
+      XLSXStyle.writeFile(wb, fileName);
       toast.success(`Your complete ledger history (${dateList.length} days) has been downloaded!`);
     } catch (e: any) {
       console.error("Historical Export Failed:", e);

@@ -652,17 +652,6 @@ export const saveBackupSettings = createServerFn({ method: "POST" })
       throw new Error("Unauthorized: User has no associated agency");
     }
 
-    // 2. Verify caller is agency_admin or platform_admin
-    const { data: role } = await admin
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", context.userId)
-      .eq("agency_id", au.agency_id)
-      .maybeSingle();
-
-    if (!role || (role.role !== "agency_admin" && role.role !== "platform_admin")) {
-      throw new Error("Forbidden: Only agency administrators can update backup email settings");
-    }
 
     // 3. Update the agencies table
     const { error: updateErr } = await admin
