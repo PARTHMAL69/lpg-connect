@@ -678,16 +678,28 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
   const [customers, setCustomers] = useState<Array<{ id: string; name: string }>>([]);
   const [boys, setBoys] = useState<Array<{ id: string; name: string; commission_rate: number }>>([]);
 
+  interface ProductRow {
+    key: string;
+    product_id: string;
+    quantity: string;
+    rate: string;
+    commission_rate: string;
+    prepaid_qty: string;
+  }
+
+  const [prodRows, setProdRows] = useState<ProductRow[]>([
+    { key: "row-0", product_id: "", quantity: "1", rate: "", commission_rate: "0", prepaid_qty: "0" }
+  ]);
+
   const [f, setF] = useState({
-    sale_date: todayISO(), customer_id: "", product_id: "", quantity: "1", rate: "",
-    payment_mode: "split", delivery_boy_id: "", commission_rate: "0", notes: "",
+    sale_date: todayISO(), customer_id: "",
+    payment_mode: "split", delivery_boy_id: "", notes: "",
   });
 
   const [isSplit, setIsSplit] = useState(true);
   const [splitCash, setSplitCash] = useState("0");
   const [splitOnline, setSplitOnline] = useState("0");
   const [splitCredit, setSplitCredit] = useState("0");
-  const [prepaidQty, setPrepaidQty] = useState("0");
 
   const [busy, setBusy] = useState(false);
 
@@ -705,47 +717,7 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
     })();
   }, [agency]);
 
-  const product = useMemo(() => products.find((p) => p.id === f.product_id), [products, f.product_id]);
-  
-  // CNC check based on product name
-  const isCncProduct = useMemo(() => {
-    if (!product) return false;
-    return product.name.toLowerCase().includes("cnc");
-  }, [product]);
-
-  useEffect(() => {
-    if (product && !editSale) {
-      setF((s) => ({ ...s, rate: String(product.rate) })); 
-    }
-  }, [product, editSale]);
-
   const boy = useMemo(() => boys.find((b) => b.id === f.delivery_boy_id), [boys, f.delivery_boy_id]);
-  useEffect(() => { 
-    if (boy && !editSale) {
-      setF((s) => ({ ...s, commission_rate: String(boy.commission_rate) })); 
-    }
-  }, [boy, editSale]);
-
-  // Core calculation
-  const qty = Math.max(0, Math.round(Number(f.quantity || 0)));
-  const prep = Math.max(0, Math.round(Number(prepaidQty || 0)));
-  const billedQty = Math.max(0, qty - prep);
-  const grossTotal = billedQty * Math.max(0, Number(f.rate || 0));
-  const commissionPerUnit = isCncProduct ? 0 : Math.max(0, Number(f.commission_rate || 0));
-  const commissionTotal = commissionPerUnit * qty; // Commission on ALL cylinders (including prepaid, since delivery boy delivers all)
-  const totalWithoutCommission = grossTotal - commissionTotal;
-
-  // Auto-recalculate split amounts when total changes (real-time sync)
-  useEffect(() => {
-    if (isSplit && totalWithoutCommission >= 0) {
-      const currentSum = Number(splitCash || 0) + Number(splitOnline || 0) + Number(splitCredit || 0);
-      // If the sum doesn't match, reset cash to absorb the difference
-      if (Math.abs(currentSum - totalWithoutCommission) > 0.01) {
-        const newCash = Math.max(0, totalWithoutCommission - Number(splitOnline || 0) - Number(splitCredit || 0));
-        setSplitCash(String(newCash));
-      }
-    }
-  }, [totalWithoutCommission, isSplit]);
 
   useEffect(() => {
     if (editSale) {
@@ -778,17 +750,23 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
       setSplitCash(cashAmt);
       setSplitOnline(onlineAmt);
       setSplitCredit(creditAmt);
-      setPrepaidQty(prepQty);
+
+      setProdRows([
+        {
+          key: "row-edit",
+          product_id: editSale.product_id ?? "",
+          quantity: String(editSale.quantity),
+          rate: String(editSale.rate),
+          commission_rate: String(editSale.commission_rate),
+          prepaid_qty: prepQty,
+        }
+      ]);
 
       setF({
         sale_date: editSale.sale_date,
         customer_id: editSale.customer_id ?? "",
-        product_id: editSale.product_id ?? "",
-        quantity: String(editSale.quantity),
-        rate: String(editSale.rate),
         payment_mode: split ? "split" : editSale.payment_mode,
         delivery_boy_id: editSale.delivery_boy_id ?? "",
-        commission_rate: String(editSale.commission_rate),
         notes: remarks,
       });
     } else {
@@ -796,17 +774,66 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
       setSplitCash("0");
       setSplitOnline("0");
       setSplitCredit("0");
-      setPrepaidQty("0");
+      setProdRows([
+        { key: "row-0", product_id: "", quantity: "1", rate: "", commission_rate: "0", prepaid_qty: "0" }
+      ]);
       setF({
-        sale_date: todayISO(), customer_id: "", product_id: "", quantity: "1", rate: "",
-        payment_mode: "split", delivery_boy_id: "", commission_rate: "0", notes: "",
+        sale_date: todayISO(), customer_id: "",
+        payment_mode: "split", delivery_boy_id: "", notes: "",
       });
     }
   }, [editSale]);
 
+  const calculatedRows = useMemo(() => {
+    return prodRows.map((row) => {
+      const prod = products.find(p => p.id === row.product_id);
+      const isCnc = prod ? prod.name.toLowerCase().includes("cnc") : false;
+
+      const qty = Math.max(0, Math.round(Number(row.quantity || 0)));
+      const prep = Math.max(0, Math.round(Number(row.prepaid_qty || 0)));
+      const billedQty = Math.max(0, qty - prep);
+      const rateVal = Math.max(0, Number(row.rate || 0));
+      const grossTotal = billedQty * rateVal;
+      const commissionPerUnit = isCnc ? 0 : Math.max(0, Number(row.commission_rate || 0));
+      const commissionTotal = commissionPerUnit * qty;
+      const netTotal = grossTotal - commissionTotal;
+
+      return {
+        ...row,
+        product_name: prod ? prod.name : "Cylinder",
+        isCnc,
+        qty,
+        prep,
+        billedQty,
+        rateVal,
+        grossTotal,
+        commissionPerUnit,
+        commissionTotal,
+        netTotal,
+      };
+    });
+  }, [prodRows, products]);
+
+  const combinedGross = calculatedRows.reduce((sum, r) => sum + r.grossTotal, 0);
+  const combinedCommission = calculatedRows.reduce((sum, r) => sum + r.commissionTotal, 0);
+  const combinedNet = combinedGross - combinedCommission;
+
+  const isFirstCnc = calculatedRows[0]?.isCnc ?? false;
+  const showDeliveryAndAddBtn = !isFirstCnc;
+
+  const splitTarget = Math.max(0, combinedNet);
   const splitSum = Number(splitCash || 0) + Number(splitOnline || 0) + Number(splitCredit || 0);
-  const splitTarget = Math.max(0, totalWithoutCommission);
   const isSplitValid = Math.abs(splitSum - splitTarget) < 0.01;
+
+  useEffect(() => {
+    if (isSplit && combinedNet >= 0) {
+      const currentSum = Number(splitCash || 0) + Number(splitOnline || 0) + Number(splitCredit || 0);
+      if (Math.abs(currentSum - combinedNet) > 0.01) {
+        const newCash = Math.max(0, combinedNet - Number(splitOnline || 0) - Number(splitCredit || 0));
+        setSplitCash(String(newCash));
+      }
+    }
+  }, [combinedNet, isSplit]);
 
   const handlePaymentModeChange = (val: string) => {
     setF((prev) => ({ ...prev, payment_mode: val }));
@@ -820,9 +847,102 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
     }
   };
 
+  const handleProductChange = (index: number, prodId: string) => {
+    const selected = products.find(p => p.id === prodId);
+    if (!selected) return;
+
+    setProdRows(prev => prev.map((row, idx) => {
+      if (idx !== index) return row;
+      const isCnc = selected.name.toLowerCase().includes("cnc");
+      return {
+        ...row,
+        product_id: prodId,
+        rate: String(selected.rate),
+        commission_rate: isCnc ? "0" : (boy ? String(boy.commission_rate) : "0"),
+      };
+    }));
+  };
+
+  const handleDeliveryBoyChange = (boyId: string) => {
+    setF(prev => ({ ...prev, delivery_boy_id: boyId }));
+    const selectedBoy = boys.find(b => b.id === boyId);
+    if (selectedBoy) {
+      setProdRows(prev => prev.map(row => {
+        const prod = products.find(p => p.id === row.product_id);
+        const isCnc = prod ? prod.name.toLowerCase().includes("cnc") : false;
+        return {
+          ...row,
+          commission_rate: isCnc ? "0" : String(selectedBoy.commission_rate),
+        };
+      }));
+    }
+  };
+
+  const handleRowValueChange = (index: number, key: keyof ProductRow, val: string) => {
+    setProdRows(prev => prev.map((row, idx) => {
+      if (idx !== index) return row;
+      return { ...row, [key]: val };
+    }));
+  };
+
+  const addRow = () => {
+    setProdRows(prev => [
+      ...prev,
+      {
+        key: `row-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+        product_id: "",
+        quantity: "1",
+        rate: "",
+        commission_rate: boy ? String(boy.commission_rate) : "0",
+        prepaid_qty: "0",
+      }
+    ]);
+  };
+
+  const removeRow = (index: number) => {
+    setProdRows(prev => prev.filter((_, idx) => idx !== index));
+  };
+
+  const distributeSplit = (
+    rows: typeof calculatedRows,
+    totalCash: number,
+    totalOnline: number,
+    totalCredit: number,
+    totalNet: number
+  ) => {
+    let cashSum = 0;
+    let onlineSum = 0;
+    let creditSum = 0;
+
+    return rows.map((r, idx) => {
+      if (idx === rows.length - 1) {
+        return {
+          cash: Number((totalCash - cashSum).toFixed(2)),
+          online: Number((totalOnline - onlineSum).toFixed(2)),
+          credit: Number((totalCredit - creditSum).toFixed(2)),
+        };
+      }
+
+      const prop = totalNet > 0 ? (r.netTotal / totalNet) : 0;
+      const cashPart = Number((totalCash * prop).toFixed(2));
+      const onlinePart = Number((totalOnline * prop).toFixed(2));
+      const creditPart = Number((totalCredit * prop).toFixed(2));
+
+      cashSum += cashPart;
+      onlineSum += onlinePart;
+      creditSum += creditPart;
+
+      return {
+        cash: cashPart,
+        online: onlinePart,
+        credit: creditPart,
+      };
+    });
+  };
+
   const submit = async (e: FormEvent) => {
     e.preventDefault(); 
-    if (!agency || !f.product_id) return; 
+    if (!agency || calculatedRows.some(r => !r.product_id)) return; 
     
     if (isSplit && !isSplitValid) {
       toast.error(`Split payment total must equal: ${fmtCurrency(splitTarget)}`);
@@ -831,55 +951,78 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
 
     setBusy(true);
 
-    const finalDeliveryBoyId = isCncProduct ? null : (f.delivery_boy_id || null);
-    const finalCommissionRate = isCncProduct ? 0 : Number(f.commission_rate || 0);
-    const finalCommissionAmount = finalCommissionRate * qty;
-    const finalNetAmount = grossTotal - finalCommissionAmount;
+    const finalDeliveryBoyId = isFirstCnc ? null : (f.delivery_boy_id || null);
+    
+    // Shared transaction ID for inserts, or existing transaction ID for edit
+    const txnNo = editSale?.txn_no || ("TXN-" + Date.now() + "-" + Math.random().toString(36).substring(2, 7).toUpperCase());
 
-    const metaDetails: any = {};
-    if (isSplit) {
-      metaDetails.is_split = true;
-      metaDetails.cash_amount = Number(splitCash || 0);
-      metaDetails.online_amount = Number(splitOnline || 0);
-      metaDetails.credit_amount = Number(splitCredit || 0);
-    }
-    if (f.payment_mode === "cheque") {
-      metaDetails.is_cheque = true;
-    }
-    if (prep > 0) {
-      metaDetails.website_prepaid_qty = prep;
-    }
-    metaDetails.remarks = f.notes || null;
+    const splitDetails = distributeSplit(
+      calculatedRows,
+      isSplit ? Number(splitCash || 0) : (f.payment_mode === "cash" ? combinedNet : 0),
+      isSplit ? Number(splitOnline || 0) : (f.payment_mode === "online" || f.payment_mode === "paytm" ? combinedNet : 0),
+      isSplit ? Number(splitCredit || 0) : (f.payment_mode === "credit" ? combinedNet : 0),
+      combinedNet
+    );
 
-    const payload = {
-      agency_id: agency.id, 
-      sale_date: f.sale_date,
-      customer_id: f.customer_id || null, 
-      product_id: f.product_id, 
-      quantity: qty, 
-      rate: Number(f.rate), 
-      gross_amount: grossTotal, 
-      payment_mode: f.payment_mode === "cheque" ? "online" : (isSplit ? (Number(splitCredit || 0) > 0 ? "credit" : "cash") : f.payment_mode),
-      delivery_boy_id: finalDeliveryBoyId,
-      commission_rate: finalCommissionRate,
-      commission_amount: finalCommissionAmount,
-      net_amount: finalNetAmount,
-      notes: (isSplit || prep > 0 || f.payment_mode === "cheque") ? JSON.stringify(metaDetails) : (f.notes || null),
-      updated_by: session?.user?.id
-    };
+    const payloads = calculatedRows.map((r, idx) => {
+      const rowSplit = splitDetails[idx];
+      const isRowSplit = isSplit;
+
+      const rowPaymentMode = f.payment_mode === "cheque"
+        ? "online"
+        : (isRowSplit
+            ? (rowSplit.credit > 0 ? "credit" : "cash")
+            : f.payment_mode);
+
+      const metaDetails: any = {};
+      if (isRowSplit) {
+        metaDetails.is_split = true;
+        metaDetails.cash_amount = rowSplit.cash;
+        metaDetails.online_amount = rowSplit.online;
+        metaDetails.credit_amount = rowSplit.credit;
+      }
+      if (f.payment_mode === "cheque") {
+        metaDetails.is_cheque = true;
+      }
+      if (r.prep > 0) {
+        metaDetails.website_prepaid_qty = r.prep;
+      }
+      metaDetails.remarks = f.notes || null;
+
+      return {
+        agency_id: agency.id,
+        sale_date: f.sale_date,
+        customer_id: f.customer_id || null,
+        product_id: r.product_id,
+        quantity: r.qty,
+        rate: r.rateVal,
+        gross_amount: r.grossTotal,
+        payment_mode: rowPaymentMode,
+        delivery_boy_id: finalDeliveryBoyId,
+        commission_rate: r.commissionPerUnit,
+        commission_amount: r.commissionTotal,
+        net_amount: r.netTotal,
+        notes: (isRowSplit || r.prep > 0 || f.payment_mode === "cheque") ? JSON.stringify(metaDetails) : (f.notes || null),
+        txn_no: txnNo,
+        updated_by: session?.user?.id
+      };
+    });
 
     try {
       if (editSale) {
+        const payload = payloads[0];
         const { error } = await (supabase.from("sales") as any).update(payload).eq("id", editSale.id);
         if (error) throw error;
 
-        // Reconcile outstanding dynamically using the custom ledger sync
+        // Reconcile ledger entry
         if (payload.customer_id) {
+          const meta = JSON.parse(payload.notes || "{}");
+          const rowCredit = Number(meta.credit_amount || 0);
           await syncSaleLedger(
             editSale.id,
             payload.customer_id,
             isSplit,
-            Number(splitCredit || 0),
+            rowCredit,
             payload.gross_amount,
             editSale.txn_no || null,
             payload.sale_date,
@@ -893,32 +1036,32 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
 
         toast.success("Sale details successfully updated.");
       } else {
-        const { data, error } = await (supabase.from("sales") as any).insert({
-          ...payload,
-          created_by: session?.user?.id
-        }).select("id").single();
+        const { data, error } = await (supabase.from("sales") as any).insert(
+          payloads.map(p => ({ ...p, created_by: session?.user?.id }))
+        ).select("id, customer_id, gross_amount, sale_date, payment_mode, notes, product_id, quantity");
         
         if (error) throw error;
 
-        // Reconcile outstanding dynamically using the custom ledger sync
-        if (data?.id && payload.customer_id) {
-          await syncSaleLedger(
-            data.id,
-            payload.customer_id,
-            isSplit,
-            Number(splitCredit || 0),
-            payload.gross_amount,
-            null,
-            payload.sale_date,
-            agency.id,
-            payload.payment_mode
-          );
-        }
-
-        // Apply stock store deduction
-        if (data?.id) {
-          const prodName = products.find(p => p.id === payload.product_id)?.name ?? "Cylinder";
-          recordSaleDeduction(agency.id, payload.product_id, prodName, payload.quantity, data.id, session?.user?.id);
+        if (data) {
+          for (const s of data) {
+            if (s.customer_id) {
+              const meta = JSON.parse(s.notes || "{}");
+              const rowCredit = Number(meta.credit_amount || 0);
+              await syncSaleLedger(
+                s.id,
+                s.customer_id,
+                isSplit,
+                rowCredit,
+                s.gross_amount,
+                null,
+                s.sale_date,
+                agency.id,
+                s.payment_mode
+              );
+            }
+            const prod = products.find(p => p.id === s.product_id);
+            recordSaleDeduction(agency.id, s.product_id, prod?.name ?? "Cylinder", s.quantity, s.id, session?.user?.id);
+          }
         }
 
         toast.success(t("sales.saved"));
@@ -952,24 +1095,11 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
         />
       </div>
 
-      {/* 3. Product */}
-      <div className="space-y-1.5">
-        <Label>{t("sales.product")}</Label>
-        <Select value={f.product_id} onValueChange={(v) => setF({...f, product_id: v})} required>
-          <SelectTrigger className="h-11">
-            <SelectValue placeholder="—" />
-          </SelectTrigger>
-          <SelectContent>
-            {products.map((p) => <SelectItem key={p.id} value={p.id}>{p.name} ({fmtCurrency(p.rate)})</SelectItem>)}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* 4. Delivery Boy (hidden for CNC) */}
-      {!isCncProduct && (
+      {/* 3. Delivery Boy (hidden for CNC) */}
+      {showDeliveryAndAddBtn && (
         <div className="space-y-1.5">
           <Label>{t("sales.deliveryBoy")}</Label>
-          <Select value={f.delivery_boy_id} onValueChange={(v) => setF({...f, delivery_boy_id: v})}>
+          <Select value={f.delivery_boy_id} onValueChange={handleDeliveryBoyChange}>
             <SelectTrigger className="h-11">
               <SelectValue placeholder="—" />
             </SelectTrigger>
@@ -980,80 +1110,136 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
         </div>
       )}
 
-      {/* 5. Qty & Rate */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1.5">
-          <Label>{t("common.quantity")}</Label>
-          <Input 
-            type="number" 
-            required 
-            min="1" 
-            step="1" 
-            value={f.quantity} 
-            onChange={(e) => setF({...f, quantity: e.target.value})} 
-            onBlur={(e) => {
-              const val = Math.max(1, Math.round(Number(e.target.value) || 1));
-              setF({...f, quantity: String(val)});
-            }}
-            className="h-11 font-bold text-sm" 
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label>{t("common.rate")} (₹)</Label>
-          <Input 
-            type="number" 
-            required 
-            min="0"
-            step="any"
-            value={f.rate} 
-            onChange={(e) => setF({...f, rate: e.target.value})} 
-            onBlur={(e) => {
-              const val = Math.max(0, parseFloat(e.target.value) || 0);
-              setF({...f, rate: String(val)});
-            }}
-            className="h-11 font-bold text-sm" 
-          />
-        </div>
+      {/* Product List */}
+      <div className="space-y-4">
+        {prodRows.map((row, index) => {
+          const prod = products.find(p => p.id === row.product_id);
+          const isCnc = prod ? prod.name.toLowerCase().includes("cnc") : false;
+          
+          return (
+            <Card key={row.key} className="p-4 border border-slate-100 bg-slate-50/30 rounded-lg relative space-y-3">
+              {prodRows.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => removeRow(index)}
+                  className="absolute right-3 top-3 text-red-500 hover:text-red-700 text-xs font-semibold"
+                >
+                  ✕ Remove
+                </button>
+              )}
+              <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Product #{index + 1}</h4>
+              
+              {/* Product Select */}
+              <div className="space-y-1.5">
+                <Label>Product</Label>
+                <Select
+                  value={row.product_id}
+                  onValueChange={(v) => handleProductChange(index, v)}
+                  required
+                >
+                  <SelectTrigger className="h-11 bg-white">
+                    <SelectValue placeholder="Select Product..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {products.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.name} ({fmtCurrency(p.rate)})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Qty & Rate */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Quantity</Label>
+                  <Input
+                    type="number"
+                    required
+                    min="1"
+                    step="1"
+                    value={row.quantity}
+                    onChange={(e) => handleRowValueChange(index, "quantity", e.target.value)}
+                    onBlur={(e) => {
+                      const val = Math.max(1, Math.round(Number(e.target.value) || 1));
+                      handleRowValueChange(index, "quantity", String(val));
+                    }}
+                    className="h-11 bg-white font-bold text-sm"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Rate (₹)</Label>
+                  <Input
+                    type="number"
+                    required
+                    min="0"
+                    step="any"
+                    value={row.rate}
+                    onChange={(e) => handleRowValueChange(index, "rate", e.target.value)}
+                    onBlur={(e) => {
+                      const val = Math.max(0, parseFloat(e.target.value) || 0);
+                      handleRowValueChange(index, "rate", String(val));
+                    }}
+                    className="h-11 bg-white font-bold text-sm"
+                  />
+                </div>
+              </div>
+
+              {/* Commission Per Unit (hidden if row is CNC) */}
+              {!isCnc && (
+                <div className="space-y-1.5">
+                  <Label>Commission Per Unit (₹)</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={row.commission_rate}
+                    onChange={(e) => handleRowValueChange(index, "commission_rate", e.target.value)}
+                    onBlur={(e) => {
+                      const val = Math.max(0, parseFloat(e.target.value) || 0);
+                      handleRowValueChange(index, "commission_rate", String(val));
+                    }}
+                    className="h-11 bg-white"
+                  />
+                </div>
+              )}
+
+              {/* Online Website Orders */}
+              <div className="space-y-1.5">
+                <Label>Online Website Orders (Qty Paid Online)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  max={row.quantity}
+                  step="1"
+                  value={row.prepaid_qty}
+                  onChange={(e) => handleRowValueChange(index, "prepaid_qty", e.target.value)}
+                  onBlur={(e) => {
+                    const qVal = Math.max(1, Math.round(Number(row.quantity) || 1));
+                    const val = Math.max(0, Math.min(qVal, Math.round(Number(e.target.value) || 0)));
+                    handleRowValueChange(index, "prepaid_qty", String(val));
+                  }}
+                  className="h-11 bg-white font-bold text-sm"
+                  placeholder="Prepaid quantity..."
+                />
+              </div>
+            </Card>
+          );
+        })}
       </div>
 
-      {/* 6. Commission Per Unit (hidden for CNC) */}
-      {!isCncProduct && (
-        <div className="space-y-1.5">
-          <Label>Commission Per Unit (₹)</Label>
-          <Input 
-            type="number" 
-            min="0"
-            step="any"
-            value={f.commission_rate} 
-            onChange={(e) => setF({...f, commission_rate: e.target.value})} 
-            onBlur={(e) => {
-              const val = Math.max(0, parseFloat(e.target.value) || 0);
-              setF({...f, commission_rate: String(val)});
-            }}
-            className="h-11" 
-          />
-        </div>
+      {/* Add Product Button (only for non-CNC) */}
+      {showDeliveryAndAddBtn && !editSale && (
+        <Button
+          type="button"
+          variant="outline"
+          onClick={addRow}
+          className="w-full h-11 border-dashed border-primary/40 text-primary hover:bg-primary/5 font-semibold"
+        >
+          <Plus className="h-4 w-4 mr-1.5" /> + Add Product
+        </Button>
       )}
-
-      {/* 7. Online Website Orders */}
-      <div className="space-y-1.5">
-        <Label>Online Website Orders (Qty Already Paid Online)</Label>
-        <Input 
-          type="number" 
-          min="0" 
-          max={f.quantity} 
-          step="1" 
-          value={prepaidQty} 
-          onChange={(e) => setPrepaidQty(e.target.value)} 
-          onBlur={(e) => {
-            const qVal = Math.max(1, Math.round(Number(f.quantity) || 1));
-            const val = Math.max(0, Math.min(qVal, Math.round(Number(e.target.value) || 0)));
-            setPrepaidQty(String(val));
-          }}
-          className="h-11 font-bold text-sm" 
-          placeholder="Enter quantity already pre-paid on website..." 
-        />
-      </div>
 
       {/* 8. Payment Mode */}
       <div className="space-y-1.5">
@@ -1109,24 +1295,39 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
         <Textarea value={f.notes} onChange={(e) => setF({...f, notes: e.target.value})} placeholder="Optional transaction notes..." />
       </div>
 
-      {/* Summary card — Show only Total (without commission) */}
-      <Card className="bg-primary-soft p-4 space-y-2 border border-primary/20 rounded-lg">
-        {!isCncProduct && f.delivery_boy_id && commissionTotal > 0 && (
-          <>
-            <div className="flex justify-between items-center text-xs font-medium text-muted-foreground">
-              <span>Gross Amount ({billedQty} × {fmtCurrency(Number(f.rate || 0))})</span>
-              <span>{fmtCurrency(grossTotal)}</span>
+      {/* Summary card — Show Product-wise subtotal & final total */}
+      <Card className="bg-primary-soft p-4 space-y-3 border border-primary/20 rounded-lg">
+        <h4 className="text-xs font-bold text-primary uppercase tracking-wider border-b border-primary/20 pb-1.5">
+          Invoice Breakdown
+        </h4>
+        <div className="space-y-3 divide-y divide-primary/10">
+          {calculatedRows.map((r, idx) => (
+            <div key={r.key} className={`text-xs space-y-1.5 ${idx > 0 ? "pt-2.5" : ""}`}>
+              <div className="font-bold text-slate-700 flex justify-between">
+                <span>{idx + 1}. {r.product_name} ({r.qty} unit{r.qty !== 1 ? "s" : ""})</span>
+                {r.prep > 0 && <span className="text-slate-400 font-normal">({r.prep} prepaid)</span>}
+              </div>
+              <div className="flex justify-between items-center text-slate-500 pl-2">
+                <span>Gross Amount ({r.billedQty} × {fmtCurrency(r.rateVal)})</span>
+                <span>{fmtCurrency(r.grossTotal)}</span>
+              </div>
+              {!r.isCnc && f.delivery_boy_id && r.commissionTotal > 0 && (
+                <div className="flex justify-between items-center text-destructive-dark/80 pl-2">
+                  <span>Delivery Commission ({r.qty} × {fmtCurrency(r.commissionPerUnit)})</span>
+                  <span>-{fmtCurrency(r.commissionTotal)}</span>
+                </div>
+              )}
+              <div className="flex justify-between items-center font-semibold text-slate-600 pl-2 pt-0.5">
+                <span>Product Subtotal</span>
+                <span>{fmtCurrency(r.netTotal)}</span>
+              </div>
             </div>
-            <div className="flex justify-between items-center text-xs font-medium text-destructive-dark/80">
-              <span>Commission ({qty} × {fmtCurrency(commissionPerUnit)})</span>
-              <span>-{fmtCurrency(commissionTotal)}</span>
-            </div>
-            <div className="border-t border-dashed border-primary/20 my-1" />
-          </>
-        )}
-        <div className="flex justify-between items-center text-sm font-bold text-primary">
-          <span>Total</span>
-          <span className="font-black text-base">{fmtCurrency(totalWithoutCommission)}</span>
+          ))}
+        </div>
+        
+        <div className="border-t border-dashed border-primary/30 my-2 pt-2 flex justify-between items-center text-sm font-bold text-primary">
+          <span>FINAL COMBINED TOTAL</span>
+          <span className="font-black text-lg">{fmtCurrency(combinedNet)}</span>
         </div>
       </Card>
 
