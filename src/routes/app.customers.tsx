@@ -13,6 +13,7 @@ import { Plus, Download, FileText, Search, Archive, RotateCcw, Edit, Loader2, Al
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { fmtCurrency, todayISO } from "@/lib/format";
+import { recordCustomerOpeningBalance } from "@/lib/api/ledger.functions";
 import { exportToExcel, exportToPDF } from "@/lib/exports";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
@@ -353,14 +354,12 @@ function CustomerForm({ agencyId, userId, editCustomer, onDone }: { agencyId?: s
         // Insert opening balance ledger entry if provided
         const openingBal = Number(f.opening_balance);
         if (openingBal > 0 && newCust?.id) {
-          await supabase.from("customer_ledger").insert({
-            customer_id: newCust.id,
-            agency_id: agencyId,
-            debit: openingBal,
-            credit: 0,
-            description: "Opening Balance (Previous)",
-            entry_date: todayISO(),
-            kind: "adjustment" as const,
+          await recordCustomerOpeningBalance({
+            data: {
+              customerId: newCust.id,
+              amount: openingBal,
+              date: todayISO(),
+            }
           });
         }
 

@@ -14,8 +14,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { toast } from "sonner";
 import { fmtCurrency, fmtDate, todayISO } from "@/lib/format";
 import { Calendar, Plus, Trash2, Coins, Loader2 } from "lucide-react";
-import { reconcileCustomerOutstanding } from "@/lib/accounting";
 import { useQueryClient } from "@tanstack/react-query";
+import { recordManualOutstanding, deleteManualOutstanding } from "@/lib/api/ledger.functions";
 
 export const Route = createFileRoute("/app/outstanding")({
   component: () => <RequireAgencyUser><OutstandingPage /></RequireAgencyUser>,
@@ -126,69 +126,57 @@ function OutstandingPage() {
     if (!agency) return;
     setBusy(true);
 
-    const itemId = newId();
+    try {
+      const result = await recordManualOutstanding({
+        data: {
+          customerName: customerName.trim(),
+          selectedCustomerId: selectedCustomerId,
+          amount: amt,
+          note: note.trim(),
+          date,
+        }
+      });
 
-    if (selectedCustomerId) {
-      try {
-        const { error: ledgerErr } = await supabase.from("customer_ledger").insert({
-          agency_id: agency.id,
-          customer_id: selectedCustomerId,
-          entry_date: date,
-          kind: "adjustment",
-          debit: amt,
-          credit: 0,
-          description: note.trim() || "Manual Outstanding Entry",
-          reference: itemId,
-        });
-        if (ledgerErr) throw ledgerErr;
+      const item: OutstandingItem = {
+        id: result.itemId,
+        customer_name: result.customerName,
+        amount: amt,
+        note: note.trim(),
+        date,
+      };
 
-        await reconcileCustomerOutstanding(selectedCustomerId);
-        qc.invalidateQueries({ queryKey: ["udhari-aging"] });
-        qc.invalidateQueries({ queryKey: ["customer-ledger"] });
-      } catch (err: any) {
-        toast.error("Failed to update credit book: " + err.message);
-        setBusy(false);
-        return;
-      }
+      const updated = [...items, item];
+      setItems(updated);
+      await saveItems(updated);
+
+      qc.invalidateQueries({ queryKey: ["udhari-aging"] });
+      qc.invalidateQueries({ queryKey: ["customer-ledger"] });
+
+      // Reload customers dropdown so the new customer appears immediately next time
+      const { data: custData } = await (supabase.from("customers") as any)
+        .select("id, name, mobile, village")
+        .eq("agency_id", agency.id)
+        .eq("is_deleted", false)
+        .order("name");
+      if (custData) setCustomers(custData);
+
+      toast.success("Outstanding entry recorded successfully.");
+      setIsOpen(false); setCustomerName(""); setAmount(""); setNote(""); setSelectedCustomerId(null);
+    } catch (err: any) {
+      toast.error("Failed to update credit book: " + (err.message || "Operation failed"));
+    } finally {
+      setBusy(false);
     }
-
-    const item: OutstandingItem = {
-      id: itemId,
-      customer_name: customerName.trim(),
-      amount: amt,
-      note: note.trim(),
-      date,
-    };
-    const updated = [...items, item];
-    setItems(updated);
-    await saveItems(updated);
-    toast.success("Outstanding entry recorded successfully.");
-    setIsOpen(false); setCustomerName(""); setAmount(""); setNote(""); setSelectedCustomerId(null);
-    setBusy(false);
   };
 
   const deleteItem = async (id: string) => {
     setBusy(true);
     try {
-      const { data: deletedRows, error: delErr } = await supabase
-        .from("customer_ledger")
-        .delete()
-        .eq("reference", id)
-        .select("customer_id");
-
-      if (delErr) throw delErr;
-
-      if (deletedRows && deletedRows.length > 0) {
-        for (const row of deletedRows) {
-          if (row.customer_id) {
-            await reconcileCustomerOutstanding(row.customer_id);
-          }
-        }
-        qc.invalidateQueries({ queryKey: ["udhari-aging"] });
-        qc.invalidateQueries({ queryKey: ["customer-ledger"] });
-      }
+      await deleteManualOutstanding({ data: { referenceId: id } });
+      qc.invalidateQueries({ queryKey: ["udhari-aging"] });
+      qc.invalidateQueries({ queryKey: ["customer-ledger"] });
     } catch (err: any) {
-      toast.error("Failed to update credit book: " + err.message);
+      toast.error("Failed to update credit book: " + (err.message || "Operation failed"));
     }
 
     const updated = items.filter(i => i.id !== id);
