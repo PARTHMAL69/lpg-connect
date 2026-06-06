@@ -1306,13 +1306,15 @@ function Page() {
             {agg.upiOutflow > 0 && (
               <div className="px-5 py-2.5 flex flex-col hover:bg-slate-50/40">
                 <div className="flex justify-between items-center py-0.5">
-                  <span className="font-semibold text-slate-600">UPI / Paytm <span className="text-slate-400 font-normal">({agg.onlineQtyTotal} units)</span></span>
+                  <span className="font-semibold text-slate-600">
+                    UPI / Paytm {agg.onlineQtyTotal > 0 && <span className="text-slate-400 font-normal">({agg.onlineQtyTotal} units)</span>}
+                  </span>
                   <span className="font-bold tabular-nums text-slate-700 text-sm">{fmtCurrency(agg.upiOutflow)}</span>
                 </div>
                 <div className="mt-1 pl-3 border-l-2 border-slate-200/80 space-y-0.5 text-[10px] text-slate-500 font-medium">
                   {Object.values(agg.onlineByDriver).map((d) => (
                     <div key={d.name} className="flex justify-between py-0.5">
-                      <span>{d.name} <span className="text-slate-400">({d.qty} units)</span></span>
+                      <span>{d.name} {d.qty > 0 && <span className="text-slate-400">({d.qty} units)</span>}</span>
                       <span className="tabular-nums">{fmtCurrency(d.amount)}</span>
                     </div>
                   ))}
@@ -1324,13 +1326,15 @@ function Page() {
             {agg.prepQtyTotal > 0 && (
               <div className="px-5 py-2.5 flex flex-col hover:bg-slate-50/40">
                 <div className="flex justify-between items-center py-0.5">
-                  <span className="font-semibold text-slate-600">Website Prepaid <span className="text-slate-400 font-normal">({agg.prepQtyTotal} units)</span></span>
+                  <span className="font-semibold text-slate-600">
+                    Website Prepaid {agg.prepQtyTotal > 0 && <span className="text-slate-400 font-normal">({agg.prepQtyTotal} units)</span>}
+                  </span>
                   <span className="font-bold tabular-nums text-red-600 text-sm">{fmtCurrency(agg.prepOutflow)}</span>
                 </div>
                 <div className="mt-1 pl-3 border-l-2 border-slate-200/80 space-y-0.5 text-[10px] text-slate-500 font-medium">
                   {Object.values(agg.prepByDriver).map((d) => (
                     <div key={d.name} className="flex justify-between py-0.5">
-                      <span>{d.name} <span className="text-slate-400">({d.qty} units)</span></span>
+                      <span>{d.name} {d.qty > 0 && <span className="text-slate-400">({d.qty} units)</span>}</span>
                       <span className="tabular-nums">{fmtCurrency(d.amount)}</span>
                     </div>
                   ))}
@@ -1348,7 +1352,7 @@ function Page() {
                 <div className="mt-1 pl-3 border-l-2 border-slate-200/80 space-y-0.5 text-[10px] text-slate-500 font-medium">
                   {Object.values(agg.commissionByDriver).map((d) => (
                     <div key={d.name} className="flex justify-between py-0.5">
-                      <span>{d.name} <span className="text-slate-400">({d.qty} units)</span></span>
+                      <span>{d.name} {d.qty > 0 && <span className="text-slate-400">({d.qty} units)</span>}</span>
                       <span className="tabular-nums">{fmtCurrency(d.amount)}</span>
                     </div>
                   ))}

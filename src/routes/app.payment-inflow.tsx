@@ -27,6 +27,11 @@ const PAYMENT_TYPES = [
   { value: "split",  label: "⚖️ Split" },
 ];
 
+const INFLOW_PAYMENT_TYPES = [
+  { value: "split",  label: "⚖️ Split" },
+  { value: "cheque", label: "🏦 Cheque" },
+];
+
 const BADGE_COLORS: Record<string, string> = {
   cash:   "bg-emerald-100 text-emerald-700",
   upi:    "bg-blue-100 text-blue-700",
@@ -51,7 +56,7 @@ function PaymentInflowPage() {
   const [particular, setParticular] = useState("");
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
-  const [paymentType, setPaymentType] = useState("cash");
+  const [paymentType, setPaymentType] = useState("split");
 
   const loadItems = async () => {
     if (!agency) return;
@@ -116,7 +121,7 @@ function PaymentInflowPage() {
     await saveItems(updated);
     toast.success("Payment inflow recorded.");
     setIsOpen(false);
-    setParticular(""); setAmount(""); setNote(""); setPaymentType("cash");
+    setParticular(""); setAmount(""); setNote(""); setPaymentType("split");
     setBusy(false);
   };
 
@@ -229,9 +234,12 @@ function PaymentInflowPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {PAYMENT_TYPES.map(pt => (
+                  {INFLOW_PAYMENT_TYPES.map(pt => (
                     <SelectItem key={pt.value} value={pt.value}>{pt.label}</SelectItem>
                   ))}
+                  {paymentType !== "split" && paymentType !== "cheque" && (
+                    <SelectItem value={paymentType}>{PAYMENT_TYPES.find(p => p.value === paymentType)?.label ?? paymentType.toUpperCase()}</SelectItem>
+                  )}
                 </SelectContent>
               </Select>
             </div>
