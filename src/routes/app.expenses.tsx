@@ -23,6 +23,7 @@ import { Switch } from "@/components/ui/switch";
 import { 
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter 
 } from "@/components/ui/dialog";
+import { getFriendlyError } from "@/lib/friendly-error";
 
 export const Route = createFileRoute("/app/expenses")({ component: () => <RequireAgencyUser><Page/></RequireAgencyUser> });
 
@@ -143,7 +144,7 @@ function Page() {
       });
       setRows(mapped as unknown as ExpenseRow[]);
     } catch (err: any) {
-      toast.error(err.message);
+      toast.error(getFriendlyError(err));
     } finally {
       setLoading(false);
     }
@@ -191,7 +192,7 @@ function Page() {
       setConfirmVoidId(null);
       void load();
     } catch (err: any) {
-      toast.error(err.message);
+      toast.error(getFriendlyError(err));
     } finally {
       setVoiding(false);
     }
@@ -213,7 +214,7 @@ function Page() {
       toast.success("Expense transaction successfully restored.");
       void load();
     } catch (err: any) {
-      toast.error(err.message);
+      toast.error(getFriendlyError(err));
     }
   };
 
@@ -698,7 +699,7 @@ function ExpenseForm({ editExpense, onDone }: FormProps) {
         onDone();
       }
     } catch (err: any) {
-      toast.error(err.message);
+      toast.error(getFriendlyError(err));
     } finally {
       setBusy(false);
     }

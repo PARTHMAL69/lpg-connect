@@ -20,6 +20,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter 
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { getFriendlyError } from "@/lib/friendly-error";
 
 export const Route = createFileRoute("/app/products")({ component: () => <RequireAgencyUser><Page/></RequireAgencyUser> });
 
@@ -147,7 +148,7 @@ function Page() {
       if (error) throw error;
       setRows((data ?? []) as unknown as P[]);
     } catch (err: any) {
-      toast.error(err.message);
+      toast.error(getFriendlyError(err));
     } finally {
       setLoading(false);
     }
@@ -166,7 +167,7 @@ function Page() {
       toast.success("Rate successfully updated.");
       void load();
     } catch (err: any) {
-      toast.error(err.message);
+      toast.error(getFriendlyError(err));
     }
   };
 
@@ -185,7 +186,7 @@ function Page() {
       setConfirmArchiveId(null);
       void load();
     } catch (err: any) {
-      toast.error(err.message);
+      toast.error(getFriendlyError(err));
     } finally {
       setArchiving(false);
     }
@@ -204,7 +205,7 @@ function Page() {
       toast.success("Product successfully restored.");
       void load();
     } catch (err: any) {
-      toast.error(err.message);
+      toast.error(getFriendlyError(err));
     }
   };
 
@@ -727,7 +728,7 @@ function NewForm({ agencyId, userId, onDone }: { agencyId?: string; userId?: str
       toast.success("Product successfully created!"); 
       onDone(); 
     } catch (err: any) {
-      toast.error(err.message);
+      toast.error(getFriendlyError(err));
     } finally {
       setBusy(false);
     }

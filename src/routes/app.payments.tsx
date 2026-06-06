@@ -20,6 +20,7 @@ import { Switch } from "@/components/ui/switch";
 import { exportToExcel, exportToPDF } from "@/lib/exports";
 import { reconcileCustomerOutstanding } from "@/lib/accounting";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { getFriendlyError } from "@/lib/friendly-error";
 
 export const Route = createFileRoute("/app/payments")({ component: () => <RequireAgencyUser><Page/></RequireAgencyUser> });
 
@@ -93,7 +94,7 @@ function Page() {
     
     const { data, error } = await query.order("payment_date", { ascending: false }).order("created_at", { ascending: false });
     if (error) {
-      toast.error(error.message);
+      toast.error(getFriendlyError(error));
     } else {
       const formatted = (data ?? []).map((p: any) => {
         let mode = p.payment_mode; // payment_mode was mapped from mode in select
@@ -145,7 +146,7 @@ function Page() {
       .eq("id", id);
 
     if (error) {
-      toast.error(error.message);
+      toast.error(getFriendlyError(error));
     } else {
       if (targetPayment?.customer_id) {
         await reconcileCustomerOutstanding(targetPayment.customer_id);
@@ -168,7 +169,7 @@ function Page() {
       .eq("id", id);
 
     if (error) {
-      toast.error(error.message);
+      toast.error(getFriendlyError(error));
     } else {
       if (targetPayment?.customer_id) {
         await reconcileCustomerOutstanding(targetPayment.customer_id);
@@ -483,7 +484,7 @@ function PaymentForm({ editPayment, customers, onDone }: PaymentFormProps) {
         .eq("id", editPayment.id);
 
       if (error) {
-        toast.error(error.message);
+        toast.error(getFriendlyError(error));
       } else {
         await reconcileCustomerOutstanding(customer_id);
         if (editPayment.customer_id && editPayment.customer_id !== customer_id) {
@@ -507,7 +508,7 @@ function PaymentForm({ editPayment, customers, onDone }: PaymentFormProps) {
         });
 
       if (error) {
-        toast.error(error.message);
+        toast.error(getFriendlyError(error));
       } else {
         await reconcileCustomerOutstanding(customer_id);
         toast.success("Payment recorded successfully.");

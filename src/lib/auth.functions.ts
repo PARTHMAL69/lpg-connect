@@ -322,16 +322,153 @@ export const getMe = createServerFn({ method: "GET" })
         .maybeSingle(),
       admin.from("user_roles").select("role, agency_id").eq("user_id", context.userId),
     ]);
-    let agency = null as null | { id: string; name: string; code: string; default_language: string; backup_emails: string[] | null };
+    let agency = null as null | { id: string; name: string; code: string; default_language: string; backup_emails: string[] | null; logo_url: string | null };
     if (au?.agency_id) {
-      const { data: ag } = await admin
+      const { data: ag, error: agErr } = await admin
         .from("agencies")
-        .select("id, name, code, default_language, backup_emails")
+        .select("id, name, code, default_language, backup_emails, logo_url")
         .eq("id", au.agency_id)
         .maybeSingle();
-      agency = ag ?? null;
+      if (agErr) {
+        console.warn("Failed to fetch logo_url. Retrying without it.", agErr.message);
+        const { data: agFallback } = await admin
+          .from("agencies")
+          .select("id, name, code, default_language, backup_emails")
+          .eq("id", au.agency_id)
+          .maybeSingle();
+        agency = agFallback ? { ...agFallback, logo_url: null } : null;
+      } else {
+        agency = ag ?? null;
+      }
     }
     return { user: au, roles: roles ?? [], agency };
+  });
+
+/** Updates user's personal profile settings (username & full name) and handles Auth synchronization. */
+export const updateUserProfile = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        username: z.string().trim().min(3).max(50).regex(/^[a-zA-Z0-9_.-]+$/),
+        fullName: z.string().trim().min(1).max(100),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const admin = getAdminClient();
+    
+    // 1. Fetch current caller agency_user details
+    const { data: au } = await admin
+      .from("agency_users")
+      .select("id, agency_id, username, full_name")
+      .eq("user_id", context.userId)
+      .maybeSingle();
+      
+    if (!au) throw new Error("Unauthorized");
+    
+    // 2. Fetch agency info to get code
+    let agencyCode = "";
+    if (au.agency_id) {
+      const { data: ag } = await admin
+        .from("agencies")
+        .select("code")
+        .eq("id", au.agency_id)
+        .maybeSingle();
+      if (ag) {
+        agencyCode = ag.code;
+      }
+    }
+
+    const usernameChanged = au.username.toLowerCase() !== data.username.toLowerCase();
+    
+    if (usernameChanged && au.agency_id) {
+      // Check if username is already taken by another user in the same agency
+      const { data: existing } = await admin
+        .from("agency_users")
+        .select("id")
+        .eq("agency_id", au.agency_id)
+        .eq("username", data.username)
+        .maybeSingle();
+      if (existing) {
+        throw new Error("This username is already taken. Please choose a different one.");
+      }
+      
+      // Update Auth email if they belong to an agency
+      if (agencyCode) {
+        const newEmail = agencyAuthEmail(agencyCode, data.username);
+        const { error: authErr } = await admin.auth.admin.updateUserById(context.userId, {
+          email: newEmail,
+          email_confirm: true,
+          user_metadata: {
+            username: data.username,
+            full_name: data.fullName,
+          }
+        });
+        if (authErr) throw new Error(authErr.message);
+      }
+    } else {
+      // Just update metadata
+      const { error: authErr } = await admin.auth.admin.updateUserById(context.userId, {
+        user_metadata: {
+          username: data.username,
+          full_name: data.fullName,
+        }
+      });
+      if (authErr) throw new Error(authErr.message);
+    }
+    
+    // 3. Update public.agency_users table
+    const { error: updateErr } = await admin
+      .from("agency_users")
+      .update({
+        username: data.username,
+        full_name: data.fullName,
+        updated_at: new Date().toISOString()
+      })
+      .eq("user_id", context.userId);
+      
+    if (updateErr) throw new Error(updateErr.message);
+    
+    return { ok: true };
+  });
+
+/** Updates the agency's logo image string. */
+export const updateAgencyLogo = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        logoUrl: z.string().nullable(),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const admin = getAdminClient();
+    
+    // 1. Fetch user's agency_id
+    const { data: au } = await admin
+      .from("agency_users")
+      .select("agency_id")
+      .eq("user_id", context.userId)
+      .maybeSingle();
+      
+    if (!au || !au.agency_id) {
+      throw new Error("Unauthorized: User has no associated agency.");
+    }
+    
+    // 2. Update agencies table
+    const { error: updateErr } = await admin
+      .from("agencies")
+      .update({
+        logo_url: data.logoUrl,
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", au.agency_id);
+      
+    if (updateErr) throw new Error(updateErr.message);
+    
+    return { ok: true };
   });
 
 export const listAgencyUsers = createServerFn({ method: "GET" })

@@ -5,7 +5,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
-import { getMe } from "@/lib/auth.functions";
+import { getMe, updateUserProfile, updateAgencyLogo } from "@/lib/auth.functions";
 import { saveBackupSettings, sendManualBackupEmail } from "@/lib/backup.functions";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,9 +14,11 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { 
   Mail, Save, Send, Download, MailCheck, Trash2, Plus, 
-  Settings2, Loader2, Sparkles, FileSpreadsheet, ShieldAlert 
+  Settings2, Loader2, Sparkles, FileSpreadsheet, ShieldAlert,
+  User, Upload, Image, Camera
 } from "lucide-react";
 import * as XLSXStyle from "xlsx-js-style";
+import { fmtDate } from "@/lib/format";
 
 export const Route = createFileRoute("/app/profile")({
   component: () => (
@@ -36,6 +38,8 @@ function ProfilePage() {
   
   const saveSettingsFn = useServerFn(saveBackupSettings);
   const sendManualFn = useServerFn(sendManualBackupEmail);
+  const updateProfileFn = useServerFn(updateUserProfile);
+  const updateLogoFn = useServerFn(updateAgencyLogo);
 
   const [emails, setEmails] = useState<string[]>([]);
   const [newEmail, setNewEmail] = useState("");
@@ -43,10 +47,63 @@ function ProfilePage() {
   const [sendingManual, setSendingManual] = useState(false);
   const [exportingHistory, setExportingHistory] = useState(false);
 
-  // Initialize emails from agency details when loaded
+  // Profile fields state
+  const [username, setUsername] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [savingLogo, setSavingLogo] = useState(false);
+
+  // User-friendly error translator
+  function getFriendlyErrorMessage(err: any): string {
+    if (!err) return "An unexpected error occurred. Please try again.";
+    const message = err.message || String(err);
+    
+    // Parse Zod errors if they are in JSON string format
+    if (message.startsWith("[") || message.includes('"code":')) {
+      try {
+        const parsed = JSON.parse(message);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map(issue => {
+            const field = issue.path?.join(".") || "input";
+            const label = field.charAt(0).toUpperCase() + field.slice(1);
+            return `${label}: ${issue.message}`;
+          }).join(", ");
+        }
+      } catch (_) {}
+      return "Please double-check that all fields are filled out correctly.";
+    }
+    
+    if (message.includes("is already in the list")) {
+      return "This email is already in your backup list.";
+    }
+    if (message.includes("maximum of 3")) {
+      return "You can configure a maximum of 3 backup email addresses.";
+    }
+    if (message.includes("taken") || message.includes("username already exists") || message.includes("duplicate key")) {
+      return "This username is already taken. Please choose a different one.";
+    }
+    if (message.includes("password is too short")) {
+      return "Your password must be at least 8 characters long.";
+    }
+    if (message.includes("Unauthorized") || message.includes("Forbidden")) {
+      return "You do not have permission to modify these settings.";
+    }
+    
+    return message;
+  }
+
+  // Populate state from user/agency details when loaded
   useEffect(() => {
     if (me?.agency?.backup_emails) {
       setEmails(me.agency.backup_emails);
+    }
+    if (me?.user) {
+      setUsername(me.user.username || "");
+      setFullName(me.user.full_name || "");
+    }
+    if (me?.agency) {
+      setLogoUrl(me.agency.logo_url || null);
     }
   }, [me]);
 
@@ -55,7 +112,6 @@ function ProfilePage() {
     const email = newEmail.trim().toLowerCase();
     if (!email) return;
 
-    // Simple email regex validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       toast.error("Please enter a valid email address.");
@@ -63,12 +119,12 @@ function ProfilePage() {
     }
 
     if (emails.includes(email)) {
-      toast.error("This email is already in the list.");
+      toast.error("This email is already added.");
       return;
     }
 
     if (emails.length >= 3) {
-      toast.error("You can add a maximum of 3 email addresses.");
+      toast.error("You can configure up to 3 backup emails.");
       return;
     }
 
@@ -81,14 +137,17 @@ function ProfilePage() {
   };
 
   const handleSave = async () => {
+    if (emails.length === 0) {
+      toast.error("Please add at least one backup email address before saving.");
+      return;
+    }
     setSaving(true);
     try {
       await saveSettingsFn({ emails });
-      toast.success("Backup settings saved! A test backup email has been sent.");
-      // Invalidate the query to fetch latest values
+      toast.success("Backup settings saved! A test report has been sent to your emails.");
       void queryClient.invalidateQueries({ queryKey: ["me"] });
     } catch (e: any) {
-      toast.error(e.message || "Failed to save backup settings.");
+      toast.error(getFriendlyErrorMessage(e));
     } finally {
       setSaving(false);
     }
@@ -96,18 +155,125 @@ function ProfilePage() {
 
   const handleSendManual = async () => {
     if (emails.length === 0) {
-      toast.error("Please configure and save at least one email address first.");
+      toast.error("Please save at least one backup email address first.");
       return;
     }
     setSendingManual(true);
     try {
       await sendManualFn();
-      toast.success("Manual backup email sent successfully!");
+      toast.success("Today's accounts report has been sent to your email(s)!");
     } catch (e: any) {
-      toast.error(e.message || "Failed to send manual backup email.");
+      toast.error(getFriendlyErrorMessage(e));
     } finally {
       setSendingManual(false);
     }
+  };
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanUsername = username.trim().toLowerCase();
+    const cleanFullName = fullName.trim();
+    
+    if (!cleanUsername) {
+      toast.error("Please enter a username.");
+      return;
+    }
+    if (cleanUsername.length < 3) {
+      toast.error("Username must be at least 3 characters.");
+      return;
+    }
+    if (!/^[a-zA-Z0-9_.-]+$/.test(cleanUsername)) {
+      toast.error("Username can only contain letters, numbers, dots, dashes, and underscores.");
+      return;
+    }
+    if (!cleanFullName) {
+      toast.error("Please enter your full name.");
+      return;
+    }
+
+    setSavingProfile(true);
+    try {
+      await updateProfileFn({
+        username: cleanUsername,
+        fullName: cleanFullName,
+      });
+      toast.success("Your profile details have been updated successfully!");
+      void queryClient.invalidateQueries({ queryKey: ["me"] });
+    } catch (e: any) {
+      toast.error(getFriendlyErrorMessage(e));
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please upload an image file.");
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Image size should be less than 5MB.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const MAX_WIDTH = 256;
+        const MAX_HEIGHT = 256;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height;
+            height = MAX_HEIGHT;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+          saveLogo(dataUrl);
+        }
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const saveLogo = async (logoData: string | null) => {
+    setSavingLogo(true);
+    try {
+      await updateLogoFn({
+        logoUrl: logoData
+      });
+      setLogoUrl(logoData);
+      toast.success(logoData ? "Your brand logo has been updated!" : "Logo removed. The default icon will now be shown.");
+      void queryClient.invalidateQueries({ queryKey: ["me"] });
+    } catch (e: any) {
+      toast.error(getFriendlyErrorMessage(e));
+    } finally {
+      setSavingLogo(false);
+    }
+  };
+
+  const handleRemoveLogo = () => {
+    saveLogo(null);
   };
 
   // Client-side 10x10 grid historical Excel generation
@@ -115,7 +281,7 @@ function ProfilePage() {
     if (!me?.agency?.id) return;
     setExportingHistory(true);
     try {
-      toast.info("Fetching financial history records...");
+      toast.info("Gathering your financial history, please wait...");
 
       // 1. Fetch all cash book days
       const { data: cbDays, error: cbErr } = await supabase
@@ -124,10 +290,10 @@ function ProfilePage() {
         .eq("agency_id", me.agency.id)
         .order("book_date", { ascending: true });
 
-      if (cbErr) throw cbErr;
+      if (cbErr) throw new Error("Could not load your cash book history. Please try again.");
 
       if (!cbDays || cbDays.length === 0) {
-        toast.warning("No cash book history found in database to export.");
+        toast.warning("No financial records found yet. Start recording your daily sales to enable history export.");
         setExportingHistory(false);
         return;
       }
@@ -162,9 +328,9 @@ function ProfilePage() {
           .lte("expense_date", maxDate)
       ]);
 
-      if (salesRes.error) throw salesRes.error;
-      if (paymentsRes.error) throw paymentsRes.error;
-      if (expensesRes.error) throw expensesRes.error;
+      if (salesRes.error) throw new Error("Could not load sales records. Please try again.");
+      if (paymentsRes.error) throw new Error("Could not load payment records. Please try again.");
+      if (expensesRes.error) throw new Error("Could not load expense records. Please try again.");
 
       // 3. Group lists by date in memory
       const salesByDate: Record<string, any[]> = {};
@@ -193,17 +359,24 @@ function ProfilePage() {
         cbDaysMap[day.book_date] = day;
       });
 
-      // Generate continuous list of dates from minDate to maxDate
-      const start = new Date(minDate);
-      const end = new Date(maxDate);
+      // Parse YYYY-MM-DD safely into a local date object at 12:00 PM (noon) to avoid timezone shifts
+      const parseDateSafe = (dStr: string) => {
+        const [y, m, d] = dStr.split("-").map(Number);
+        return new Date(y, m - 1, d, 12, 0, 0, 0);
+      };
+      const start = parseDateSafe(minDate);
+      const end = parseDateSafe(maxDate);
       const dateList: string[] = [];
       let currentIter = new Date(start);
       while (currentIter <= end) {
-        dateList.push(currentIter.toISOString().slice(0, 10));
+        const y = currentIter.getFullYear();
+        const m = String(currentIter.getMonth() + 1).padStart(2, "0");
+        const d = String(currentIter.getDate()).padStart(2, "0");
+        dateList.push(`${y}-${m}-${d}`);
         currentIter.setDate(currentIter.getDate() + 1);
       }
 
-      toast.info(`Compiling ${dateList.length} days of ledger entries...`);
+      toast.info(`Building Excel workbook for ${dateList.length} days of records...`);
 
       // Compile each day
       let runningClosingCash = 0;
@@ -224,12 +397,36 @@ function ProfilePage() {
           if (dayRecord.notes) {
             try {
               const m = JSON.parse(dayRecord.notes);
-              otherReceiptsList = Array.isArray(m.other_receipts) ? m.other_receipts : [];
-              pendingBills = Array.isArray(m.pending_bills) ? m.pending_bills : [];
-              magilBills = Array.isArray(m.magil_bills) ? m.magil_bills : [];
-              paymentInflows = Array.isArray(m.payment_inflows) ? m.payment_inflows : [];
-              paymentOutflows = Array.isArray(m.payment_outflows) ? m.payment_outflows : [];
-              outstandingEntries = Array.isArray(m.outstanding_entries) ? m.outstanding_entries : [];
+              otherReceiptsList = (Array.isArray(m.other_receipts) ? m.other_receipts : []).map((r: any) => ({
+                ...r,
+                amount: Number(r.amount || 0)
+              }));
+              pendingBills = (Array.isArray(m.pending_bills) ? m.pending_bills : []).map((b: any) => ({
+                ...b,
+                qty: Number(b.qty || 0),
+                rate: Number(b.rate || 0),
+                amount: Number(b.amount || 0)
+              }));
+              magilBills = (Array.isArray(m.magil_bills) ? m.magil_bills : []).map((b: any) => ({
+                ...b,
+                qty: Number(b.qty || 0),
+                rate: Number(b.rate || 0),
+                amount: Number(b.amount || 0)
+              }));
+              paymentInflows = (Array.isArray(m.payment_inflows) ? m.payment_inflows : []).map((p: any) => ({
+                ...p,
+                amount: Number(p.amount || 0),
+                split_online: Number(p.split_online || 0),
+                split_credit: Number(p.split_credit || 0)
+              }));
+              paymentOutflows = (Array.isArray(m.payment_outflows) ? m.payment_outflows : []).map((p: any) => ({
+                ...p,
+                amount: Number(p.amount || 0)
+              }));
+              outstandingEntries = (Array.isArray(m.outstanding_entries) ? m.outstanding_entries : []).map((o: any) => ({
+                ...o,
+                amount: Number(o.amount || 0)
+              }));
               manualCashEntry = m.manual_cash_entry != null ? String(m.manual_cash_entry) : "";
               dailyNote = m.daily_note ?? "";
             } catch (_) {}
@@ -454,6 +651,7 @@ function ProfilePage() {
           chequeOutflow, magilBillsTotal, paymentOutflowsTotal,
           outstandingTotal, outstandingEntries,
           totalOutflows, cashBalance, cashDifference,
+          manualCashEntry,
           onlineInflowRows, udhariInflowRows,
           otherReceiptsList, pendingBills, magilBills, paymentInflows, paymentOutflows,
           dailyExpenses, dailyPayments, dailySales,
@@ -575,25 +773,26 @@ function ProfilePage() {
           if (day.homeTotal > 0) left.push({ label: "14 KG Home Delivery Sales", qty: day.homeQty, amt: day.homeTotal });
           if (day.cncTotal > 0)  left.push({ label: "14 KG CNC Sales",           qty: day.cncQty,  amt: day.cncTotal });
 
-          day.dailyExpenses.forEach((e: any) => {
-            let cat = e.category, note = e.notes ?? "";
-            let workerName = "";
-            if (note.startsWith("[OTHER_CAT:")) {
-              const m = note.match(/^\[OTHER_CAT:([^\]]+)\]/);
-              if (m) { cat = m[1]; note = note.replace(/^\[OTHER_CAT:[^\]]+\]\s*/, ""); }
-            }
-            if (e.delivery_boy?.name) {
-              workerName = e.delivery_boy.name;
-            } else if (note.startsWith("[WORKER:")) {
-              const m = note.match(/^\[WORKER:([^\]]+)\]/);
-              if (m) { workerName = m[1]; }
-            }
-            if (note.startsWith("[WORKER:")) {
-              note = note.replace(/^\[WORKER:[^\]]+\]\s*/, "");
-            }
-            const label = workerName ? `${cat.replace("_", " ")} (${workerName})` : cat.replace("_", " ");
-            right.push({ label: `${label}${note ? ` (${note})` : ""}`, qty: "", amt: Number(e.amount) });
-          });
+           day.dailyExpenses.forEach((e: any) => {
+             let cat = e.category, note = e.notes ?? "";
+             let workerName = "";
+             if (note.startsWith("[OTHER_CAT:")) {
+               const m = note.match(/^\[OTHER_CAT:([^\]]+)\]/);
+               if (m) { cat = m[1]; note = note.replace(/^\[OTHER_CAT:[^\]]+\]\s*/, ""); }
+             }
+             if (e.delivery_boy?.name) {
+               workerName = e.delivery_boy.name;
+             } else if (note.startsWith("[WORKER:")) {
+               const m = note.match(/^\[WORKER:([^\]]+)\]/);
+               if (m) { workerName = m[1]; }
+             }
+             if (note.startsWith("[WORKER:")) {
+               note = note.replace(/^\[WORKER:[^\]]+\]\s*/, "");
+             }
+             const safeCat = (cat || "").replace("_", " ");
+             const label = workerName ? `${safeCat} (${workerName})` : safeCat;
+             right.push({ label: `${label}${note ? ` (${note})` : ""}`, qty: "", amt: Number(e.amount) });
+           });
 
           day.paymentOutflows.forEach(p => right.push({ label: p.particular + (p.note ? ` (${p.note})` : ""), qty: "", amt: p.amount }));
           day.magilBills.forEach(b => right.push({ label: `Magil — ${b.label} (${b.qty}×₹${b.rate})`, qty: b.qty, amt: b.amount }));
@@ -809,11 +1008,20 @@ function ProfilePage() {
       XLSXStyle.utils.book_append_sheet(wb, ws, "Financial History");
       
       const fileName = `ledger_history_${minDate}_to_${maxDate}.xlsx`;
-      XLSXStyle.writeFile(wb, fileName);
-      toast.success("Excel history downloaded successfully!");
+      // Use browser-compatible download via Blob + anchor element
+      const wbOut = XLSXStyle.write(wb, { bookType: "xlsx", type: "array" });
+      const blob = new Blob([wbOut], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
+      toast.success(`Your complete ledger history (${dateList.length} days) has been downloaded!`);
     } catch (e: any) {
       console.error("Historical Export Failed:", e);
-      toast.error(e.message || "Failed to download history.");
+      toast.error("Could not download your history. Please try again or contact support.");
     } finally {
       setExportingHistory(false);
     }
@@ -828,7 +1036,7 @@ function ProfilePage() {
   }
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto">
+    <div className="space-y-6 max-w-5xl mx-auto">
       {/* Header section */}
       <div className="flex flex-col gap-1.5">
         <h1 className="text-3xl font-extrabold tracking-tight flex items-center gap-2">
@@ -836,160 +1044,286 @@ function ProfilePage() {
           Profile & Backup Settings
         </h1>
         <p className="text-muted-foreground text-sm">
-          Manage your email configuration for daily automated data backups and export full historical reports.
+          Manage your personal credentials, customize branding logo, and configure backup destinations.
         </p>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-1">
-        {/* Email configurations */}
-        <Card className="border-muted-foreground/10 bg-card/60 backdrop-blur-md shadow-xl overflow-hidden relative">
-          <div className="absolute top-0 right-0 p-4">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
-              <Sparkles className="h-3 w-3 animate-bounce" />
-              Daily Backup at 9:30 PM IST
-            </span>
-          </div>
-
-          <CardHeader>
-            <CardTitle className="text-xl flex items-center gap-2">
-              <Mail className="h-5 w-5 text-primary" />
-              Backup Email Destinations
-            </CardTitle>
-            <CardDescription className="max-w-[80%]">
-              Configure up to 3 email addresses where your styled daily reports (Cash Book, Sales Log, and Credit Ledger) will be sent as Excel attachments.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {/* Added emails list */}
-            <div className="space-y-2.5">
-              <Label className="text-sm font-semibold text-muted-foreground">Active Email Destinies ({emails.length}/3)</Label>
-              {emails.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-6 px-4 border border-dashed rounded-xl bg-muted/20 text-muted-foreground border-muted-foreground/20">
-                  <MailCheck className="h-10 w-10 mb-2 opacity-40 text-muted-foreground" />
-                  <p className="text-sm font-medium">No email addresses configured</p>
-                  <p className="text-xs mt-1">Add up to 3 email ids below to activate automated backups.</p>
-                </div>
-              ) : (
-                <div className="grid gap-2">
-                  {emails.map((email, idx) => (
-                    <div 
-                      key={email} 
-                      className="flex items-center justify-between px-4 py-3 rounded-xl border border-muted-foreground/10 bg-muted/40 transition-all hover:bg-muted/60 hover:shadow-sm"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <span className="w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs">
-                          {idx + 1}
-                        </span>
-                        <span className="font-semibold text-sm truncate">{email}</span>
-                      </div>
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        onClick={() => removeEmail(idx)}
-                        className="h-8 w-8 text-destructive hover:bg-destructive/10 rounded-lg"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Email input form */}
-            {emails.length < 3 && (
-              <form onSubmit={addEmail} className="flex gap-2">
-                <div className="flex-1 space-y-1.5">
-                  <Label htmlFor="email" className="sr-only">Email address</Label>
+      <div className="grid gap-6 md:grid-cols-12">
+        {/* Left Column: Profile & Branding Settings */}
+        <div className="md:col-span-5 space-y-6">
+          {/* User Profile Settings */}
+          <Card className="border-muted-foreground/10 bg-card/60 backdrop-blur-md shadow-xl">
+            <CardHeader>
+              <CardTitle className="text-xl flex items-center gap-2">
+                <User className="h-5 w-5 text-primary" />
+                Personal Profile Details
+              </CardTitle>
+              <CardDescription>
+                Update your login credentials and full name.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleSaveProfile} className="space-y-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="username">Username</Label>
                   <Input
-                    id="email"
-                    type="email"
-                    placeholder="Enter email address (e.g. owner@gmail.com)"
-                    value={newEmail}
-                    onChange={(e) => setNewEmail(e.target.value)}
+                    id="username"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    placeholder="Username"
+                    className="h-11"
+                  />
+                  <p className="text-[11px] text-muted-foreground">Changing this will update your login email.</p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="fullName">Full Name</Label>
+                  <Input
+                    id="fullName"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    placeholder="Full Name"
                     className="h-11"
                   />
                 </div>
-                <Button type="submit" variant="outline" className="h-11 px-4 font-semibold border-muted-foreground/20">
-                  <Plus className="h-4 w-4 mr-1.5" /> Add Email
+                <Button 
+                  type="submit" 
+                  disabled={savingProfile}
+                  className="w-full h-11 font-bold bg-gradient-to-r from-primary to-primary/80 shadow-md mt-2"
+                >
+                  {savingProfile ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving Profile...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="mr-2 h-4 w-4" /> Save Profile Details
+                    </>
+                  )}
                 </Button>
               </form>
-            )}
+            </CardContent>
+          </Card>
 
-            {/* Warning callout */}
-            <div className="flex gap-3 p-4 rounded-xl bg-amber-500/10 text-amber-600 border border-amber-500/20 text-xs leading-relaxed">
-              <ShieldAlert className="h-5 w-5 shrink-0" />
-              <div>
-                <span className="font-bold">Automated Database Backups:</span> Saving your configuration automatically triggers a test backup report to all addresses. A copy of your daily accounts will be sent securely at <strong>9:30 PM IST</strong> every day.
+          {/* Agency Branding Logo */}
+          <Card className="border-muted-foreground/10 bg-card/60 backdrop-blur-md shadow-xl">
+            <CardHeader>
+              <CardTitle className="text-xl flex items-center gap-2">
+                <Image className="h-5 w-5 text-primary" />
+                Agency Branding Logo
+              </CardTitle>
+              <CardDescription>
+                Upload a logo to replace the default sidebar icon.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4 pt-1">
+              <div className="flex flex-col items-center gap-4">
+                {logoUrl ? (
+                  <div className="relative group shadow-sm border rounded-xl overflow-hidden">
+                    <img 
+                      src={logoUrl} 
+                      className="w-28 h-28 object-cover transition-all group-hover:opacity-85"
+                      alt="Brand Logo" 
+                    />
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all">
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="sm"
+                        onClick={handleRemoveLogo}
+                        disabled={savingLogo}
+                        className="h-8 px-2.5 text-xs font-bold shadow-md"
+                      >
+                        Remove Logo
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="w-28 h-28 rounded-xl bg-muted flex flex-col items-center justify-center border border-dashed border-muted-foreground/20 text-muted-foreground">
+                    <Camera className="h-8 w-8 mb-1 opacity-40 text-muted-foreground" />
+                    <span className="text-[11px] font-medium opacity-60">No custom logo</span>
+                  </div>
+                )}
+                
+                <div className="w-full flex justify-center pt-2">
+                  <Label 
+                    htmlFor="logo-upload" 
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-lg border border-muted-foreground/20 bg-muted/40 hover:bg-muted/60 cursor-pointer text-sm font-bold transition-all shadow-sm"
+                  >
+                    {savingLogo ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin text-primary" /> Uploading...
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="h-4 w-4 text-primary" /> Choose Brand Image
+                      </>
+                    )}
+                  </Label>
+                  <input 
+                    id="logo-upload" 
+                    type="file" 
+                    accept="image/*" 
+                    onChange={handleLogoUpload} 
+                    className="hidden" 
+                    disabled={savingLogo}
+                  />
+                </div>
               </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Right Column: Backup Email destinations & Manual Send */}
+        <div className="md:col-span-7 space-y-6">
+          <Card className="border-muted-foreground/10 bg-card/60 backdrop-blur-md shadow-xl overflow-hidden relative">
+            <div className="absolute top-0 right-0 p-4">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                <Sparkles className="h-3 w-3 animate-bounce" />
+                Daily Backup at 9:30 PM IST
+              </span>
             </div>
 
-            {/* Actions footer */}
-            <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t border-muted-foreground/10">
-              <Button 
-                onClick={handleSave} 
-                disabled={saving}
-                className="flex-1 h-11 font-bold bg-gradient-to-r from-primary to-primary/80 text-primary-foreground shadow-lg shadow-primary/25"
-              >
-                {saving ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Saving Settings...
-                  </>
+            <CardHeader>
+              <CardTitle className="text-xl flex items-center gap-2">
+                <Mail className="h-5 w-5 text-primary" />
+                Backup Email Destinations
+              </CardTitle>
+              <CardDescription className="max-w-[80%]">
+                Configure up to 3 email addresses where your daily account books and sales reports will be sent as Excel spreadsheets.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Added emails list */}
+              <div className="space-y-2.5">
+                <Label className="text-sm font-semibold text-muted-foreground">Active Email Destinations ({emails.length}/3)</Label>
+                {emails.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-8 px-4 border border-dashed rounded-xl bg-muted/20 text-muted-foreground border-muted-foreground/20">
+                    <MailCheck className="h-10 w-10 mb-2 opacity-40 text-muted-foreground" />
+                    <p className="text-sm font-medium">No email addresses configured</p>
+                    <p className="text-xs mt-1">Add up to 3 emails below to enable automatic backups.</p>
+                  </div>
                 ) : (
-                  <>
-                    <Save className="h-4 w-4 mr-2" /> Save Backup Settings
-                  </>
+                  <div className="grid gap-2">
+                    {emails.map((email, idx) => (
+                      <div 
+                        key={email} 
+                        className="flex items-center justify-between px-4 py-3 rounded-xl border border-muted-foreground/10 bg-muted/40 transition-all hover:bg-muted/60 hover:shadow-sm"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className="w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs">
+                            {idx + 1}
+                          </span>
+                          <span className="font-semibold text-sm truncate">{email}</span>
+                        </div>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          onClick={() => removeEmail(idx)}
+                          className="h-8 w-8 text-destructive hover:bg-destructive/10 rounded-lg"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
                 )}
-              </Button>
-              <Button 
-                variant="outline" 
-                onClick={handleSendManual} 
-                disabled={sendingManual || emails.length === 0}
-                className="sm:w-48 h-11 font-bold border-muted-foreground/20 hover:bg-muted/50"
-              >
-                {sendingManual ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Sending...
-                  </>
-                ) : (
-                  <>
-                    <Send className="h-4 w-4 mr-2" /> Send on Mail
-                  </>
-                )}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+              </div>
 
-        {/* History Archive Export */}
-        <Card className="border-muted-foreground/10 bg-card/60 backdrop-blur-md shadow-xl overflow-hidden">
-          <CardHeader>
-            <CardTitle className="text-xl flex items-center gap-2">
-              <FileSpreadsheet className="h-5 w-5 text-emerald-500" />
-              Full Ledger History Export
-            </CardTitle>
-            <CardDescription>
-              Compile your entire financial history from the start date up to today into a single Excel workbook formatted in a vertical-stack horizontal grid (10 days wide).
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="pt-2">
-            <Button 
-              onClick={handleDownloadHistory} 
-              disabled={exportingHistory}
-              className="w-full h-12 font-bold bg-gradient-to-r from-emerald-600 to-emerald-500 text-white shadow-lg shadow-emerald-600/25 hover:from-emerald-700 hover:to-emerald-600"
-            >
-              {exportingHistory ? (
-                <>
-                  <Loader2 className="h-5 w-5 mr-2 animate-spin" /> Compiling Ledger Archives...
-                </>
-              ) : (
-                <>
-                  <Download className="h-5 w-5 mr-2" /> Download Full History (Excel)
-                </>
+              {/* Email input form */}
+              {emails.length < 3 && (
+                <form onSubmit={addEmail} className="flex gap-2">
+                  <div className="flex-1 space-y-1.5">
+                    <Label htmlFor="email" className="sr-only">Email address</Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      placeholder="Enter email address (e.g. owner@gmail.com)"
+                      value={newEmail}
+                      onChange={(e) => setNewEmail(e.target.value)}
+                      className="h-11"
+                    />
+                  </div>
+                  <Button type="submit" variant="outline" className="h-11 px-4 font-semibold border-muted-foreground/20">
+                    <Plus className="h-4 w-4 mr-1.5 text-primary" /> Add Email
+                  </Button>
+                </form>
               )}
-            </Button>
-          </CardContent>
-        </Card>
+
+              {/* Warning callout */}
+              <div className="flex gap-3 p-4 rounded-xl bg-amber-500/10 text-amber-600 border border-amber-500/20 text-xs leading-relaxed">
+                <ShieldAlert className="h-5 w-5 shrink-0" />
+                <div>
+                  <span className="font-bold">Automated Daily Backups:</span> Saving your settings triggers a test report email to all addresses. Daily ledger summaries are dispatched at <strong>9:30 PM IST</strong>.
+                </div>
+              </div>
+
+              {/* Actions footer */}
+              <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t border-muted-foreground/10">
+                <Button 
+                  onClick={handleSave} 
+                  disabled={saving}
+                  className="flex-1 h-11 font-bold bg-gradient-to-r from-primary to-primary/80 text-primary-foreground shadow-lg shadow-primary/25"
+                >
+                  {saving ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Saving Settings...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="h-4 w-4 mr-2" /> Save Backup Settings
+                    </>
+                  )}
+                </Button>
+                <Button 
+                  variant="outline" 
+                  onClick={handleSendManual} 
+                  disabled={sendingManual || emails.length === 0}
+                  className="sm:w-48 h-11 font-bold border-muted-foreground/20 hover:bg-muted/50"
+                >
+                  {sendingManual ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Sending...
+                    </>
+                  ) : (
+                    <>
+                      <Send className="h-4 w-4 mr-2" /> Send on Mail
+                    </>
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* History Archive Export */}
+          <Card className="border-muted-foreground/10 bg-card/60 backdrop-blur-md shadow-xl overflow-hidden">
+            <CardHeader>
+              <CardTitle className="text-xl flex items-center gap-2">
+                <FileSpreadsheet className="h-5 w-5 text-emerald-500" />
+                Full Ledger History Export
+              </CardTitle>
+              <CardDescription>
+                Compile your entire financial history from the start date up to today into a single Excel workbook formatted in a vertical-stack horizontal grid (10 days wide).
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="pt-2">
+              <Button 
+                onClick={handleDownloadHistory} 
+                disabled={exportingHistory}
+                className="w-full h-12 font-bold bg-gradient-to-r from-emerald-600 to-emerald-500 text-white shadow-lg shadow-emerald-600/25 hover:from-emerald-700 hover:to-emerald-600"
+              >
+                {exportingHistory ? (
+                  <>
+                    <Loader2 className="h-5 w-5 mr-2 animate-spin" /> Compiling Ledger Archives...
+                  </>
+                ) : (
+                  <>
+                    <Download className="h-5 w-5 mr-2" /> Download Full History (Excel)
+                  </>
+                )}
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   );

@@ -22,6 +22,7 @@ import "jspdf-autotable";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { getFriendlyError } from "@/lib/friendly-error";
 
 export const Route = createFileRoute("/app/cashbook")({ component: () => <RequireAgencyUser><Page /></RequireAgencyUser> });
 
@@ -439,7 +440,7 @@ function Page() {
       actual_closing: null,
       notes: JSON.stringify(merged),
     }, { onConflict: "agency_id,book_date" });
-    if (error) toast.error(error.message);
+    if (error) toast.error(getFriendlyError(error));
   };
 
   /* ─── Add Pending Bill ─── */

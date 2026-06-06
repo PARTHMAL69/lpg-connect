@@ -19,6 +19,7 @@ import { fmtCurrency, fmtDate } from "@/lib/format";
 import { exportToExcel, exportToPDF } from "@/lib/exports";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { getFriendlyError } from "@/lib/friendly-error";
 
 export const Route = createFileRoute("/app/delivery-boys")({ component: () => <RequireAgencyUser><Page/></RequireAgencyUser> });
 
@@ -155,7 +156,7 @@ function Page() {
       setConfirmVoidId(null);
       void load();
     } catch (err: any) {
-      toast.error(err.message);
+      toast.error(getFriendlyError(err));
     } finally {
       setVoiding(false);
     }
@@ -173,7 +174,7 @@ function Page() {
       .eq("id", id);
 
     if (error) {
-      toast.error(error.message);
+      toast.error(getFriendlyError(error));
     } else {
       toast.success("Delivery boy restored successfully.");
       void load();
@@ -581,7 +582,7 @@ function DeliveryBoyForm({ editBoy, onDone }: FormProps) {
         .eq("id", editBoy.id);
 
       if (error) {
-        toast.error(error.message);
+        toast.error(getFriendlyError(error));
       } else {
         toast.success("Delivery boy configuration updated successfully.");
         onDone();
@@ -599,7 +600,7 @@ function DeliveryBoyForm({ editBoy, onDone }: FormProps) {
         });
 
       if (error) {
-        toast.error(error.message);
+        toast.error(getFriendlyError(error));
       } else {
         toast.success("Delivery boy successfully added.");
         onDone();

@@ -24,6 +24,7 @@ export type Database = {
           default_language: string
           disabled_at: string | null
           id: string
+          logo_url: string | null
           name: string
           phone: string | null
           status: Database["public"]["Enums"]["agency_status"]
@@ -39,6 +40,7 @@ export type Database = {
           default_language?: string
           disabled_at?: string | null
           id?: string
+          logo_url?: string | null
           name: string
           phone?: string | null
           status?: Database["public"]["Enums"]["agency_status"]
@@ -54,6 +56,7 @@ export type Database = {
           default_language?: string
           disabled_at?: string | null
           id?: string
+          logo_url?: string | null
           name?: string
           phone?: string | null
           status?: Database["public"]["Enums"]["agency_status"]

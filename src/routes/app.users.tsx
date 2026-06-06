@@ -33,6 +33,7 @@ import {
   UserCog
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
+import { getFriendlyError } from "@/lib/friendly-error";
 
 export const Route = createFileRoute("/app/users")({
   component: () => (
@@ -109,7 +110,7 @@ function UsersManager() {
       const res = await listFn();
       setUsers((res.users ?? []) as AgencyUser[]);
     } catch (err: any) {
-      toast.error(err.message || "Failed to load team members.");
+      toast.error(getFriendlyError(err));
     } finally {
       setLoading(false);
     }
@@ -139,7 +140,7 @@ function UsersManager() {
       setRole("agency_operator");
       void fetchUsers();
     } catch (err: any) {
-      toast.error(err.message || "Failed to create user operator.");
+      toast.error(getFriendlyError(err));
     } finally {
       setBusy(false);
     }
@@ -163,7 +164,7 @@ function UsersManager() {
       setRole("agency_operator");
       void fetchUsers();
     } catch (err: any) {
-      toast.error(err.message || "Failed to update user operator.");
+      toast.error(getFriendlyError(err));
     } finally {
       setBusy(false);
     }
@@ -185,7 +186,7 @@ function UsersManager() {
       toast.success(`Account for ${user.full_name ?? user.username} has been ${targetStatus ? "activated" : "deactivated"}.`);
       void fetchUsers();
     } catch (err: any) {
-      toast.error(err.message || "Failed to change account status.");
+      toast.error(getFriendlyError(err));
     }
   };
 
@@ -204,7 +205,7 @@ function UsersManager() {
       setPwTarget(null);
       setNewPassword("");
     } catch (err: any) {
-      toast.error(err.message || "Failed to reset operator password.");
+      toast.error(getFriendlyError(err));
     } finally {
       setBusy(false);
     }

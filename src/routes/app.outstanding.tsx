@@ -16,6 +16,7 @@ import { fmtCurrency, fmtDate, todayISO } from "@/lib/format";
 import { Calendar, Plus, Trash2, Coins, Loader2 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { recordManualOutstanding, deleteManualOutstanding } from "@/lib/api/ledger.functions";
+import { getFriendlyError } from "@/lib/friendly-error";
 
 export const Route = createFileRoute("/app/outstanding")({
   component: () => <RequireAgencyUser><OutstandingPage /></RequireAgencyUser>,
@@ -116,13 +117,13 @@ function OutstandingPage() {
       notes: JSON.stringify(meta),
     }, { onConflict: "agency_id,book_date" });
 
-    if (error) toast.error(error.message);
+    if (error) toast.error(getFriendlyError(error));
   };
 
   const addItem = async (e: FormEvent) => {
     e.preventDefault();
     const amt = Number(amount);
-    if (!customerName.trim() || !amt || amt <= 0) { toast.error("Enter customer name and amount."); return; }
+    if (!customerName.trim() || !amt || amt <= 0) { toast.error("Please enter a customer name and a valid amount."); return; }
     if (!agency) return;
     setBusy(true);
 
@@ -163,7 +164,7 @@ function OutstandingPage() {
       toast.success("Outstanding entry recorded successfully.");
       setIsOpen(false); setCustomerName(""); setAmount(""); setNote(""); setSelectedCustomerId(null);
     } catch (err: any) {
-      toast.error("Failed to update credit book: " + (err.message || "Operation failed"));
+      toast.error(getFriendlyError(err));
     } finally {
       setBusy(false);
     }
@@ -176,7 +177,7 @@ function OutstandingPage() {
       qc.invalidateQueries({ queryKey: ["udhari-aging"] });
       qc.invalidateQueries({ queryKey: ["customer-ledger"] });
     } catch (err: any) {
-      toast.error("Failed to update credit book: " + (err.message || "Operation failed"));
+      toast.error(getFriendlyError(err));
     }
 
     const updated = items.filter(i => i.id !== id);

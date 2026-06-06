@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { toast } from "sonner";
 import { fmtCurrency, fmtDate, todayISO } from "@/lib/format";
 import { Calendar, Plus, Trash2, ArrowDownToLine, Loader2 } from "lucide-react";
+import { getFriendlyError } from "@/lib/friendly-error";
 
 export const Route = createFileRoute("/app/payment-inflow")({
   component: () => <RequireAgencyUser><PaymentInflowPage /></RequireAgencyUser>,
@@ -115,13 +116,13 @@ function PaymentInflowPage() {
       notes: JSON.stringify(meta),
     }, { onConflict: "agency_id,book_date" });
 
-    if (error) toast.error(error.message);
+    if (error) toast.error(getFriendlyError(error));
   };
 
   const addItem = async (e: FormEvent) => {
     e.preventDefault();
     const amt = Number(amount);
-    if (!particular.trim() || !amt || amt <= 0) { toast.error("Enter description and amount."); return; }
+    if (!particular.trim() || !amt || amt <= 0) { toast.error("Please enter a description and a valid amount."); return; }
 
     const cash = Number(splitCash || 0);
     const online = Number(splitOnline || 0);

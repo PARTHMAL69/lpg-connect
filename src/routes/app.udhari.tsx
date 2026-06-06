@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Search, IndianRupee, Eye, PlusCircle, AlertCircle, Loader2, Calendar, TrendingDown, FileText } from "lucide-react";
 import { fmtCurrency, fmtDate } from "@/lib/format";
+import { getFriendlyError } from "@/lib/friendly-error";
 
 export const Route = createFileRoute("/app/udhari")({
   head: () => ({ meta: [{ title: "Udhari Ledger — GasFlow" }] }),
@@ -147,7 +148,7 @@ function UdhariPage() {
       items.sort((a, b) => b.date.localeCompare(a.date));
       setStmtItems(items);
     } catch (err: any) {
-      toast.error(err.message || "Failed to load statement.");
+      toast.error(getFriendlyError(err));
     } finally {
       setStmtLoading(false);
     }
@@ -306,7 +307,7 @@ function UdhariPage() {
       setPayAmount("");
       setPayRemarks("");
     } catch (err: any) {
-      toast.error(err.message || "Failed to record payment.");
+      toast.error(getFriendlyError(err));
     } finally {
       setBusy(false);
     }

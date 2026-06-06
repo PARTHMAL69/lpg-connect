@@ -24,6 +24,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from "@/components/ui/select";
+import { getFriendlyError } from "@/lib/friendly-error";
 
 interface LedgerItem {
   id: string;
@@ -98,7 +99,7 @@ function Page() {
       setSales((s ?? []) as any[]); 
       setPays((p ?? []) as any[]);
     } catch (err: any) {
-      toast.error("Failed to load customer details: " + err.message);
+      toast.error(getFriendlyError(err));
     } finally {
       setLoading(false);
     }
@@ -250,7 +251,7 @@ function Page() {
       setPayRemarks("");
       void load();
     } catch (err: any) {
-      toast.error(err.message);
+      toast.error(getFriendlyError(err));
     } finally {
       setSavingPayment(false);
     }
@@ -301,7 +302,7 @@ function Page() {
       toast.success("Transaction restored successfully.");
       void load();
     } catch (err: any) {
-      toast.error(err.message);
+      toast.error(getFriendlyError(err));
     }
   };
 
@@ -326,7 +327,7 @@ function Page() {
       toast.success("Transaction voided.");
       void load();
     } catch (err: any) {
-      toast.error(err.message);
+      toast.error(getFriendlyError(err));
     }
   };
 

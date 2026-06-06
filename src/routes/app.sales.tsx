@@ -27,6 +27,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { 
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter 
 } from "@/components/ui/dialog";
+import { getFriendlyError } from "@/lib/friendly-error";
 
 export const Route = createFileRoute("/app/sales")({ component: () => <RequireAgencyUser><Page/></RequireAgencyUser> });
 
@@ -164,7 +165,7 @@ function Page() {
       const { data: pData } = await (supabase.from("products") as any).select("id, name").eq("agency_id", agency.id).eq("is_deleted", false);
       setProducts(pData ?? []);
     } catch (err: any) {
-      toast.error(err.message);
+      toast.error(getFriendlyError(err));
     } finally {
       setLoading(false);
     }
@@ -225,7 +226,7 @@ function Page() {
       setConfirmVoidId(null);
       void load();
     } catch (err: any) {
-      toast.error(err.message);
+      toast.error(getFriendlyError(err));
     } finally {
       setVoiding(false);
     }
@@ -279,7 +280,7 @@ function Page() {
       toast.success("Sale invoice successfully restored.");
       void load();
     } catch (err: any) {
-      toast.error(err.message);
+      toast.error(getFriendlyError(err));
     }
   };
 
@@ -1068,7 +1069,7 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
       }
       onDone();
     } catch (err: any) {
-      toast.error(err?.message || (err instanceof Error ? err.message : "Operation failed"));
+      toast.error(getFriendlyError(err));
     } finally {
       setBusy(false);
     }

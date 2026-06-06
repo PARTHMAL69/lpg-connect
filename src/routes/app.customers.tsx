@@ -17,6 +17,7 @@ import { recordCustomerOpeningBalance } from "@/lib/api/ledger.functions";
 import { exportToExcel, exportToPDF } from "@/lib/exports";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
+import { getFriendlyError } from "@/lib/friendly-error";
 
 export const Route = createFileRoute("/app/customers")({ component: () => <RequireAgencyUser><Page/></RequireAgencyUser> });
 
@@ -134,7 +135,7 @@ function Page() {
     }).eq("id", id);
 
     if (error) {
-      toast.error(error.message);
+      toast.error(getFriendlyError(error));
     } else {
       toast.success("Customer profile archived.");
       void load();
@@ -152,7 +153,7 @@ function Page() {
     }).eq("id", id);
 
     if (error) {
-      toast.error(error.message);
+      toast.error(getFriendlyError(error));
     } else {
       toast.success("Customer profile successfully restored.");
       void load();
@@ -367,7 +368,7 @@ function CustomerForm({ agencyId, userId, editCustomer, onDone }: { agencyId?: s
       }
       onDone();
     } catch (err: any) {
-      toast.error(err?.message || (err instanceof Error ? err.message : "Operation failed"));
+      toast.error(getFriendlyError(err));
     } finally {
       setBusy(false);
     }
