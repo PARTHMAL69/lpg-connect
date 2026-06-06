@@ -325,6 +325,32 @@ function Page() {
       }
     });
 
+    let inflowOnlineSum = 0;
+    let inflowCreditSum = 0;
+    let inflowChequeSum = 0;
+
+    paymentInflows.forEach((p: any) => {
+      if (p.payment_type === "cheque") {
+        inflowChequeSum += p.amount;
+        const cn = p.particular || "Cheque Inflow";
+        if (!chequeByCustomer[cn]) chequeByCustomer[cn] = { name: cn, amount: 0 };
+        chequeByCustomer[cn].amount += p.amount;
+      } else if (p.payment_type === "upi" || p.payment_type === "online") {
+        inflowOnlineSum += p.amount;
+      } else if (p.payment_type === "split") {
+        const cashPart = Number(p.split_cash || 0);
+        const onlinePart = Number(p.split_online || 0);
+        const creditPart = Number(p.split_credit || 0);
+        inflowOnlineSum += onlinePart;
+        inflowCreditSum += creditPart;
+        if (creditPart > 0) {
+          const cn = p.particular || "Split Inflow Dues";
+          if (!udhariByCustomer[cn]) udhariByCustomer[cn] = { name: cn, amount: 0 };
+          udhariByCustomer[cn].amount += creditPart;
+        }
+      }
+    });
+
     const collectionsTotal = dailyPayments.reduce((s, p) => s + p.amount, 0);
     const otherInflowsSum = otherReceiptsList.reduce((s, r) => s + r.amount, 0);
     const pendingBillsTotal = pendingBills.reduce((s, b) => s + b.amount, 0);
@@ -341,9 +367,9 @@ function Page() {
     const chequeRecoveries = dailyPayments.filter(p => p.payment_mode === "cheque").reduce((a, r) => a + r.amount, 0);
 
     const prepOutflow = prepSales;
-    const upiOutflow = upiSales + paytmRecoveries + onlineRecoveries;
-    const chequeOutflow = chequeSales + chequeRecoveries;
-    const udhariOutflow = udhariSales;
+    const upiOutflow = upiSales + paytmRecoveries + onlineRecoveries + inflowOnlineSum;
+    const chequeOutflow = chequeSales + chequeRecoveries + inflowChequeSum;
+    const udhariOutflow = udhariSales + inflowCreditSum;
 
     const otherProductSalesSum = Object.values(productSalesTotals).reduce((s, r) => s + r.total, 0);
     const leftGrandTotal = openingCash + homeTotal + cncTotal + otherProductSalesSum + collectionsTotal + otherInflowsSum + pendingBillsTotal + paymentInflowsTotal;
@@ -792,7 +818,7 @@ function Page() {
     // ── Page Title ──
     fillRect(ML, MT, PW - ML - MR, 9, NAVY);
     doc.setFont("helvetica", "bold"); doc.setFontSize(12); doc.setTextColor(...WHITE);
-    text(`Daily Cash Book — ${fmtDate(date)}`, ML + 3, MT + 6);
+    text(`Daily Cash Book - ${fmtDate(date)}`, ML + 3, MT + 6);
     doc.setFontSize(10);
     text(`Agency Cash Report`, PW - MR - 50, MT + 6);
 
@@ -805,10 +831,10 @@ function Page() {
     doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(...WHITE);
     text("PAYMENT RECEIVED", ML + 2, y + 5);
     text("Qty",       ML + labelW + 4,       y + 5, { align: "right" });
-    text("Amount (₹)",ML + labelW + qtyW + amtW - 1, y + 5, { align: "right" });
+    text("Amount (Rs)",ML + labelW + qtyW + amtW - 1, y + 5, { align: "right" });
     text("MONEY PAID / OUTFLOW", col2X + 2, y + 5);
     text("Qty",       col2X + labelW + 4,       y + 5, { align: "right" });
-    text("Amount (₹)",col2X + labelW + qtyW + amtW - 1, y + 5, { align: "right" });
+    text("Amount (Rs)",col2X + labelW + qtyW + amtW - 1, y + 5, { align: "right" });
     y += hdrH;
 
     // ── Build data rows ──
@@ -825,7 +851,7 @@ function Page() {
     }
 
     otherReceiptsList.forEach(r => lRows.push({ label: r.particular, qty: "", amt: fmt(r.amount) }));
-    pendingBills.forEach(b => lRows.push({ label: `Pending — ${b.label} (${b.qty}×₹${b.rate})`, qty: String(b.qty), amt: fmt(b.amount) }));
+    pendingBills.forEach(b => lRows.push({ label: `Pending - ${b.label} (${b.qty}x Rs ${b.rate})`, qty: String(b.qty), amt: fmt(b.amount) }));
     paymentInflows.forEach(p => lRows.push({ label: p.particular + ((p as any).note ? ` (${(p as any).note})` : ""), qty: "", amt: fmt(p.amount) }));
     if (agg.homeTotal > 0) lRows.push({ label: "14 KG Home Delivery Sales", qty: String(agg.homeQty), amt: fmt(agg.homeTotal) });
     if (agg.cncTotal > 0)  lRows.push({ label: "14 KG CNC Sales",           qty: String(agg.cncQty),  amt: fmt(agg.cncTotal) });
@@ -854,7 +880,7 @@ function Page() {
     paymentOutflows.forEach(p => rRows.push({ label: p.particular + ((p as any).note ? ` (${(p as any).note})` : ""), qty: "", amt: fmt(p.amount) }));
 
     // 3. Magil Bills (single entry)
-    magilBills.forEach(b => rRows.push({ label: `Magil — ${b.label} (${b.qty}×₹${b.rate})`, qty: String(b.qty), amt: fmt(b.amount) }));
+    magilBills.forEach(b => rRows.push({ label: `Magil - ${b.label} (${b.qty}x Rs ${b.rate})`, qty: String(b.qty), amt: fmt(b.amount) }));
 
     // 4. Cheque (group)
     if (agg.chequeOutflow > 0) {
@@ -896,7 +922,7 @@ function Page() {
     while (lRows.length < maxData) lRows.push({ label: "", qty: "", amt: "" });
     while (rRows.length < maxData) rRows.push({ label: "", qty: "", amt: "" });
 
-    const rowH = 6.2;
+    const rowH = 5.2;
     const drawRow = (
       row: PRow, xBase: number, yy: number, alt: boolean
     ) => {
@@ -980,7 +1006,7 @@ function Page() {
     for (let p = 1; p <= totalPages; p++) {
       doc.setPage(p);
       doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(140,140,140);
-      text(`GasFlow LPG Agency — Confidential`, ML, PH - 5);
+      text(`GasFlow LPG Agency - Confidential`, ML, PH - 5);
       text(`Page ${p} of ${totalPages} | Printed: ${new Date().toLocaleString()}`, PW - MR, PH - 5, { align: "right" });
       doc.setDrawColor(200,200,200); doc.line(ML, PH - 8, PW - MR, PH - 8);
     }

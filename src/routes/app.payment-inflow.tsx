@@ -57,6 +57,20 @@ function PaymentInflowPage() {
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
   const [paymentType, setPaymentType] = useState("split");
+  const [splitCash, setSplitCash] = useState("0");
+  const [splitOnline, setSplitOnline] = useState("0");
+  const [splitCredit, setSplitCredit] = useState("0");
+
+  const inflowAmt = Number(amount || 0);
+  useEffect(() => {
+    if (paymentType === "split" && inflowAmt >= 0) {
+      const currentSum = Number(splitCash || 0) + Number(splitOnline || 0) + Number(splitCredit || 0);
+      if (Math.abs(currentSum - inflowAmt) > 0.01) {
+        const newCash = Math.max(0, inflowAmt - Number(splitOnline || 0) - Number(splitCredit || 0));
+        setSplitCash(String(newCash));
+      }
+    }
+  }, [inflowAmt, paymentType]);
 
   const loadItems = async () => {
     if (!agency) return;
@@ -108,6 +122,16 @@ function PaymentInflowPage() {
     e.preventDefault();
     const amt = Number(amount);
     if (!particular.trim() || !amt || amt <= 0) { toast.error("Enter description and amount."); return; }
+
+    const cash = Number(splitCash || 0);
+    const online = Number(splitOnline || 0);
+    const credit = Number(splitCredit || 0);
+
+    if (paymentType === "split" && Math.abs(cash + online + credit - amt) > 0.01) {
+      toast.error(`Split breakdown (Cash: ${fmtCurrency(cash)}, Online: ${fmtCurrency(online)}, Udhari: ${fmtCurrency(credit)}) must equal total amount: ${fmtCurrency(amt)}`);
+      return;
+    }
+
     setBusy(true);
     const item: InflowItem = {
       id: newId(),
@@ -115,6 +139,9 @@ function PaymentInflowPage() {
       amount: amt,
       note: note.trim() || undefined,
       payment_type: paymentType,
+      split_cash: paymentType === "split" ? cash : undefined,
+      split_online: paymentType === "split" ? online : undefined,
+      split_credit: paymentType === "split" ? credit : undefined,
     };
     const updated = [...items, item];
     setItems(updated);
@@ -122,6 +149,7 @@ function PaymentInflowPage() {
     toast.success("Payment inflow recorded.");
     setIsOpen(false);
     setParticular(""); setAmount(""); setNote(""); setPaymentType("split");
+    setSplitCash("0"); setSplitOnline("0"); setSplitCredit("0");
     setBusy(false);
   };
 
@@ -247,6 +275,31 @@ function PaymentInflowPage() {
               <Label className="text-xs font-bold text-muted-foreground uppercase">Amount (₹)</Label>
               <Input required type="number" step="any" min="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" className="h-11 font-bold text-lg" />
             </div>
+            {paymentType === "split" && (
+              <Card className="p-4 bg-muted/40 border border-slate-100 space-y-3 rounded-lg">
+                <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Split Payment Breakdown</h4>
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="space-y-1">
+                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">Cash (₹)</Label>
+                    <Input type="number" step="any" min="0" value={splitCash} onChange={(e) => setSplitCash(e.target.value)} className="h-10 text-xs font-bold" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">Online (₹)</Label>
+                    <Input type="number" step="any" min="0" value={splitOnline} onChange={(e) => setSplitOnline(e.target.value)} className="h-10 text-xs font-bold" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">Udhari (₹)</Label>
+                    <Input type="number" step="any" min="0" value={splitCredit} onChange={(e) => setSplitCredit(e.target.value)} className="h-10 text-xs font-bold" />
+                  </div>
+                </div>
+                <div className="flex justify-between items-center text-[10px] font-bold mt-1">
+                  <span className="text-muted-foreground">Sum: {fmtCurrency(Number(splitCash || 0) + Number(splitOnline || 0) + Number(splitCredit || 0))} / Target: {fmtCurrency(Number(amount || 0))}</span>
+                  <span className={Math.abs(Number(splitCash || 0) + Number(splitOnline || 0) + Number(splitCredit || 0) - Number(amount || 0)) < 0.01 ? "text-success" : "text-destructive"}>
+                    {Math.abs(Number(splitCash || 0) + Number(splitOnline || 0) + Number(splitCredit || 0) - Number(amount || 0)) < 0.01 ? "✓ Perfect match" : "✗ Mismatch"}
+                  </span>
+                </div>
+              </Card>
+            )}
             <div className="space-y-1.5">
               <Label className="text-xs font-bold text-muted-foreground uppercase">Note (Optional)</Label>
               <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Additional details..." className="h-11" />
