@@ -12,7 +12,7 @@ import { PageHeader, EmptyState } from "@/components/page-header";
 import { Plus, Download, FileText, Search, Archive, RotateCcw, Edit, Loader2, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
-import { fmtCurrency } from "@/lib/format";
+import { fmtCurrency, todayISO } from "@/lib/format";
 import { exportToExcel, exportToPDF } from "@/lib/exports";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
@@ -304,7 +304,7 @@ function Page() {
 }
 
 function CustomerForm({ agencyId, userId, editCustomer, onDone }: { agencyId?: string; userId?: string; editCustomer: C | null; onDone: () => void }) {
-  const [f, setF] = useState({ name: "", mobile: "", village: "", consumer_number: "" });
+  const [f, setF] = useState({ name: "", mobile: "", village: "", consumer_number: "", opening_balance: "" });
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -313,10 +313,11 @@ function CustomerForm({ agencyId, userId, editCustomer, onDone }: { agencyId?: s
         name: editCustomer.name,
         mobile: editCustomer.mobile ?? "",
         village: editCustomer.village ?? "",
-        consumer_number: editCustomer.consumer_number ?? ""
+        consumer_number: editCustomer.consumer_number ?? "",
+        opening_balance: "",
       });
     } else {
-      setF({ name: "", mobile: "", village: "", consumer_number: "" });
+      setF({ name: "", mobile: "", village: "", consumer_number: "", opening_balance: "" });
     }
   }, [editCustomer]);
 
@@ -338,16 +339,31 @@ function CustomerForm({ agencyId, userId, editCustomer, onDone }: { agencyId?: s
         if (error) throw error;
         toast.success("Customer profile updated.");
       } else {
-        const { error } = await (supabase.from("customers") as any).insert({ 
+        const { data: newCust, error: insertErr } = await (supabase.from("customers") as any).insert({ 
           agency_id: agencyId, 
           name: f.name,
           mobile: f.mobile || null,
           village: f.village || null,
           consumer_number: f.consumer_number || null,
           created_by: userId
-        });
+        }).select("id").single();
         
-        if (error) throw error;
+        if (insertErr) throw insertErr;
+
+        // Insert opening balance ledger entry if provided
+        const openingBal = Number(f.opening_balance);
+        if (openingBal > 0 && newCust?.id) {
+          await supabase.from("customer_ledger").insert({
+            customer_id: newCust.id,
+            agency_id: agencyId,
+            debit: openingBal,
+            credit: 0,
+            description: "Opening Balance (Previous)",
+            entry_date: todayISO(),
+            kind: "adjustment" as const,
+          });
+        }
+
         toast.success("Customer profile established.");
       }
       onDone();
@@ -376,6 +392,19 @@ function CustomerForm({ agencyId, userId, editCustomer, onDone }: { agencyId?: s
         <Label>Consumer Number (LPG Ref)</Label>
         <Input value={f.consumer_number} onChange={(e) => setF({...f, consumer_number: e.target.value})} placeholder="e.g. CX-9908" className="h-11" />
       </div>
+      {!editCustomer && (
+        <div className="space-y-1.5">
+          <Label>Previous Outstanding Balance (₹) <span className="text-muted-foreground font-normal">(Optional)</span></Label>
+          <Input
+            type="number" step="any" min="0"
+            value={f.opening_balance}
+            onChange={(e) => setF({...f, opening_balance: e.target.value})}
+            placeholder="0.00"
+            className="h-11"
+          />
+          <p className="text-[11px] text-muted-foreground">Adds this amount as an opening balance to the customer's ledger</p>
+        </div>
+      )}
       <Button type="submit" disabled={busy} className="w-full h-12 font-semibold mt-4">
         {busy ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
         {editCustomer ? "Save Changes" : "Save Customer"}

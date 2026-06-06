@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PageHeader } from "@/components/page-header";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
@@ -18,7 +19,23 @@ export const Route = createFileRoute("/app/payment-inflow")({
   head: () => ({ meta: [{ title: "Payment Inflow — GasFlow" }] }),
 });
 
-interface InflowItem { id: string; particular: string; amount: number; note?: string; }
+const PAYMENT_TYPES = [
+  { value: "cash",   label: "💵 Cash" },
+  { value: "upi",    label: "📱 UPI" },
+  { value: "cheque", label: "🏦 Cheque" },
+  { value: "online", label: "🌐 Online / Paytm" },
+  { value: "split",  label: "⚖️ Split" },
+];
+
+const BADGE_COLORS: Record<string, string> = {
+  cash:   "bg-emerald-100 text-emerald-700",
+  upi:    "bg-blue-100 text-blue-700",
+  cheque: "bg-violet-100 text-violet-700",
+  online: "bg-amber-100 text-amber-700",
+  split:  "bg-rose-100 text-rose-700",
+};
+
+interface InflowItem { id: string; particular: string; amount: number; note?: string; payment_type?: string; }
 
 function newId() { return "inf-" + Date.now() + "-" + Math.random().toString(36).slice(2, 7); }
 
@@ -34,6 +51,7 @@ function PaymentInflowPage() {
   const [particular, setParticular] = useState("");
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
+  const [paymentType, setPaymentType] = useState("cash");
 
   const loadItems = async () => {
     if (!agency) return;
@@ -59,7 +77,6 @@ function PaymentInflowPage() {
 
   const saveItems = async (updated: InflowItem[]) => {
     if (!agency) return;
-    // Read existing notes to merge
     const { data: existing } = await supabase
       .from("cash_book_days")
       .select("notes, opening_cash")
@@ -87,12 +104,19 @@ function PaymentInflowPage() {
     const amt = Number(amount);
     if (!particular.trim() || !amt || amt <= 0) { toast.error("Enter description and amount."); return; }
     setBusy(true);
-    const item: InflowItem = { id: newId(), particular: particular.trim(), amount: amt, note: note.trim() || undefined };
+    const item: InflowItem = {
+      id: newId(),
+      particular: particular.trim(),
+      amount: amt,
+      note: note.trim() || undefined,
+      payment_type: paymentType,
+    };
     const updated = [...items, item];
     setItems(updated);
     await saveItems(updated);
     toast.success("Payment inflow recorded.");
-    setIsOpen(false); setParticular(""); setAmount(""); setNote("");
+    setIsOpen(false);
+    setParticular(""); setAmount(""); setNote(""); setPaymentType("cash");
     setBusy(false);
   };
 
@@ -154,7 +178,14 @@ function PaymentInflowPage() {
                         <ArrowDownToLine className="h-4 w-4" />
                       </div>
                       <div>
-                        <div className="font-semibold text-sm">{item.particular}</div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-semibold text-sm">{item.particular}</span>
+                          {item.payment_type && (
+                            <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${BADGE_COLORS[item.payment_type] ?? "bg-slate-100 text-slate-700"}`}>
+                              {PAYMENT_TYPES.find(p => p.value === item.payment_type)?.label ?? item.payment_type}
+                            </span>
+                          )}
+                        </div>
                         {item.note && <div className="text-xs text-slate-500 mt-0.5">{item.note}</div>}
                         <div className="text-xs text-muted-foreground mt-0.5">{fmtDate(date)}</div>
                       </div>
@@ -191,7 +222,20 @@ function PaymentInflowPage() {
               <Label className="text-xs font-bold text-muted-foreground uppercase">Particular / Description</Label>
               <Input required value={particular} onChange={(e) => setParticular(e.target.value)} placeholder="Name change, cash receipt..." className="h-11" />
             </div>
-             <div className="space-y-1.5">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-muted-foreground uppercase">Payment Type</Label>
+              <Select value={paymentType} onValueChange={setPaymentType}>
+                <SelectTrigger className="h-11">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PAYMENT_TYPES.map(pt => (
+                    <SelectItem key={pt.value} value={pt.value}>{pt.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
               <Label className="text-xs font-bold text-muted-foreground uppercase">Amount (₹)</Label>
               <Input required type="number" step="any" min="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" className="h-11 font-bold text-lg" />
             </div>

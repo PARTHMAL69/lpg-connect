@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Combobox } from "@/components/ui/combobox";
 import { PageHeader } from "@/components/page-header";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
@@ -27,6 +28,13 @@ interface OutstandingItem {
   date: string;
 }
 
+interface CustomerOption {
+  id: string;
+  name: string;
+  mobile: string | null;
+  village: string | null;
+}
+
 function newId() { return "out-udhar-" + Date.now() + "-" + Math.random().toString(36).slice(2, 7); }
 
 function OutstandingPage() {
@@ -36,11 +44,31 @@ function OutstandingPage() {
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  // Customer list for dropdown
+  const [customers, setCustomers] = useState<CustomerOption[]>([]);
+
   // Dialog
   const [isOpen, setIsOpen] = useState(false);
   const [customerName, setCustomerName] = useState("");
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
+
+  // Load customers list
+  useEffect(() => {
+    if (!agency) return;
+    (supabase.from("customers") as any)
+      .select("id, name, mobile, village")
+      .eq("agency_id", agency.id)
+      .eq("is_deleted", false)
+      .order("name")
+      .then(({ data }: { data: CustomerOption[] | null }) => setCustomers(data ?? []));
+  }, [agency]);
+
+  const customerOptions = customers.map(c => ({
+    value: c.name,
+    label: c.name,
+    sublabel: [c.mobile, c.village].filter(Boolean).join(" · ") || undefined,
+  }));
 
   const loadItems = async () => {
     if (!agency) return;
@@ -204,7 +232,27 @@ function OutstandingPage() {
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs font-bold text-muted-foreground uppercase">Customer Name</Label>
-              <Input required value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Enter customer name..." className="h-11" />
+              {customerOptions.length > 0 ? (
+                <>
+                  <Combobox
+                    options={customerOptions}
+                    value={customerName}
+                    onValueChange={setCustomerName}
+                    placeholder="Select customer from list..."
+                    searchPlaceholder="Search customer..."
+                    emptyMessage="No customer found."
+                  />
+                  {/* Allow manual override if not in list */}
+                  <Input
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                    placeholder="Or type name manually..."
+                    className="h-9 text-xs mt-1"
+                  />
+                </>
+              ) : (
+                <Input required value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Enter customer name..." className="h-11" />
+              )}
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs font-bold text-muted-foreground uppercase">Udhari Rs (Amount)</Label>
@@ -216,7 +264,7 @@ function OutstandingPage() {
             </div>
             <DialogFooter className="pt-2">
               <Button type="button" variant="ghost" onClick={() => setIsOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={busy} className="bg-primary hover:bg-primary/90 text-white font-bold h-11">
+              <Button type="submit" disabled={busy || !customerName.trim()} className="bg-primary hover:bg-primary/90 text-white font-bold h-11">
                 {busy ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null} Record Entry
               </Button>
             </DialogFooter>
