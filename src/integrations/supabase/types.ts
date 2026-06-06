@@ -17,6 +17,7 @@ export type Database = {
       agencies: {
         Row: {
           address: string | null
+          backup_emails: string[] | null
           code: string
           created_at: string
           created_by: string | null
@@ -31,6 +32,7 @@ export type Database = {
         }
         Insert: {
           address?: string | null
+          backup_emails?: string[] | null
           code: string
           created_at?: string
           created_by?: string | null
@@ -45,6 +47,7 @@ export type Database = {
         }
         Update: {
           address?: string | null
+          backup_emails?: string[] | null
           code?: string
           created_at?: string
           created_by?: string | null

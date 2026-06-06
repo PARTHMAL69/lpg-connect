@@ -35,6 +35,7 @@ const NAV = [
   { to: "/app/payment-inflow", label: "Payment Inflow", icon: ArrowDownToLine },
   { to: "/app/payment-outflow", label: "Payment Outflow", icon: ArrowUpFromLine },
   { to: "/app/outstanding", label: "Outstanding", icon: Coins },
+  { to: "/app/profile", label: "Profile", icon: UserCog },
 ] as const;
 
 function AppLayout() {

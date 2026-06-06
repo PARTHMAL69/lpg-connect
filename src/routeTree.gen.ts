@@ -20,6 +20,7 @@ import { Route as AppUsersRouteImport } from './routes/app.users'
 import { Route as AppUdhariRouteImport } from './routes/app.udhari'
 import { Route as AppSalesRouteImport } from './routes/app.sales'
 import { Route as AppReportsRouteImport } from './routes/app.reports'
+import { Route as AppProfileRouteImport } from './routes/app.profile'
 import { Route as AppProductsRouteImport } from './routes/app.products'
 import { Route as AppPaymentsRouteImport } from './routes/app.payments'
 import { Route as AppPaymentOutflowRouteImport } from './routes/app.payment-outflow'
@@ -30,6 +31,7 @@ import { Route as AppDeliveryBoysRouteImport } from './routes/app.delivery-boys'
 import { Route as AppDashboardRouteImport } from './routes/app.dashboard'
 import { Route as AppCustomersRouteImport } from './routes/app.customers'
 import { Route as AppCashbookRouteImport } from './routes/app.cashbook'
+import { Route as ApiBackupRouteImport } from './routes/api.backup'
 import { Route as AppCustomersIdRouteImport } from './routes/app.customers.$id'
 
 const PlatformAdminRoute = PlatformAdminRouteImport.update({
@@ -87,6 +89,11 @@ const AppReportsRoute = AppReportsRouteImport.update({
   path: '/reports',
   getParentRoute: () => AppRoute,
 } as any)
+const AppProfileRoute = AppProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppProductsRoute = AppProductsRouteImport.update({
   id: '/products',
   path: '/products',
@@ -137,6 +144,11 @@ const AppCashbookRoute = AppCashbookRouteImport.update({
   path: '/cashbook',
   getParentRoute: () => AppRoute,
 } as any)
+const ApiBackupRoute = ApiBackupRouteImport.update({
+  id: '/api/backup',
+  path: '/api/backup',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AppCustomersIdRoute = AppCustomersIdRouteImport.update({
   id: '/$id',
   path: '/$id',
@@ -148,6 +160,7 @@ export interface FileRoutesByFullPath {
   '/app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
   '/platform-admin': typeof PlatformAdminRouteWithChildren
+  '/api/backup': typeof ApiBackupRoute
   '/app/cashbook': typeof AppCashbookRoute
   '/app/customers': typeof AppCustomersRouteWithChildren
   '/app/dashboard': typeof AppDashboardRoute
@@ -158,6 +171,7 @@ export interface FileRoutesByFullPath {
   '/app/payment-outflow': typeof AppPaymentOutflowRoute
   '/app/payments': typeof AppPaymentsRoute
   '/app/products': typeof AppProductsRoute
+  '/app/profile': typeof AppProfileRoute
   '/app/reports': typeof AppReportsRoute
   '/app/sales': typeof AppSalesRoute
   '/app/udhari': typeof AppUdhariRoute
@@ -170,6 +184,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/api/backup': typeof ApiBackupRoute
   '/app/cashbook': typeof AppCashbookRoute
   '/app/customers': typeof AppCustomersRouteWithChildren
   '/app/dashboard': typeof AppDashboardRoute
@@ -180,6 +195,7 @@ export interface FileRoutesByTo {
   '/app/payment-outflow': typeof AppPaymentOutflowRoute
   '/app/payments': typeof AppPaymentsRoute
   '/app/products': typeof AppProductsRoute
+  '/app/profile': typeof AppProfileRoute
   '/app/reports': typeof AppReportsRoute
   '/app/sales': typeof AppSalesRoute
   '/app/udhari': typeof AppUdhariRoute
@@ -195,6 +211,7 @@ export interface FileRoutesById {
   '/app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
   '/platform-admin': typeof PlatformAdminRouteWithChildren
+  '/api/backup': typeof ApiBackupRoute
   '/app/cashbook': typeof AppCashbookRoute
   '/app/customers': typeof AppCustomersRouteWithChildren
   '/app/dashboard': typeof AppDashboardRoute
@@ -205,6 +222,7 @@ export interface FileRoutesById {
   '/app/payment-outflow': typeof AppPaymentOutflowRoute
   '/app/payments': typeof AppPaymentsRoute
   '/app/products': typeof AppProductsRoute
+  '/app/profile': typeof AppProfileRoute
   '/app/reports': typeof AppReportsRoute
   '/app/sales': typeof AppSalesRoute
   '/app/udhari': typeof AppUdhariRoute
@@ -221,6 +239,7 @@ export interface FileRouteTypes {
     | '/app'
     | '/login'
     | '/platform-admin'
+    | '/api/backup'
     | '/app/cashbook'
     | '/app/customers'
     | '/app/dashboard'
@@ -231,6 +250,7 @@ export interface FileRouteTypes {
     | '/app/payment-outflow'
     | '/app/payments'
     | '/app/products'
+    | '/app/profile'
     | '/app/reports'
     | '/app/sales'
     | '/app/udhari'
@@ -243,6 +263,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/login'
+    | '/api/backup'
     | '/app/cashbook'
     | '/app/customers'
     | '/app/dashboard'
@@ -253,6 +274,7 @@ export interface FileRouteTypes {
     | '/app/payment-outflow'
     | '/app/payments'
     | '/app/products'
+    | '/app/profile'
     | '/app/reports'
     | '/app/sales'
     | '/app/udhari'
@@ -267,6 +289,7 @@ export interface FileRouteTypes {
     | '/app'
     | '/login'
     | '/platform-admin'
+    | '/api/backup'
     | '/app/cashbook'
     | '/app/customers'
     | '/app/dashboard'
@@ -277,6 +300,7 @@ export interface FileRouteTypes {
     | '/app/payment-outflow'
     | '/app/payments'
     | '/app/products'
+    | '/app/profile'
     | '/app/reports'
     | '/app/sales'
     | '/app/udhari'
@@ -292,6 +316,7 @@ export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   LoginRoute: typeof LoginRoute
   PlatformAdminRoute: typeof PlatformAdminRouteWithChildren
+  ApiBackupRoute: typeof ApiBackupRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -373,6 +398,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppReportsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/app/profile': {
+      id: '/app/profile'
+      path: '/profile'
+      fullPath: '/app/profile'
+      preLoaderRoute: typeof AppProfileRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/app/products': {
       id: '/app/products'
       path: '/products'
@@ -443,6 +475,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppCashbookRouteImport
       parentRoute: typeof AppRoute
     }
+    '/api/backup': {
+      id: '/api/backup'
+      path: '/api/backup'
+      fullPath: '/api/backup'
+      preLoaderRoute: typeof ApiBackupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/app/customers/$id': {
       id: '/app/customers/$id'
       path: '/$id'
@@ -476,6 +515,7 @@ interface AppRouteChildren {
   AppPaymentOutflowRoute: typeof AppPaymentOutflowRoute
   AppPaymentsRoute: typeof AppPaymentsRoute
   AppProductsRoute: typeof AppProductsRoute
+  AppProfileRoute: typeof AppProfileRoute
   AppReportsRoute: typeof AppReportsRoute
   AppSalesRoute: typeof AppSalesRoute
   AppUdhariRoute: typeof AppUdhariRoute
@@ -494,6 +534,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppPaymentOutflowRoute: AppPaymentOutflowRoute,
   AppPaymentsRoute: AppPaymentsRoute,
   AppProductsRoute: AppProductsRoute,
+  AppProfileRoute: AppProfileRoute,
   AppReportsRoute: AppReportsRoute,
   AppSalesRoute: AppSalesRoute,
   AppUdhariRoute: AppUdhariRoute,
@@ -522,6 +563,7 @@ const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   LoginRoute: LoginRoute,
   PlatformAdminRoute: PlatformAdminRouteWithChildren,
+  ApiBackupRoute: ApiBackupRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

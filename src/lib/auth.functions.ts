@@ -322,11 +322,11 @@ export const getMe = createServerFn({ method: "GET" })
         .maybeSingle(),
       admin.from("user_roles").select("role, agency_id").eq("user_id", context.userId),
     ]);
-    let agency = null as null | { id: string; name: string; code: string; default_language: string };
+    let agency = null as null | { id: string; name: string; code: string; default_language: string; backup_emails: string[] | null };
     if (au?.agency_id) {
       const { data: ag } = await admin
         .from("agencies")
-        .select("id, name, code, default_language")
+        .select("id, name, code, default_language, backup_emails")
         .eq("id", au.agency_id)
         .maybeSingle();
       agency = ag ?? null;
