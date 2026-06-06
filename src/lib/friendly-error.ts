@@ -58,6 +58,9 @@ export function getFriendlyError(err: unknown): string {
   }
 
   // Database errors  
+  if (message.includes("backup_emails") || message.includes("logo_url") || (message.includes("column") && message.includes("does not exist"))) {
+    return "Database columns are missing. Please execute the SQL script in your Supabase SQL Editor: ALTER TABLE agencies ADD COLUMN IF NOT EXISTS logo_url text; ALTER TABLE agencies ADD COLUMN IF NOT EXISTS backup_emails text[];";
+  }
   if (message.includes("PGRST") || message.includes("relation") || message.includes("column")) {
     return "A database error occurred. Please refresh the page and try again.";
   }

@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import * as XLSXStyle from "xlsx-js-style";
 import { fmtDate } from "@/lib/format";
+import { getFriendlyError } from "@/lib/friendly-error";
 
 export const Route = createFileRoute("/app/profile")({
   component: () => (
@@ -56,41 +57,7 @@ function ProfilePage() {
 
   // User-friendly error translator
   function getFriendlyErrorMessage(err: any): string {
-    if (!err) return "An unexpected error occurred. Please try again.";
-    const message = err.message || String(err);
-    
-    // Parse Zod errors if they are in JSON string format
-    if (message.startsWith("[") || message.includes('"code":')) {
-      try {
-        const parsed = JSON.parse(message);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed.map(issue => {
-            const field = issue.path?.join(".") || "input";
-            const label = field.charAt(0).toUpperCase() + field.slice(1);
-            return `${label}: ${issue.message}`;
-          }).join(", ");
-        }
-      } catch (_) {}
-      return "Please double-check that all fields are filled out correctly.";
-    }
-    
-    if (message.includes("is already in the list")) {
-      return "This email is already in your backup list.";
-    }
-    if (message.includes("maximum of 3")) {
-      return "You can configure a maximum of 3 backup email addresses.";
-    }
-    if (message.includes("taken") || message.includes("username already exists") || message.includes("duplicate key")) {
-      return "This username is already taken. Please choose a different one.";
-    }
-    if (message.includes("password is too short")) {
-      return "Your password must be at least 8 characters long.";
-    }
-    if (message.includes("Unauthorized") || message.includes("Forbidden")) {
-      return "You do not have permission to modify these settings.";
-    }
-    
-    return message;
+    return getFriendlyError(err);
   }
 
   // Populate state from user/agency details when loaded
