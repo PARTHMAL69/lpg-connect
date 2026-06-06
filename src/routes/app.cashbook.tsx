@@ -328,6 +328,8 @@ function Page() {
     let inflowOnlineSum = 0;
     let inflowCreditSum = 0;
     let inflowChequeSum = 0;
+    const onlineInflowRows: Array<{ name: string; amount: number }> = [];
+    const udhariInflowRows: Array<{ name: string; amount: number }> = [];
 
     paymentInflows.forEach((p: any) => {
       if (p.payment_type === "cheque") {
@@ -337,16 +339,28 @@ function Page() {
         chequeByCustomer[cn].amount += p.amount;
       } else if (p.payment_type === "upi" || p.payment_type === "online") {
         inflowOnlineSum += p.amount;
+        onlineInflowRows.push({
+          name: `${p.particular || "UPI Inflow"} (${p.payment_type === "upi" ? "UPI" : "Online"})`,
+          amount: p.amount,
+        });
       } else if (p.payment_type === "split") {
         const cashPart = Number(p.split_cash || 0);
         const onlinePart = Number(p.split_online || 0);
         const creditPart = Number(p.split_credit || 0);
-        inflowOnlineSum += onlinePart;
-        inflowCreditSum += creditPart;
+        
+        if (onlinePart > 0) {
+          inflowOnlineSum += onlinePart;
+          onlineInflowRows.push({
+            name: `${p.particular || "Split Inflow"} (Online)`,
+            amount: onlinePart,
+          });
+        }
         if (creditPart > 0) {
-          const cn = p.particular || "Split Inflow Dues";
-          if (!udhariByCustomer[cn]) udhariByCustomer[cn] = { name: cn, amount: 0 };
-          udhariByCustomer[cn].amount += creditPart;
+          inflowCreditSum += creditPart;
+          udhariInflowRows.push({
+            name: `${p.particular || "Split Inflow"} (Udhari)`,
+            amount: creditPart,
+          });
         }
       }
     });
@@ -397,6 +411,7 @@ function Page() {
       chequeOutflow, magilBillsTotal, paymentOutflowsTotal,
       outstandingTotal, outstandingEntries,
       totalOutflows, cashBalance, cashDifference,
+      onlineInflowRows, udhariInflowRows,
     };
   }, [dailySales, dailyPayments, dailyExpenses, opening, manualCashEntry,
     otherReceiptsList, pendingBills, magilBills, paymentInflows, paymentOutflows, outstandingEntries]);
@@ -636,78 +651,74 @@ function Page() {
       right.push({ label: `${label}${note ? ` (${note})` : ""}`, qty: "", amt: Number(e.amount) });
     });
 
-    // 2. Payment Outflows (single entry)
     paymentOutflows.forEach(p => right.push({ label: p.particular + ((p as any).note ? ` (${(p as any).note})` : ""), qty: "", amt: p.amount }));
-
-    // 3. Magil Bills (single entry)
     magilBills.forEach(b => right.push({ label: `Magil — ${b.label} (${b.qty}×₹${b.rate})`, qty: b.qty, amt: b.amount }));
 
-    // 4. Cheque (group)
     if (agg.chequeOutflow > 0) {
       right.push({ label: "Cheque", qty: "", amt: agg.chequeOutflow });
       Object.values(agg.chequeByCustomer).forEach(c => right.push({ label: `  - ${c.name}`, qty: "", amt: c.amount, sub: true }));
     }
 
-    // 5. Udhari (group)
     if (agg.udhariOutflow > 0) {
       right.push({ label: "Udhari", qty: "", amt: agg.udhariOutflow });
       Object.values(agg.udhariByCustomer).forEach(c => right.push({ label: `  - ${c.name}`, qty: "", amt: c.amount, sub: true }));
+      agg.udhariInflowRows.forEach(r => right.push({ label: `  - ${r.name}`, qty: "", amt: r.amount, sub: true }));
     }
 
-    // 6. Outstanding (group)
     if (agg.outstandingTotal > 0) {
       right.push({ label: "Outstanding (Loans/Udhari Given)", qty: "", amt: agg.outstandingTotal });
       agg.outstandingEntries.forEach(o => right.push({ label: `  - ${o.customer_name}${o.note ? ` (${o.note})` : ""}`, qty: "", amt: o.amount, sub: true }));
     }
 
-    // 7. UPI / Paytm (group)
     if (agg.upiOutflow > 0) {
       right.push({ label: "UPI / Paytm", qty: agg.onlineQtyTotal, amt: agg.upiOutflow });
       Object.values(agg.onlineByDriver).forEach(d => right.push({ label: `  - ${d.name}`, qty: d.qty, amt: d.amount, sub: true }));
+      agg.onlineInflowRows.forEach(r => right.push({ label: `  - ${r.name}`, qty: "", amt: r.amount, sub: true }));
     }
 
-    // 8. Website Prepaid (group)
     if (agg.prepQtyTotal > 0) {
       right.push({ label: "Website Prepaid", qty: agg.prepQtyTotal, amt: agg.prepOutflow });
       Object.values(agg.prepByDriver).forEach(d => right.push({ label: `  - ${d.name}`, qty: d.qty, amt: d.amount, sub: true }));
     }
 
-    // 9. Route Commission Paid (group)
     if (agg.commissionsTotal > 0) {
       right.push({ label: "Route Commission Paid", qty: "", amt: agg.commissionsTotal });
       Object.values(agg.commissionByDriver).forEach(d => right.push({ label: `  - ${d.name}`, qty: d.qty, amt: d.amount, sub: true }));
     }
 
-    // Pad both sides to equal length (leaving space for the TOTAL row)
     const maxData = Math.max(left.length, right.length);
     while (left.length  < maxData) left.push({ label: "", qty: "", amt: 0 });
     while (right.length < maxData) right.push({ label: "", qty: "", amt: 0 });
 
-    // Write data rows (alternating row colors)
+    const cleanQtyExcel = (q: any) => {
+      if (q === 0 || q === "0" || q === "") return "";
+      return q;
+    };
+
     for (let i = 0; i < maxData; i++) {
       const l = left[i];
       const r2 = right[i];
       const isAlt = i % 2 === 1;
       const rowBg = isAlt ? C.altRowBg : undefined;
 
-      // LEFT
       if (l.label) {
         const subBg = l.sub ? C.subRowBg : rowBg;
         W(row, 0, l.label, { italic: l.sub, bg: subBg });
-        if (l.qty !== "") W(row, 1, l.qty, { align: "center", bg: subBg });
+        const qtyVal = cleanQtyExcel(l.qty);
+        if (qtyVal !== "") W(row, 1, qtyVal, { align: "center", bg: subBg });
         else BLANK(row, 1, subBg);
         W(row, 2, l.amt || 0, { bg: subBg });
       } else {
         BLANK(row, 0, rowBg); BLANK(row, 1, rowBg); BLANK(row, 2, rowBg);
       }
 
-      BLANK(row, 3); // spacer
+      BLANK(row, 3);
 
-      // RIGHT
       if (r2.label) {
         const subBg = r2.sub ? C.subRowBg : rowBg;
         W(row, 4, r2.label, { italic: r2.sub, bg: subBg });
-        if (r2.qty !== "") W(row, 5, r2.qty, { align: "center", bg: subBg });
+        const qtyVal = cleanQtyExcel(r2.qty);
+        if (qtyVal !== "") W(row, 5, qtyVal, { align: "center", bg: subBg });
         else BLANK(row, 5, subBg);
         W(row, 6, r2.amt || 0, { bg: subBg });
       } else {
@@ -717,7 +728,6 @@ function Page() {
       row++;
     }
 
-    // ── TOTAL ROW ──
     W(row, 0, "TOTAL RECEIVED", { bold: true, sz: 11, fg: C.totRecFg, bg: C.totRecBg, border: thickBorder });
     BLANK(row, 1, C.totRecBg);
     W(row, 2, agg.leftGrandTotal, { bold: true, sz: 11, fg: C.totRecFg, bg: C.totRecBg, border: thickBorder });
@@ -841,20 +851,24 @@ function Page() {
     type PRow = { label: string; qty: string; amt: string; sub?: boolean; isTot?: boolean };
     const lRows: PRow[] = [];
     const rRows: PRow[] = [];
-    const fmt = (n: number) => n === 0 && !n ? "" : n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const fmt = (n: number) => n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const cleanQty = (q: any) => {
+      if (q === 0 || q === "0" || !q) return "";
+      return String(q);
+    };
 
     lRows.push({ label: "Opening Cash Balance", qty: "", amt: fmt(agg.openingCash) });
-    Object.entries(agg.productSalesTotals).forEach(([n, s]) => lRows.push({ label: `${n} Sales`, qty: String(s.quantity), amt: fmt(s.total) }));
+    Object.entries(agg.productSalesTotals).forEach(([n, s]) => lRows.push({ label: `${n} Sales`, qty: cleanQty(s.quantity), amt: fmt(s.total) }));
     if (agg.collectionsTotal > 0) {
       lRows.push({ label: "Credit Recovery / Outstanding Collections", qty: "", amt: fmt(agg.collectionsTotal) });
       dailyPayments.forEach(p => lRows.push({ label: `  - ${p.customer_name} (${p.payment_mode})`, qty: "", amt: fmt(p.amount), sub: true }));
     }
 
     otherReceiptsList.forEach(r => lRows.push({ label: r.particular, qty: "", amt: fmt(r.amount) }));
-    pendingBills.forEach(b => lRows.push({ label: `Pending - ${b.label} (${b.qty}x Rs ${b.rate})`, qty: String(b.qty), amt: fmt(b.amount) }));
+    pendingBills.forEach(b => lRows.push({ label: `Pending - ${b.label} (${b.qty}x Rs ${b.rate})`, qty: cleanQty(b.qty), amt: fmt(b.amount) }));
     paymentInflows.forEach(p => lRows.push({ label: p.particular + ((p as any).note ? ` (${(p as any).note})` : ""), qty: "", amt: fmt(p.amount) }));
-    if (agg.homeTotal > 0) lRows.push({ label: "14 KG Home Delivery Sales", qty: String(agg.homeQty), amt: fmt(agg.homeTotal) });
-    if (agg.cncTotal > 0)  lRows.push({ label: "14 KG CNC Sales",           qty: String(agg.cncQty),  amt: fmt(agg.cncTotal) });
+    if (agg.homeTotal > 0) lRows.push({ label: "14 KG Home Delivery Sales", qty: cleanQty(agg.homeQty), amt: fmt(agg.homeTotal) });
+    if (agg.cncTotal > 0)  lRows.push({ label: "14 KG CNC Sales",           qty: cleanQty(agg.cncQty),  amt: fmt(agg.cncTotal) });
 
     dailyExpenses.forEach(e => {
       let cat = e.category, note = e.notes ?? "";
@@ -880,7 +894,7 @@ function Page() {
     paymentOutflows.forEach(p => rRows.push({ label: p.particular + ((p as any).note ? ` (${(p as any).note})` : ""), qty: "", amt: fmt(p.amount) }));
 
     // 3. Magil Bills (single entry)
-    magilBills.forEach(b => rRows.push({ label: `Magil - ${b.label} (${b.qty}x Rs ${b.rate})`, qty: String(b.qty), amt: fmt(b.amount) }));
+    magilBills.forEach(b => rRows.push({ label: `Magil - ${b.label} (${b.qty}x Rs ${b.rate})`, qty: cleanQty(b.qty), amt: fmt(b.amount) }));
 
     // 4. Cheque (group)
     if (agg.chequeOutflow > 0) {
@@ -892,6 +906,7 @@ function Page() {
     if (agg.udhariOutflow > 0) {
       rRows.push({ label: "Udhari", qty: "", amt: fmt(agg.udhariOutflow) });
       Object.values(agg.udhariByCustomer).forEach(c => rRows.push({ label: `  - ${c.name}`, qty: "", amt: fmt(c.amount), sub: true }));
+      agg.udhariInflowRows.forEach(r => rRows.push({ label: `  - ${r.name}`, qty: "", amt: fmt(r.amount), sub: true }));
     }
 
     // 6. Outstanding (group)
@@ -902,20 +917,21 @@ function Page() {
 
     // 7. UPI / Paytm (group)
     if (agg.upiOutflow > 0) {
-      rRows.push({ label: "UPI / Paytm", qty: String(agg.onlineQtyTotal), amt: fmt(agg.upiOutflow) });
-      Object.values(agg.onlineByDriver).forEach(d => rRows.push({ label: `  - ${d.name}`, qty: String(d.qty), amt: fmt(d.amount), sub: true }));
+      rRows.push({ label: "UPI / Paytm", qty: cleanQty(agg.onlineQtyTotal), amt: fmt(agg.upiOutflow) });
+      Object.values(agg.onlineByDriver).forEach(d => rRows.push({ label: `  - ${d.name}`, qty: cleanQty(d.qty), amt: fmt(d.amount), sub: true }));
+      agg.onlineInflowRows.forEach(r => rRows.push({ label: `  - ${r.name}`, qty: "", amt: fmt(r.amount), sub: true }));
     }
 
     // 8. Website Prepaid (group)
     if (agg.prepQtyTotal > 0) {
-      rRows.push({ label: "Website Prepaid", qty: String(agg.prepQtyTotal), amt: fmt(agg.prepOutflow) });
-      Object.values(agg.prepByDriver).forEach(d => rRows.push({ label: `  - ${d.name}`, qty: String(d.qty), amt: fmt(d.amount), sub: true }));
+      rRows.push({ label: "Website Prepaid", qty: cleanQty(agg.prepQtyTotal), amt: fmt(agg.prepOutflow) });
+      Object.values(agg.prepByDriver).forEach(d => rRows.push({ label: `  - ${d.name}`, qty: cleanQty(d.qty), amt: fmt(d.amount), sub: true }));
     }
 
     // 9. Route Commission Paid (group)
     if (agg.commissionsTotal > 0) {
       rRows.push({ label: "Route Commission Paid", qty: "", amt: fmt(agg.commissionsTotal) });
-      Object.values(agg.commissionByDriver).forEach(d => rRows.push({ label: `  - ${d.name}`, qty: String(d.qty), amt: fmt(d.amount), sub: true }));
+      Object.values(agg.commissionByDriver).forEach(d => rRows.push({ label: `  - ${d.name}`, qty: cleanQty(d.qty), amt: fmt(d.amount), sub: true }));
     }
 
     const maxData = Math.max(lRows.length, rRows.length);
@@ -1310,6 +1326,12 @@ function Page() {
                       <span className="tabular-nums">{fmtCurrency(c.amount)}</span>
                     </div>
                   ))}
+                  {agg.udhariInflowRows.map((r, idx) => (
+                    <div key={`udhari-inflow-${idx}`} className="flex justify-between py-0.5">
+                      <span>{r.name}</span>
+                      <span className="tabular-nums">{fmtCurrency(r.amount)}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
@@ -1342,6 +1364,12 @@ function Page() {
                     <div key={d.name} className="flex justify-between py-0.5">
                       <span>{d.name} {d.qty > 0 && <span className="text-slate-400">({d.qty} units)</span>}</span>
                       <span className="tabular-nums">{fmtCurrency(d.amount)}</span>
+                    </div>
+                  ))}
+                  {agg.onlineInflowRows.map((r, idx) => (
+                    <div key={`online-inflow-${idx}`} className="flex justify-between py-0.5">
+                      <span>{r.name}</span>
+                      <span className="tabular-nums">{fmtCurrency(r.amount)}</span>
                     </div>
                   ))}
                 </div>
