@@ -229,6 +229,9 @@ function Page() {
     const prepByDriver: Record<string, { name: string; qty: number; amount: number }> = {};
     let prepQtyTotal = 0;
 
+    // Per-customer cheque
+    const chequeByCustomer: Record<string, { name: string; amount: number }> = {};
+
     // Per-customer udhari
     const udhariByCustomer: Record<string, { name: string; amount: number }> = {};
 
@@ -305,6 +308,21 @@ function Page() {
         if (!udhariByCustomer[cn]) udhariByCustomer[cn] = { name: cn, amount: 0 };
         udhariByCustomer[cn].amount += effectiveCredit;
       }
+
+      // Cheque sales breakdown
+      if (s.payment_mode === "cheque" && !isSplit) {
+        const cn = s.customer_name ?? "Walk-in";
+        if (!chequeByCustomer[cn]) chequeByCustomer[cn] = { name: cn, amount: 0 };
+        chequeByCustomer[cn].amount += (s.gross_amount - s.commission_total);
+      }
+    });
+
+    dailyPayments.forEach((p) => {
+      if (p.payment_mode === "cheque") {
+        const cn = p.customer_name ?? "—";
+        if (!chequeByCustomer[cn]) chequeByCustomer[cn] = { name: cn, amount: 0 };
+        chequeByCustomer[cn].amount += p.amount;
+      }
     });
 
     const collectionsTotal = dailyPayments.reduce((s, p) => s + p.amount, 0);
@@ -348,6 +366,7 @@ function Page() {
       leftGrandTotal, expensesTotal, commissionsTotal,
       commissionByDriver, onlineByDriver, onlineQtyTotal,
       prepOutflow, prepByDriver, prepQtyTotal,
+      chequeByCustomer,
       udhariByCustomer, udhariOutflow, upiOutflow,
       chequeOutflow, magilBillsTotal, paymentOutflowsTotal,
       outstandingTotal, outstandingEntries,
@@ -598,7 +617,10 @@ function Page() {
     magilBills.forEach(b => right.push({ label: `Magil — ${b.label} (${b.qty}×₹${b.rate})`, qty: b.qty, amt: b.amount }));
 
     // 4. Cheque (group)
-    if (agg.chequeOutflow > 0) right.push({ label: "Cheque", qty: "", amt: agg.chequeOutflow });
+    if (agg.chequeOutflow > 0) {
+      right.push({ label: "Cheque", qty: "", amt: agg.chequeOutflow });
+      Object.values(agg.chequeByCustomer).forEach(c => right.push({ label: `  - ${c.name}`, qty: "", amt: c.amount, sub: true }));
+    }
 
     // 5. Udhari (group)
     if (agg.udhariOutflow > 0) {
@@ -835,7 +857,10 @@ function Page() {
     magilBills.forEach(b => rRows.push({ label: `Magil — ${b.label} (${b.qty}×₹${b.rate})`, qty: String(b.qty), amt: fmt(b.amount) }));
 
     // 4. Cheque (group)
-    if (agg.chequeOutflow > 0) rRows.push({ label: "Cheque", qty: "", amt: fmt(agg.chequeOutflow) });
+    if (agg.chequeOutflow > 0) {
+      rRows.push({ label: "Cheque", qty: "", amt: fmt(agg.chequeOutflow) });
+      Object.values(agg.chequeByCustomer).forEach(c => rRows.push({ label: `  - ${c.name}`, qty: "", amt: fmt(c.amount), sub: true }));
+    }
 
     // 5. Udhari (group)
     if (agg.udhariOutflow > 0) {
@@ -1227,11 +1252,21 @@ function Page() {
               </div>
             ))}
 
-            {/* Cheque */}
+            {/* Cheque with per-customer breakdown */}
             {agg.chequeOutflow > 0 && (
-              <div className="px-5 py-2 flex justify-between items-center hover:bg-slate-50/40">
-                <span className="font-semibold text-slate-600">Cheque</span>
-                <span className="font-bold tabular-nums text-slate-700 text-sm">{fmtCurrency(agg.chequeOutflow)}</span>
+              <div className="px-5 py-2 flex flex-col hover:bg-slate-50/40">
+                <div className="flex justify-between items-center py-0.5">
+                  <span className="font-semibold text-slate-600">Cheque</span>
+                  <span className="font-bold tabular-nums text-slate-700 text-sm">{fmtCurrency(agg.chequeOutflow)}</span>
+                </div>
+                <div className="mt-1 pl-3 border-l-2 border-slate-200/80 space-y-0.5 text-[10px] text-slate-500 font-medium">
+                  {Object.values(agg.chequeByCustomer).map((c) => (
+                    <div key={c.name} className="flex justify-between py-0.5">
+                      <span>{c.name}</span>
+                      <span className="tabular-nums">{fmtCurrency(c.amount)}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
