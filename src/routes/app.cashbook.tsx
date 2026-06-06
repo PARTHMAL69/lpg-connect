@@ -165,7 +165,7 @@ function Page() {
       .eq("agency_id", agency.id).eq("sale_date", date).eq("is_deleted", false);
 
     setDailySales(((sData ?? []) as any[]).map((s) => {
-      let pm = s.payment_mode;
+      let pm = s.payment_mode?.toLowerCase() || "cash";
       let prepQty = 0;
       try {
         const m = JSON.parse(s.notes ?? "{}");
@@ -202,7 +202,7 @@ function Page() {
       id: p.id,
       customer_name: p.customer?.name ?? "—",
       amount: Number(p.amount),
-      payment_mode: p.remarks?.startsWith("[CHEQUE]") ? "cheque" : p.mode,
+      payment_mode: p.remarks?.startsWith("[CHEQUE]") ? "cheque" : (p.mode?.toLowerCase() || "cash"),
     })));
 
     // Expenses
@@ -235,7 +235,8 @@ function Page() {
     dailySales.forEach((s) => {
       const nl = s.product_name.toLowerCase();
       const isMain = nl.includes("14.2") || nl.includes("14 kg") || nl.includes("domestic") || nl.includes("cylinder") || nl === "lpg" || nl === "gas";
-      const isCNC = !s.delivery_boy_id || nl.includes("cnc");
+      const isHome = nl.includes("home") || nl.includes("delivery") || (!!s.delivery_boy_id && !nl.includes("cnc"));
+      const isCNC = !isHome;
 
       // Parse notes JSON
       let isSplit = false;
@@ -569,6 +570,7 @@ function Page() {
     if (agg.cncTotal > 0)  left.push({ label: "14 KG CNC Sales",           qty: agg.cncQty,  amt: agg.cncTotal });
 
     // RIGHT side (NO Calculated Cash Balance)
+    // 1. Expenses (single entry)
     dailyExpenses.forEach(e => {
       let cat = e.category, note = e.notes ?? "";
       let workerName = "";
@@ -588,29 +590,45 @@ function Page() {
       const label = workerName ? `${cat.replace("_", " ")} (${workerName})` : cat.replace("_", " ");
       right.push({ label: `${label}${note ? ` (${note})` : ""}`, qty: "", amt: Number(e.amount) });
     });
-    if (agg.prepQtyTotal > 0) {
-      right.push({ label: "Website Prepaid", qty: agg.prepQtyTotal, amt: agg.prepOutflow });
-      Object.values(agg.prepByDriver).forEach(d => right.push({ label: `  - ${d.name}`, qty: d.qty, amt: d.amount, sub: true }));
-    }
-    if (agg.upiOutflow > 0) {
-      right.push({ label: "UPI", qty: agg.onlineQtyTotal, amt: agg.upiOutflow });
-      Object.values(agg.onlineByDriver).forEach(d => right.push({ label: `  - ${d.name}`, qty: d.qty, amt: d.amount, sub: true }));
-    }
+
+    // 2. Payment Outflows (single entry)
+    paymentOutflows.forEach(p => right.push({ label: p.particular + ((p as any).note ? ` (${(p as any).note})` : ""), qty: "", amt: p.amount }));
+
+    // 3. Magil Bills (single entry)
+    magilBills.forEach(b => right.push({ label: `Magil — ${b.label} (${b.qty}×₹${b.rate})`, qty: b.qty, amt: b.amount }));
+
+    // 4. Cheque (group)
     if (agg.chequeOutflow > 0) right.push({ label: "Cheque", qty: "", amt: agg.chequeOutflow });
+
+    // 5. Udhari (group)
     if (agg.udhariOutflow > 0) {
       right.push({ label: "Udhari", qty: "", amt: agg.udhariOutflow });
       Object.values(agg.udhariByCustomer).forEach(c => right.push({ label: `  - ${c.name}`, qty: "", amt: c.amount, sub: true }));
     }
-    if (agg.commissionsTotal > 0) {
-      right.push({ label: "Route Commission Paid", qty: "", amt: agg.commissionsTotal });
-      Object.values(agg.commissionByDriver).forEach(d => right.push({ label: `  - ${d.name}`, qty: d.qty, amt: d.amount, sub: true }));
-    }
+
+    // 6. Outstanding (group)
     if (agg.outstandingTotal > 0) {
       right.push({ label: "Outstanding (Loans/Udhari Given)", qty: "", amt: agg.outstandingTotal });
       agg.outstandingEntries.forEach(o => right.push({ label: `  - ${o.customer_name}${o.note ? ` (${o.note})` : ""}`, qty: "", amt: o.amount, sub: true }));
     }
-    magilBills.forEach(b => right.push({ label: `Magil — ${b.label} (${b.qty}×₹${b.rate})`, qty: b.qty, amt: b.amount }));
-    paymentOutflows.forEach(p => right.push({ label: p.particular + ((p as any).note ? ` (${(p as any).note})` : ""), qty: "", amt: p.amount }));
+
+    // 7. UPI / Paytm (group)
+    if (agg.upiOutflow > 0) {
+      right.push({ label: "UPI / Paytm", qty: agg.onlineQtyTotal, amt: agg.upiOutflow });
+      Object.values(agg.onlineByDriver).forEach(d => right.push({ label: `  - ${d.name}`, qty: d.qty, amt: d.amount, sub: true }));
+    }
+
+    // 8. Website Prepaid (group)
+    if (agg.prepQtyTotal > 0) {
+      right.push({ label: "Website Prepaid", qty: agg.prepQtyTotal, amt: agg.prepOutflow });
+      Object.values(agg.prepByDriver).forEach(d => right.push({ label: `  - ${d.name}`, qty: d.qty, amt: d.amount, sub: true }));
+    }
+
+    // 9. Route Commission Paid (group)
+    if (agg.commissionsTotal > 0) {
+      right.push({ label: "Route Commission Paid", qty: "", amt: agg.commissionsTotal });
+      Object.values(agg.commissionByDriver).forEach(d => right.push({ label: `  - ${d.name}`, qty: d.qty, amt: d.amount, sub: true }));
+    }
 
     // Pad both sides to equal length (leaving space for the TOTAL row)
     const maxData = Math.max(left.length, right.length);
@@ -809,29 +827,45 @@ function Page() {
       const label = workerName ? `${cat.replace("_", " ")} (${workerName})` : cat.replace("_", " ");
       rRows.push({ label: `${label}${note ? ` (${note})` : ""}`, qty: "", amt: fmt(Number(e.amount)) });
     });
-    if (agg.prepQtyTotal > 0) {
-      rRows.push({ label: "Website Prepaid", qty: String(agg.prepQtyTotal), amt: fmt(agg.prepOutflow) });
-      Object.values(agg.prepByDriver).forEach(d => rRows.push({ label: `  - ${d.name}`, qty: String(d.qty), amt: fmt(d.amount), sub: true }));
-    }
-    if (agg.upiOutflow > 0) {
-      rRows.push({ label: "UPI", qty: String(agg.onlineQtyTotal), amt: fmt(agg.upiOutflow) });
-      Object.values(agg.onlineByDriver).forEach(d => rRows.push({ label: `  - ${d.name}`, qty: String(d.qty), amt: fmt(d.amount), sub: true }));
-    }
+
+    // 2. Payment Outflows (single entry)
+    paymentOutflows.forEach(p => rRows.push({ label: p.particular + ((p as any).note ? ` (${(p as any).note})` : ""), qty: "", amt: fmt(p.amount) }));
+
+    // 3. Magil Bills (single entry)
+    magilBills.forEach(b => rRows.push({ label: `Magil — ${b.label} (${b.qty}×₹${b.rate})`, qty: String(b.qty), amt: fmt(b.amount) }));
+
+    // 4. Cheque (group)
     if (agg.chequeOutflow > 0) rRows.push({ label: "Cheque", qty: "", amt: fmt(agg.chequeOutflow) });
+
+    // 5. Udhari (group)
     if (agg.udhariOutflow > 0) {
       rRows.push({ label: "Udhari", qty: "", amt: fmt(agg.udhariOutflow) });
       Object.values(agg.udhariByCustomer).forEach(c => rRows.push({ label: `  - ${c.name}`, qty: "", amt: fmt(c.amount), sub: true }));
     }
-    if (agg.commissionsTotal > 0) {
-      rRows.push({ label: "Route Commission Paid", qty: "", amt: fmt(agg.commissionsTotal) });
-      Object.values(agg.commissionByDriver).forEach(d => rRows.push({ label: `  - ${d.name}`, qty: String(d.qty), amt: fmt(d.amount), sub: true }));
-    }
+
+    // 6. Outstanding (group)
     if (agg.outstandingTotal > 0) {
       rRows.push({ label: "Outstanding (Loans/Udhari Given)", qty: "", amt: fmt(agg.outstandingTotal) });
       agg.outstandingEntries.forEach(o => rRows.push({ label: `  - ${o.customer_name}${o.note ? ` (${o.note})` : ""}`, qty: "", amt: fmt(o.amount), sub: true }));
     }
-    magilBills.forEach(b => rRows.push({ label: `Magil — ${b.label} (${b.qty}×₹${b.rate})`, qty: String(b.qty), amt: fmt(b.amount) }));
-    paymentOutflows.forEach(p => rRows.push({ label: p.particular + ((p as any).note ? ` (${(p as any).note})` : ""), qty: "", amt: fmt(p.amount) }));
+
+    // 7. UPI / Paytm (group)
+    if (agg.upiOutflow > 0) {
+      rRows.push({ label: "UPI / Paytm", qty: String(agg.onlineQtyTotal), amt: fmt(agg.upiOutflow) });
+      Object.values(agg.onlineByDriver).forEach(d => rRows.push({ label: `  - ${d.name}`, qty: String(d.qty), amt: fmt(d.amount), sub: true }));
+    }
+
+    // 8. Website Prepaid (group)
+    if (agg.prepQtyTotal > 0) {
+      rRows.push({ label: "Website Prepaid", qty: String(agg.prepQtyTotal), amt: fmt(agg.prepOutflow) });
+      Object.values(agg.prepByDriver).forEach(d => rRows.push({ label: `  - ${d.name}`, qty: String(d.qty), amt: fmt(d.amount), sub: true }));
+    }
+
+    // 9. Route Commission Paid (group)
+    if (agg.commissionsTotal > 0) {
+      rRows.push({ label: "Route Commission Paid", qty: "", amt: fmt(agg.commissionsTotal) });
+      Object.values(agg.commissionByDriver).forEach(d => rRows.push({ label: `  - ${d.name}`, qty: String(d.qty), amt: fmt(d.amount), sub: true }));
+    }
 
     const maxData = Math.max(lRows.length, rRows.length);
     while (lRows.length < maxData) lRows.push({ label: "", qty: "", amt: "" });
@@ -1155,7 +1189,7 @@ function Page() {
               }
               const displayLabel = workerName ? `${cat.replace("_", " ")} (${workerName})` : cat.replace("_", " ");
               return (
-                <div key={exp.id} className="px-5 py-3.5 flex justify-between items-center hover:bg-slate-50/40">
+                <div key={exp.id} className="px-5 py-2 flex justify-between items-center hover:bg-slate-50/40">
                   <span className="font-semibold text-slate-600 capitalize">
                     {displayLabel}
                     {note ? <span className="text-slate-400 font-normal ml-1">({note})</span> : ""}
@@ -1165,45 +1199,37 @@ function Page() {
               );
             })}
 
-            {/* Website Prepaid */}
-            {agg.prepQtyTotal > 0 && (
-              <div className="px-5 py-3 flex flex-col hover:bg-slate-50/40">
-                <div className="flex justify-between items-center py-0.5">
-                  <span className="font-semibold text-slate-600">Website Prepaid <span className="text-slate-400 font-normal">({agg.prepQtyTotal} units)</span></span>
-                  <span className="font-bold tabular-nums text-red-600 text-sm">{fmtCurrency(agg.prepOutflow)}</span>
-                </div>
-                <div className="mt-1 pl-3 border-l-2 border-slate-200/80 space-y-0.5 text-[10px] text-slate-500 font-medium">
-                  {Object.values(agg.prepByDriver).map((d) => (
-                    <div key={d.name} className="flex justify-between py-0.5">
-                      <span>{d.name} <span className="text-slate-400">({d.qty} units)</span></span>
-                      <span className="tabular-nums">{fmtCurrency(d.amount)}</span>
-                    </div>
-                  ))}
-                </div>
+            {/* Payment Outflows (from dedicated page) */}
+            {paymentOutflows.map((item: any) => (
+              <div key={item.id} className="px-5 py-2 flex justify-between items-center hover:bg-slate-50/40 group">
+                <span className="font-semibold text-slate-600 flex flex-col gap-0.5 min-w-0">
+                  <span className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[9px] font-black uppercase bg-orange-100 text-orange-700 px-1 rounded shrink-0">Outflow</span>
+                    <span className="break-all">{item.particular}</span>
+                  </span>
+                  {item.note && <span className="text-[10px] text-slate-400 font-normal ml-0 sm:ml-14 break-all">{item.note}</span>}
+                </span>
+                <span className="font-bold tabular-nums text-red-600 text-sm shrink-0 ml-2">{fmtCurrency(item.amount)}</span>
               </div>
-            )}
+            ))}
 
-            {/* UPI */}
-            {agg.upiOutflow > 0 && (
-              <div className="px-5 py-3 flex flex-col hover:bg-slate-50/40">
-                <div className="flex justify-between items-center py-0.5">
-                  <span className="font-semibold text-slate-600">UPI <span className="text-slate-400 font-normal">({agg.onlineQtyTotal} units)</span></span>
-                  <span className="font-bold tabular-nums text-slate-700 text-sm">{fmtCurrency(agg.upiOutflow)}</span>
-                </div>
-                <div className="mt-1 pl-3 border-l-2 border-slate-200/80 space-y-0.5 text-[10px] text-slate-500 font-medium">
-                  {Object.values(agg.onlineByDriver).map((d) => (
-                    <div key={d.name} className="flex justify-between py-0.5">
-                      <span>{d.name} <span className="text-slate-400">({d.qty} units)</span></span>
-                      <span className="tabular-nums">{fmtCurrency(d.amount)}</span>
-                    </div>
-                  ))}
-                </div>
+            {/* Magil Bills */}
+            {magilBills.map((b) => (
+              <div key={b.id} className="px-5 py-2 flex justify-between items-center hover:bg-slate-50/40 group">
+                <span className="font-semibold text-slate-600 flex items-center gap-1.5">
+                  <span className="text-[9px] font-black uppercase bg-purple-100 text-purple-700 px-1 rounded">Magil</span>
+                  {b.label}
+                  <span className="text-slate-400 font-normal">({b.qty} × ₹{b.rate})</span>
+                  <button type="button" onClick={() => deleteMagilBill(b.id)}
+                    className="text-red-500 hover:text-red-700 opacity-0 group-hover:opacity-100 font-bold ml-1.5 text-[10px]" title="Delete">✕</button>
+                </span>
+                <span className="font-bold tabular-nums text-red-600 text-sm">{fmtCurrency(b.amount)}</span>
               </div>
-            )}
+            ))}
 
             {/* Cheque */}
             {agg.chequeOutflow > 0 && (
-              <div className="px-5 py-3.5 flex justify-between items-center hover:bg-slate-50/40">
+              <div className="px-5 py-2 flex justify-between items-center hover:bg-slate-50/40">
                 <span className="font-semibold text-slate-600">Cheque</span>
                 <span className="font-bold tabular-nums text-slate-700 text-sm">{fmtCurrency(agg.chequeOutflow)}</span>
               </div>
@@ -1211,7 +1237,7 @@ function Page() {
 
             {/* Udhari with per-customer breakdown */}
             {agg.udhariOutflow > 0 && (
-              <div className="px-5 py-3 flex flex-col hover:bg-slate-50/40">
+              <div className="px-5 py-2 flex flex-col hover:bg-slate-50/40">
                 <div className="flex justify-between items-center py-0.5">
                   <span className="font-semibold text-slate-600">Udhari</span>
                   <span className="font-bold tabular-nums text-slate-700 text-sm">{fmtCurrency(agg.udhariOutflow)}</span>
@@ -1227,9 +1253,59 @@ function Page() {
               </div>
             )}
 
+            {/* Outstanding manual entries */}
+            {outstandingEntries.map((item: any) => (
+              <div key={item.id} className="px-5 py-2 flex justify-between items-center hover:bg-slate-50/40 group">
+                <span className="font-semibold text-slate-600 flex flex-col gap-0.5 min-w-0">
+                  <span className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[9px] font-black uppercase bg-orange-100 text-orange-700 px-1 rounded shrink-0">Outstanding</span>
+                    <span className="break-all">{item.customer_name}</span>
+                  </span>
+                  {item.note && <span className="text-[10px] text-slate-400 font-normal ml-0 sm:ml-14 break-all">{item.note}</span>}
+                </span>
+                <span className="font-bold tabular-nums text-red-600 text-sm shrink-0 ml-2">{fmtCurrency(item.amount)}</span>
+              </div>
+            ))}
+
+            {/* UPI / Paytm */}
+            {agg.upiOutflow > 0 && (
+              <div className="px-5 py-2.5 flex flex-col hover:bg-slate-50/40">
+                <div className="flex justify-between items-center py-0.5">
+                  <span className="font-semibold text-slate-600">UPI / Paytm <span className="text-slate-400 font-normal">({agg.onlineQtyTotal} units)</span></span>
+                  <span className="font-bold tabular-nums text-slate-700 text-sm">{fmtCurrency(agg.upiOutflow)}</span>
+                </div>
+                <div className="mt-1 pl-3 border-l-2 border-slate-200/80 space-y-0.5 text-[10px] text-slate-500 font-medium">
+                  {Object.values(agg.onlineByDriver).map((d) => (
+                    <div key={d.name} className="flex justify-between py-0.5">
+                      <span>{d.name} <span className="text-slate-400">({d.qty} units)</span></span>
+                      <span className="tabular-nums">{fmtCurrency(d.amount)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Website Prepaid */}
+            {agg.prepQtyTotal > 0 && (
+              <div className="px-5 py-2.5 flex flex-col hover:bg-slate-50/40">
+                <div className="flex justify-between items-center py-0.5">
+                  <span className="font-semibold text-slate-600">Website Prepaid <span className="text-slate-400 font-normal">({agg.prepQtyTotal} units)</span></span>
+                  <span className="font-bold tabular-nums text-red-600 text-sm">{fmtCurrency(agg.prepOutflow)}</span>
+                </div>
+                <div className="mt-1 pl-3 border-l-2 border-slate-200/80 space-y-0.5 text-[10px] text-slate-500 font-medium">
+                  {Object.values(agg.prepByDriver).map((d) => (
+                    <div key={d.name} className="flex justify-between py-0.5">
+                      <span>{d.name} <span className="text-slate-400">({d.qty} units)</span></span>
+                      <span className="tabular-nums">{fmtCurrency(d.amount)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Commission with qty per driver */}
             {agg.commissionsTotal > 0 && (
-              <div className="px-5 py-3 flex flex-col hover:bg-slate-50/40">
+              <div className="px-5 py-2.5 flex flex-col hover:bg-slate-50/40">
                 <div className="flex justify-between items-center py-0.5">
                   <span className="font-semibold text-slate-600">Route Commission Paid</span>
                   <span className="font-bold tabular-nums text-slate-700 text-sm">{fmtCurrency(agg.commissionsTotal)}</span>
@@ -1244,48 +1320,6 @@ function Page() {
                 </div>
               </div>
             )}
-
-            {/* Outstanding manual entries */}
-            {outstandingEntries.map((item: any) => (
-              <div key={item.id} className="px-5 py-3 flex justify-between items-center hover:bg-slate-50/40 group">
-                <span className="font-semibold text-slate-600 flex flex-col gap-0.5 min-w-0">
-                  <span className="flex items-center gap-1.5 flex-wrap">
-                    <span className="text-[9px] font-black uppercase bg-orange-100 text-orange-700 px-1 rounded shrink-0">Outstanding</span>
-                    <span className="break-all">{item.customer_name}</span>
-                  </span>
-                  {item.note && <span className="text-[10px] text-slate-400 font-normal ml-0 sm:ml-14 break-all">{item.note}</span>}
-                </span>
-                <span className="font-bold tabular-nums text-red-600 text-sm shrink-0 ml-2">{fmtCurrency(item.amount)}</span>
-              </div>
-            ))}
-
-            {/* Payment Outflows (from dedicated page) */}
-            {paymentOutflows.map((item: any) => (
-              <div key={item.id} className="px-5 py-3 flex justify-between items-center hover:bg-slate-50/40 group">
-                <span className="font-semibold text-slate-600 flex flex-col gap-0.5 min-w-0">
-                  <span className="flex items-center gap-1.5 flex-wrap">
-                    <span className="text-[9px] font-black uppercase bg-orange-100 text-orange-700 px-1 rounded shrink-0">Outflow</span>
-                    <span className="break-all">{item.particular}</span>
-                  </span>
-                  {item.note && <span className="text-[10px] text-slate-400 font-normal ml-0 sm:ml-14 break-all">{item.note}</span>}
-                </span>
-                <span className="font-bold tabular-nums text-red-600 text-sm shrink-0 ml-2">{fmtCurrency(item.amount)}</span>
-              </div>
-            ))}
-
-            {/* Magil Bills */}
-            {magilBills.map((b) => (
-              <div key={b.id} className="px-5 py-3 flex justify-between items-center hover:bg-slate-50/40 group">
-                <span className="font-semibold text-slate-600 flex items-center gap-1.5">
-                  <span className="text-[9px] font-black uppercase bg-purple-100 text-purple-700 px-1 rounded">Magil</span>
-                  {b.label}
-                  <span className="text-slate-400 font-normal">({b.qty} × ₹{b.rate})</span>
-                  <button type="button" onClick={() => deleteMagilBill(b.id)}
-                    className="text-red-500 hover:text-red-700 opacity-0 group-hover:opacity-100 font-bold ml-1.5 text-[10px]" title="Delete">✕</button>
-                </span>
-                <span className="font-bold tabular-nums text-red-600 text-sm">{fmtCurrency(b.amount)}</span>
-              </div>
-            ))}
 
             {dailyExpenses.length === 0 && agg.totalOutflows === 0 && (
               <div className="p-8 text-center text-muted-foreground italic text-[11px]">No payments recorded today.</div>
