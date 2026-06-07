@@ -426,7 +426,7 @@ function Page() {
 
       {/* Expense details dialog */}
       <Dialog open={showDetails} onOpenChange={setShowDetails}>
-        <DialogContent className="max-w-md bg-white border border-slate-100 shadow-xl rounded-2xl p-6">
+        <DialogContent className="max-w-md bg-background border border-border shadow-xl rounded-2xl p-6">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold tracking-tight text-foreground flex items-center gap-2">
               <Info className="h-5 w-5 text-primary" /> Expense Record Details
@@ -440,7 +440,7 @@ function Page() {
             <div className="space-y-5 mt-4">
               
               {/* Primary metrics panel */}
-              <div className="grid grid-cols-2 gap-4 bg-muted/40 p-4 rounded-xl border border-slate-100">
+              <div className="grid grid-cols-2 gap-4 bg-muted/40 p-4 rounded-xl border border-border">
                 <div>
                   <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Debit Outflow</span>
                   <div className="font-black text-base text-destructive mt-0.5">
@@ -485,7 +485,7 @@ function Page() {
               </div>
 
               {/* AUDIT TRAIL METADATA SECTION */}
-              <div className="space-y-2.5 bg-slate-50/50 p-4 rounded-xl border border-dashed border-slate-200">
+              <div className="space-y-2.5 bg-muted/40 p-4 rounded-xl border border-dashed border-border">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5 select-none">
                   <Clock className="h-3.5 w-3.5 text-muted-foreground" /> System Records
                 </h4>
@@ -554,7 +554,7 @@ function Page() {
 
       {/* Confirmation Dialog for Void Expense */}
       <Dialog open={!!confirmVoidId} onOpenChange={(v) => { if (!v) setConfirmVoidId(null); }}>
-        <DialogContent className="max-w-sm bg-white border border-slate-100 shadow-xl rounded-2xl p-6">
+        <DialogContent className="max-w-sm bg-background border border-border shadow-xl rounded-2xl p-6">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold text-destructive flex items-center gap-2">
               ⚠️ Cancel Expense Log?

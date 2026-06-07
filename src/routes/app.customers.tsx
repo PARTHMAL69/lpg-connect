@@ -233,7 +233,7 @@ function Page() {
           ) : (
             <div className="divide-y divide-border/60">
               {filtered.map((c) => (
-                <div key={c.id} className={`p-4 flex items-center justify-between gap-4 transition-colors ${c.is_deleted ? "bg-slate-50/50" : "hover:bg-accent/10"}`}>
+                <div key={c.id} className={`p-4 flex items-center justify-between gap-4 transition-colors ${c.is_deleted ? "bg-slate-50/50 dark:bg-slate-900/30" : "hover:bg-accent/10"}`}>
                   <Link to="/app/customers/$id" params={{ id: c.id }} className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className={`font-semibold truncate ${c.is_deleted ? "text-muted-foreground" : "text-foreground"}`}>

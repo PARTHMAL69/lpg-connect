@@ -1100,13 +1100,13 @@ function Page() {
       </Card>
 
       {/* ── Dual-Column Ledger Table ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 items-start border rounded-xl overflow-hidden shadow-soft bg-white">
+      <div className="grid grid-cols-1 lg:grid-cols-2 items-start border rounded-xl overflow-hidden shadow-soft bg-card">
 
         {/* LEFT: Payment Received */}
         <div className="flex flex-col border-r border-border/80 min-h-[520px]">
           {/* Header */}
-          <div className="bg-slate-50 border-b border-border/80 px-5 py-3 flex justify-between items-center select-none h-12">
-            <h3 className="font-extrabold text-xs uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+          <div className="bg-muted/40 border-b border-border/80 px-5 py-3 flex justify-between items-center select-none h-12">
+            <h3 className="font-extrabold text-xs uppercase tracking-wider text-foreground flex items-center gap-1.5">
               <ArrowUpRight className="h-4.5 w-4.5 text-emerald-500 shrink-0" /> Payment Received
             </h3>
             <span className="text-xs font-black text-slate-400">₹ INR</span>
@@ -1114,8 +1114,8 @@ function Page() {
 
           <div className="flex-1 divide-y divide-slate-100 text-xs">
             {/* Opening Cash Balance (Manual input) */}
-            <div className="px-5 py-3 flex justify-between items-center bg-slate-50/40 hover:bg-slate-50/60 transition-colors">
-              <span className="font-semibold text-slate-700 flex items-center gap-1.5">
+            <div className="px-5 py-3 flex justify-between items-center bg-muted/10 hover:bg-muted/20 transition-colors">
+              <span className="font-semibold text-foreground flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
                 Opening Cash Balance
               </span>
@@ -1125,27 +1125,27 @@ function Page() {
                   id="opening-cash-input" type="number" step="any" min="0"
                   value={opening} onChange={(e) => setOpening(e.target.value)}
                   onBlur={onOpeningBlur}
-                  className="h-8 w-28 font-bold text-right text-xs text-primary focus-visible:ring-primary bg-white shadow-soft"
+                  className="h-8 w-28 font-bold text-right text-xs text-primary focus-visible:ring-primary bg-background shadow-soft"
                 />
               </div>
             </div>
 
             {/* Other Products */}
             {Object.entries(agg.productSalesTotals).map(([pName, stats]) => (
-              <div key={pName} className="px-5 py-3.5 flex justify-between items-center hover:bg-slate-50/40">
-                <span className="font-semibold text-slate-600">{pName} Sales <span className="text-slate-400 font-normal">({stats.quantity} units)</span></span>
-                <span className="font-bold tabular-nums text-slate-800 text-sm">{fmtCurrency(stats.total)}</span>
+              <div key={pName} className="px-5 py-3.5 flex justify-between items-center hover:bg-muted/10">
+                <span className="font-semibold text-slate-600 dark:text-slate-300">{pName} Sales <span className="text-slate-400 font-normal">({stats.quantity} units)</span></span>
+                <span className="font-bold tabular-nums text-foreground text-sm">{fmtCurrency(stats.total)}</span>
               </div>
             ))}
 
             {/* Collections */}
             {agg.collectionsTotal > 0 && (
-              <div className="px-5 py-3 flex flex-col hover:bg-slate-50/40">
+              <div className="px-5 py-3 flex flex-col hover:bg-muted/10">
                 <div className="flex justify-between items-center py-0.5">
-                  <span className="font-semibold text-slate-600">Credit Recovery / Outstanding Collections</span>
-                  <span className="font-bold tabular-nums text-slate-800 text-sm">{fmtCurrency(agg.collectionsTotal)}</span>
+                  <span className="font-semibold text-slate-600 dark:text-slate-300">Credit Recovery / Outstanding Collections</span>
+                  <span className="font-bold tabular-nums text-foreground text-sm">{fmtCurrency(agg.collectionsTotal)}</span>
                 </div>
-                <div className="mt-1 pl-3 border-l-2 border-slate-200/80 space-y-0.5 text-[10px] text-slate-500 font-medium">
+                <div className="mt-1 pl-3 border-l-2 border-border space-y-0.5 text-[10px] text-slate-500 dark:text-slate-400 font-medium">
                   {dailyPayments.map((p) => (
                     <div key={p.id} className="flex justify-between py-0.5">
                       <span>{p.customer_name} <span className="text-slate-400 capitalize">({p.payment_mode})</span></span>
@@ -1158,8 +1158,8 @@ function Page() {
 
             {/* Other Manual Inflows (misc) */}
             {otherReceiptsList.map((item) => (
-              <div key={item.id} className="px-5 py-3 flex justify-between items-center hover:bg-slate-50/40 group">
-                <span className="font-semibold text-slate-600 flex items-center gap-1.5">
+              <div key={item.id} className="px-5 py-3 flex justify-between items-center hover:bg-muted/10 group">
+                <span className="font-semibold text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
                   {item.particular}
                   <button type="button" onClick={() => deleteOtherReceipt(item.id)}
                     className="text-red-500 hover:text-red-700 opacity-0 group-hover:opacity-100 font-bold ml-1.5 text-[10px]" title="Delete">✕</button>
@@ -1170,8 +1170,8 @@ function Page() {
 
             {/* Payment Inflows (from dedicated page) */}
             {paymentInflows.map((item: any) => (
-              <div key={item.id} className="px-5 py-3 flex justify-between items-center hover:bg-slate-50/40 group">
-                <span className="font-semibold text-slate-600 flex flex-col gap-0.5 min-w-0">
+              <div key={item.id} className="px-5 py-3 flex justify-between items-center hover:bg-muted/10 group">
+                <span className="font-semibold text-slate-600 dark:text-slate-300 flex flex-col gap-0.5 min-w-0">
                   <span className="flex items-center gap-1.5 flex-wrap">
                     <span className="text-[9px] font-black uppercase bg-blue-100 text-blue-700 px-1 rounded shrink-0">Inflow</span>
                     <span className="break-all">{item.particular}</span>
@@ -1185,8 +1185,8 @@ function Page() {
 
             {/* Pending Bills */}
             {pendingBills.map((b) => (
-              <div key={b.id} className="px-5 py-3 flex justify-between items-center hover:bg-slate-50/40 group">
-                <span className="font-semibold text-slate-600 flex items-center gap-1.5">
+              <div key={b.id} className="px-5 py-3 flex justify-between items-center hover:bg-muted/10 group">
+                <span className="font-semibold text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
                   <span className="text-[9px] font-black uppercase bg-amber-100 text-amber-700 px-1 rounded">Pending</span>
                   {b.label}
                   <span className="text-slate-400 font-normal">({b.qty} × ₹{b.rate})</span>
@@ -1199,17 +1199,17 @@ function Page() {
 
             {/* Home Delivery — shown last */}
             {agg.homeTotal > 0 && (
-              <div className="px-5 py-3.5 flex justify-between items-center hover:bg-slate-50/40">
-                <span className="font-semibold text-slate-600">14 KG Home Delivery Sales <span className="text-slate-400 font-normal">({agg.homeQty} units)</span></span>
-                <span className="font-bold tabular-nums text-slate-800 text-sm">{fmtCurrency(agg.homeTotal)}</span>
+              <div className="px-5 py-3.5 flex justify-between items-center hover:bg-muted/10">
+                <span className="font-semibold text-slate-600 dark:text-slate-300">14 KG Home Delivery Sales <span className="text-slate-400 font-normal">({agg.homeQty} units)</span></span>
+                <span className="font-bold tabular-nums text-foreground text-sm">{fmtCurrency(agg.homeTotal)}</span>
               </div>
             )}
 
             {/* CNC — shown last */}
             {agg.cncTotal > 0 && (
-              <div className="px-5 py-3.5 flex justify-between items-center hover:bg-slate-50/40">
-                <span className="font-semibold text-slate-600">14 KG CNC Sales <span className="text-slate-400 font-normal">({agg.cncQty} units)</span></span>
-                <span className="font-bold tabular-nums text-slate-800 text-sm">{fmtCurrency(agg.cncTotal)}</span>
+              <div className="px-5 py-3.5 flex justify-between items-center hover:bg-muted/10">
+                <span className="font-semibold text-slate-600 dark:text-slate-300">14 KG CNC Sales <span className="text-slate-400 font-normal">({agg.cncQty} units)</span></span>
+                <span className="font-bold tabular-nums text-foreground text-sm">{fmtCurrency(agg.cncTotal)}</span>
               </div>
             )}
 
@@ -1230,14 +1230,14 @@ function Page() {
 
         {/* RIGHT: Money Paid */}
         <div className="flex flex-col min-h-[520px]">
-          <div className="bg-slate-50 border-b border-border/80 px-5 py-3 flex justify-between items-center select-none h-12">
-            <h3 className="font-extrabold text-xs uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+          <div className="bg-muted/40 border-b border-border/80 px-5 py-3 flex justify-between items-center select-none h-12">
+            <h3 className="font-extrabold text-xs uppercase tracking-wider text-foreground flex items-center gap-1.5">
               <ArrowDownRight className="h-4.5 w-4.5 text-red-500 shrink-0" /> Money Paid / Outflow
             </h3>
             <span className="text-xs font-black text-slate-400">₹ INR</span>
           </div>
 
-          <div className="flex-1 divide-y divide-slate-100 text-xs">
+          <div className="flex-1 divide-y divide-border/60 text-xs">
             {/* Expenses */}
             {dailyExpenses.map((exp) => {
               let cat = exp.category, note = exp.notes ?? "";
@@ -1257,8 +1257,8 @@ function Page() {
               }
               const displayLabel = workerName ? `${cat.replace("_", " ")} (${workerName})` : cat.replace("_", " ");
               return (
-                <div key={exp.id} className="px-5 py-2 flex justify-between items-center hover:bg-slate-50/40">
-                  <span className="font-semibold text-slate-600 capitalize">
+                <div key={exp.id} className="px-5 py-2 flex justify-between items-center hover:bg-muted/10">
+                  <span className="font-semibold text-slate-600 dark:text-slate-350 capitalize">
                     {displayLabel}
                     {note ? <span className="text-slate-400 font-normal ml-1">({note})</span> : ""}
                   </span>
@@ -1269,8 +1269,8 @@ function Page() {
 
             {/* Payment Outflows (from dedicated page) */}
             {paymentOutflows.map((item: any) => (
-              <div key={item.id} className="px-5 py-2 flex justify-between items-center hover:bg-slate-50/40 group">
-                <span className="font-semibold text-slate-600 flex flex-col gap-0.5 min-w-0">
+              <div key={item.id} className="px-5 py-2 flex justify-between items-center hover:bg-muted/10 group">
+                <span className="font-semibold text-slate-600 dark:text-slate-350 flex flex-col gap-0.5 min-w-0">
                   <span className="flex items-center gap-1.5 flex-wrap">
                     <span className="text-[9px] font-black uppercase bg-orange-100 text-orange-700 px-1 rounded shrink-0">Outflow</span>
                     <span className="break-all">{item.particular}</span>
@@ -1283,9 +1283,9 @@ function Page() {
 
             {/* Magil Bills */}
             {magilBills.map((b) => (
-              <div key={b.id} className="px-5 py-2 flex justify-between items-center hover:bg-slate-50/40 group">
-                <span className="font-semibold text-slate-600 flex items-center gap-1.5">
-                  <span className="text-[9px] font-black uppercase bg-purple-100 text-purple-700 px-1 rounded">Magil</span>
+              <div key={b.id} className="px-5 py-2 flex justify-between items-center hover:bg-muted/10 group">
+                <span className="font-semibold text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
+                  <span className="text-[9px] font-black uppercase bg-purple-100 dark:bg-purple-950/20 text-purple-700 dark:text-purple-300 px-1 rounded">Magil</span>
                   {b.label}
                   <span className="text-slate-400 font-normal">({b.qty} × ₹{b.rate})</span>
                   <button type="button" onClick={() => deleteMagilBill(b.id)}
@@ -1297,12 +1297,12 @@ function Page() {
 
             {/* Cheque with per-customer breakdown */}
             {agg.chequeOutflow > 0 && (
-              <div className="px-5 py-2 flex flex-col hover:bg-slate-50/40">
+              <div className="px-5 py-2 flex flex-col hover:bg-muted/10">
                 <div className="flex justify-between items-center py-0.5">
-                  <span className="font-semibold text-slate-600">Cheque</span>
-                  <span className="font-bold tabular-nums text-slate-700 text-sm">{fmtCurrency(agg.chequeOutflow)}</span>
+                  <span className="font-semibold text-slate-600 dark:text-slate-300">Cheque</span>
+                  <span className="font-bold tabular-nums text-foreground text-sm">{fmtCurrency(agg.chequeOutflow)}</span>
                 </div>
-                <div className="mt-1 pl-3 border-l-2 border-slate-200/80 space-y-0.5 text-[10px] text-slate-500 font-medium">
+                <div className="mt-1 pl-3 border-l-2 border-border space-y-0.5 text-[10px] text-slate-500 dark:text-slate-400 font-medium">
                   {Object.values(agg.chequeByCustomer).map((c) => (
                     <div key={c.name} className="flex justify-between py-0.5">
                       <span>{c.name}</span>
@@ -1315,12 +1315,12 @@ function Page() {
 
             {/* Udhari with per-customer breakdown */}
             {agg.udhariOutflow > 0 && (
-              <div className="px-5 py-2 flex flex-col hover:bg-slate-50/40">
+              <div className="px-5 py-2 flex flex-col hover:bg-muted/10">
                 <div className="flex justify-between items-center py-0.5">
-                  <span className="font-semibold text-slate-600">Udhari</span>
-                  <span className="font-bold tabular-nums text-slate-700 text-sm">{fmtCurrency(agg.udhariOutflow)}</span>
+                  <span className="font-semibold text-slate-600 dark:text-slate-300">Udhari</span>
+                  <span className="font-bold tabular-nums text-foreground text-sm">{fmtCurrency(agg.udhariOutflow)}</span>
                 </div>
-                <div className="mt-1 pl-3 border-l-2 border-slate-200/80 space-y-0.5 text-[10px] text-slate-500 font-medium">
+                <div className="mt-1 pl-3 border-l-2 border-border space-y-0.5 text-[10px] text-slate-500 dark:text-slate-400 font-medium">
                   {Object.values(agg.udhariByCustomer).map((c) => (
                     <div key={c.name} className="flex justify-between py-0.5">
                       <span>{c.name}</span>
@@ -1339,8 +1339,8 @@ function Page() {
 
             {/* Outstanding manual entries */}
             {outstandingEntries.map((item: any) => (
-              <div key={item.id} className="px-5 py-2 flex justify-between items-center hover:bg-slate-50/40 group">
-                <span className="font-semibold text-slate-600 flex flex-col gap-0.5 min-w-0">
+              <div key={item.id} className="px-5 py-2 flex justify-between items-center hover:bg-muted/10 group">
+                <span className="font-semibold text-slate-600 dark:text-slate-350 flex flex-col gap-0.5 min-w-0">
                   <span className="flex items-center gap-1.5 flex-wrap">
                     <span className="text-[9px] font-black uppercase bg-orange-100 text-orange-700 px-1 rounded shrink-0">Outstanding</span>
                     <span className="break-all">{item.customer_name}</span>
@@ -1353,14 +1353,14 @@ function Page() {
 
             {/* UPI / Paytm */}
             {agg.upiOutflow > 0 && (
-              <div className="px-5 py-2.5 flex flex-col hover:bg-slate-50/40">
+              <div className="px-5 py-2.5 flex flex-col hover:bg-muted/10">
                 <div className="flex justify-between items-center py-0.5">
-                  <span className="font-semibold text-slate-600">
+                  <span className="font-semibold text-slate-600 dark:text-slate-300">
                     UPI / Paytm {agg.onlineQtyTotal > 0 && <span className="text-slate-400 font-normal">({agg.onlineQtyTotal} units)</span>}
                   </span>
-                  <span className="font-bold tabular-nums text-slate-700 text-sm">{fmtCurrency(agg.upiOutflow)}</span>
+                  <span className="font-bold tabular-nums text-foreground text-sm">{fmtCurrency(agg.upiOutflow)}</span>
                 </div>
-                <div className="mt-1 pl-3 border-l-2 border-slate-200/80 space-y-0.5 text-[10px] text-slate-500 font-medium">
+                <div className="mt-1 pl-3 border-l-2 border-border space-y-0.5 text-[10px] text-slate-500 dark:text-slate-400 font-medium">
                   {Object.values(agg.onlineByDriver).map((d) => (
                     <div key={d.name} className="flex justify-between py-0.5">
                       <span>{d.name} {d.qty > 0 && <span className="text-slate-400">({d.qty} units)</span>}</span>
@@ -1379,14 +1379,14 @@ function Page() {
 
             {/* Website Prepaid */}
             {agg.prepQtyTotal > 0 && (
-              <div className="px-5 py-2.5 flex flex-col hover:bg-slate-50/40">
+              <div className="px-5 py-2.5 flex flex-col hover:bg-muted/10">
                 <div className="flex justify-between items-center py-0.5">
-                  <span className="font-semibold text-slate-600">
+                  <span className="font-semibold text-slate-600 dark:text-slate-300">
                     Website Prepaid {agg.prepQtyTotal > 0 && <span className="text-slate-400 font-normal">({agg.prepQtyTotal} units)</span>}
                   </span>
                   <span className="font-bold tabular-nums text-red-600 text-sm">{fmtCurrency(agg.prepOutflow)}</span>
                 </div>
-                <div className="mt-1 pl-3 border-l-2 border-slate-200/80 space-y-0.5 text-[10px] text-slate-500 font-medium">
+                <div className="mt-1 pl-3 border-l-2 border-border space-y-0.5 text-[10px] text-slate-500 dark:text-slate-400 font-medium">
                   {Object.values(agg.prepByDriver).map((d) => (
                     <div key={d.name} className="flex justify-between py-0.5">
                       <span>{d.name} {d.qty > 0 && <span className="text-slate-400">({d.qty} units)</span>}</span>
@@ -1399,12 +1399,12 @@ function Page() {
 
             {/* Commission with qty per driver */}
             {agg.commissionsTotal > 0 && (
-              <div className="px-5 py-2.5 flex flex-col hover:bg-slate-50/40">
+              <div className="px-5 py-2.5 flex flex-col hover:bg-muted/10">
                 <div className="flex justify-between items-center py-0.5">
-                  <span className="font-semibold text-slate-600">Route Commission Paid</span>
-                  <span className="font-bold tabular-nums text-slate-700 text-sm">{fmtCurrency(agg.commissionsTotal)}</span>
+                  <span className="font-semibold text-slate-600 dark:text-slate-300">Route Commission Paid</span>
+                  <span className="font-bold tabular-nums text-foreground text-sm">{fmtCurrency(agg.commissionsTotal)}</span>
                 </div>
-                <div className="mt-1 pl-3 border-l-2 border-slate-200/80 space-y-0.5 text-[10px] text-slate-500 font-medium">
+                <div className="mt-1 pl-3 border-l-2 border-border space-y-0.5 text-[10px] text-slate-500 dark:text-slate-400 font-medium">
                   {Object.values(agg.commissionByDriver).map((d) => (
                     <div key={d.name} className="flex justify-between py-0.5">
                       <span>{d.name} {d.qty > 0 && <span className="text-slate-400">({d.qty} units)</span>}</span>
@@ -1431,9 +1431,9 @@ function Page() {
 
           {/* Right Footer: Total Outflow (blue) + Cash Balance (green) */}
           <div className="mt-auto border-t border-border/80 select-none">
-            <div className="bg-blue-50 border-b border-blue-100 px-5 py-3 flex justify-between items-center">
-              <span className="text-xs font-extrabold uppercase tracking-wider text-blue-700">Total Paid Outflow</span>
-              <span className="tabular-nums font-black text-sm text-blue-700">{fmtCurrency(agg.totalOutflows)}</span>
+            <div className="bg-blue-50 dark:bg-blue-950/20 border-b border-blue-100 dark:border-blue-900/50 px-5 py-3 flex justify-between items-center">
+              <span className="text-xs font-extrabold uppercase tracking-wider text-blue-700 dark:text-blue-300">Total Paid Outflow</span>
+              <span className="tabular-nums font-black text-sm text-blue-700 dark:text-blue-300">{fmtCurrency(agg.totalOutflows)}</span>
             </div>
             <div className={cn("px-5 py-4 flex justify-between items-center border-t", balanceColors.bg)}>
               <span className={cn("text-xs font-extrabold uppercase tracking-wider", balanceColors.label)}>Calculated Cash Balance</span>
@@ -1447,13 +1447,13 @@ function Page() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card className="border shadow-soft">
           <CardContent className="p-4 space-y-2">
-            <Label className="text-xs font-bold uppercase text-slate-600">Manual Cash Count (Physical Cash in Hand)</Label>
+            <Label className="text-xs font-bold uppercase text-muted-foreground">Manual Cash Count (Physical Cash in Hand)</Label>
             <Input
               type="number" step="any" placeholder="Enter manual cash count..."
               value={manualCashEntry}
               onChange={(e) => setManualCashEntry(e.target.value)}
               onBlur={onManualBlur}
-              className="h-11 font-bold text-slate-800 text-base"
+              className="h-11 font-bold text-foreground text-base"
             />
           </CardContent>
         </Card>
@@ -1461,23 +1461,23 @@ function Page() {
         <Card className={cn(
           "border shadow-soft",
           agg.cashDifference === null
-            ? "bg-slate-50 border-slate-200"
+            ? "bg-muted/40 border-border"
             : Math.abs(agg.cashDifference) < 0.01
-            ? "bg-amber-50 border-amber-200/80"
+            ? "bg-amber-50 dark:bg-amber-950/20 border-amber-200/80 dark:border-amber-900/50"
             : agg.cashDifference > 0
-            ? "bg-emerald-50 border-emerald-200/80"
-            : "bg-red-50 border-red-200/80"
+            ? "bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200/80 dark:border-emerald-900/50"
+            : "bg-red-50 dark:bg-red-950/20 border-red-200/80 dark:border-red-900/50"
         )}>
           <CardContent className="p-4 space-y-1">
             <div className={cn(
               "text-xs font-bold uppercase tracking-wider",
               agg.cashDifference === null
-                ? "text-slate-600"
+                ? "text-muted-foreground"
                 : Math.abs(agg.cashDifference) < 0.01
-                ? "text-amber-700"
+                ? "text-amber-700 dark:text-amber-400"
                 : agg.cashDifference > 0
-                ? "text-emerald-700"
-                : "text-red-700"
+                ? "text-emerald-700 dark:text-emerald-400"
+                : "text-red-700 dark:text-red-400"
             )}>
               {agg.cashDifference === null ? "Difference (Manual − Calculated)" : Math.abs(agg.cashDifference) < 0.01 ? "✅ Balanced" : agg.cashDifference > 0 ? "✅ Cash Surplus (Excess)" : "⚠️ Cash Shortage"}
             </div>
@@ -1509,7 +1509,7 @@ function Page() {
       {/* ── Daily Note ── */}
       <Card className="border shadow-soft">
         <CardContent className="p-4 space-y-2">
-          <Label className="text-xs font-bold uppercase text-slate-600 flex items-center gap-1.5">
+          <Label className="text-xs font-bold uppercase text-muted-foreground flex items-center gap-1.5">
             <StickyNote className="h-3.5 w-3.5" /> Daily Note (optional)
           </Label>
           <Textarea
@@ -1524,9 +1524,9 @@ function Page() {
       </Card>
 
       {/* ── Bottom Summary ── */}
-      <Card className="shadow-card border bg-slate-50/50">
+      <Card className="shadow-card border bg-muted/20">
         <CardContent className="p-6">
-          <h3 className="font-bold text-sm uppercase tracking-wider text-slate-800 border-b pb-3 mb-5 flex items-center gap-2 select-none">
+          <h3 className="font-bold text-sm uppercase tracking-wider text-foreground border-b pb-3 mb-5 flex items-center gap-2 select-none">
             <Sparkles className="h-5 w-5 text-primary shrink-0" /> Daily Cash Book Summary
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center text-center md:text-left">
@@ -1558,7 +1558,7 @@ function Page() {
 
       {/* Pending Bill */}
       <Dialog open={isPendingOpen} onOpenChange={setIsPendingOpen}>
-        <DialogContent className="max-w-sm bg-white rounded-2xl shadow-xl p-6">
+        <DialogContent className="max-w-sm bg-background border border-border rounded-2xl shadow-xl p-6">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-lg font-bold">📋 Add Pending Bill</DialogTitle>
           </DialogHeader>
@@ -1578,9 +1578,9 @@ function Page() {
               </div>
             </div>
             {pendingQty && pendingRate && (
-              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-center">
-                <div className="text-xs text-amber-700 font-bold uppercase">Pending Amount</div>
-                <div className="text-xl font-black text-amber-700 mt-0.5">{fmtCurrency(Number(pendingQty) * Number(pendingRate))}</div>
+              <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/50 rounded-lg p-3 text-center">
+                <div className="text-xs text-amber-700 dark:text-amber-400 font-bold uppercase">Pending Amount</div>
+                <div className="text-xl font-black text-amber-700 dark:text-amber-400 mt-0.5">{fmtCurrency(Number(pendingQty) * Number(pendingRate))}</div>
               </div>
             )}
             <DialogFooter className="pt-2">
@@ -1593,7 +1593,7 @@ function Page() {
 
       {/* Magil Bill */}
       <Dialog open={isMagilOpen} onOpenChange={setIsMagilOpen}>
-        <DialogContent className="max-w-sm bg-white rounded-2xl shadow-xl p-6">
+        <DialogContent className="max-w-sm bg-background border border-border rounded-2xl shadow-xl p-6">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-lg font-bold">🧾 Add Magil Bill</DialogTitle>
           </DialogHeader>
@@ -1613,9 +1613,9 @@ function Page() {
               </div>
             </div>
             {magilQty && magilRate && (
-              <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 text-center">
-                <div className="text-xs text-purple-700 font-bold uppercase">Magil Bill Amount</div>
-                <div className="text-xl font-black text-purple-700 mt-0.5">{fmtCurrency(Number(magilQty) * Number(magilRate))}</div>
+              <div className="bg-purple-50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-900/50 rounded-lg p-3 text-center">
+                <div className="text-xs text-purple-700 dark:text-purple-400 font-bold uppercase">Magil Bill Amount</div>
+                <div className="text-xl font-black text-purple-700 dark:text-purple-400 mt-0.5">{fmtCurrency(Number(magilQty) * Number(magilRate))}</div>
               </div>
             )}
             <DialogFooter className="pt-2">

@@ -234,27 +234,27 @@ function OutstandingPage() {
                 {items.map((item) => (
                   <div key={item.id} className="flex items-center justify-between px-6 py-4 hover:bg-muted/20 group transition-colors">
                     <div className="flex items-center gap-3">
-                      <div className="h-9 w-9 rounded-lg bg-orange-100 text-orange-600 flex items-center justify-center shrink-0">
+                      <div className="h-9 w-9 rounded-lg bg-orange-100 dark:bg-orange-950/20 text-orange-600 dark:text-orange-400 flex items-center justify-center shrink-0">
                         <Coins className="h-4 w-4" />
                       </div>
                       <div>
-                        <div className="font-bold text-sm text-slate-800">{item.customer_name}</div>
-                        {item.note && <div className="text-xs text-slate-500 mt-0.5">{item.note}</div>}
+                        <div className="font-bold text-sm text-foreground">{item.customer_name}</div>
+                        {item.note && <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{item.note}</div>}
                         <div className="text-xs text-muted-foreground mt-0.5">{fmtDate(date)}</div>
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
                       <span className="font-black text-red-600 tabular-nums text-base">{fmtCurrency(item.amount)}</span>
                       <button type="button" onClick={() => deleteItem(item.id)} disabled={busy}
-                        className="h-8 w-8 rounded-lg border border-red-200 text-red-500 hover:bg-red-50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50">
+                        className="h-8 w-8 rounded-lg border border-red-200 dark:border-red-900/50 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50">
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>
                   </div>
                 ))}
               </div>
-              <div className="border-t bg-red-50 px-6 py-4 flex justify-between items-center">
-                <span className="text-sm font-bold text-red-700 uppercase tracking-wider">Total Outstanding ({fmtDate(date)})</span>
+              <div className="border-t border-border bg-red-50 dark:bg-red-950/10 px-6 py-4 flex justify-between items-center">
+                <span className="text-sm font-bold text-red-750 dark:text-red-300 uppercase tracking-wider">Total Outstanding ({fmtDate(date)})</span>
                 <span className="text-xl font-black text-red-600 tabular-nums">{fmtCurrency(total)}</span>
               </div>
             </>
@@ -264,7 +264,7 @@ function OutstandingPage() {
 
       {/* Add Dialog */}
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
-        <DialogContent className="max-w-sm bg-white rounded-2xl shadow-xl p-6">
+        <DialogContent className="max-w-sm bg-background border border-border rounded-2xl shadow-xl p-6">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-lg font-bold">
               <Coins className="h-5 w-5 text-primary" /> Record Outstanding Entry
@@ -273,7 +273,7 @@ function OutstandingPage() {
           <form onSubmit={addItem} className="space-y-4 mt-3">
             <div className="space-y-1.5">
               <Label className="text-xs font-bold text-muted-foreground uppercase">Date</Label>
-              <Input type="text" readOnly disabled value={fmtDate(date)} className="h-11 bg-slate-50 font-medium" />
+              <Input type="text" readOnly disabled value={fmtDate(date)} className="h-11 bg-muted/40 font-medium" />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs font-bold text-muted-foreground uppercase">Customer Name</Label>

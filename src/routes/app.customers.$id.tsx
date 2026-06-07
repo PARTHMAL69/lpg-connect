@@ -440,7 +440,7 @@ function Page() {
 
 
       {/* Customer Info Card */}
-      <Card className="shadow-soft border-slate-100 bg-surface/90 backdrop-blur-sm relative overflow-hidden">
+      <Card className="shadow-soft border-border bg-card relative overflow-hidden">
         <div className="absolute top-0 left-0 w-1.5 h-full bg-primary" />
         <CardContent className="p-5">
           <div className="flex flex-wrap items-center justify-between gap-4">
@@ -470,20 +470,20 @@ function Page() {
           </div>
 
           {/* Detailed Lifetime Stats & Last Transaction Dates Grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4 border-t border-slate-100 pt-4 text-xs">
-            <div className="bg-slate-50/50 p-3 rounded-lg border">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4 border-t border-border pt-4 text-xs">
+            <div className="bg-muted/30 p-3 rounded-lg border border-border">
               <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Last Sale Date</span>
               <div className="font-semibold text-foreground mt-1">{stats.lastSaleDate ? fmtDate(stats.lastSaleDate) : "No Sales Recorded"}</div>
             </div>
-            <div className="bg-slate-50/50 p-3 rounded-lg border">
+            <div className="bg-muted/30 p-3 rounded-lg border border-border">
               <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Last Payment Date</span>
               <div className="font-semibold text-foreground mt-1">{stats.lastPaymentDate ? fmtDate(stats.lastPaymentDate) : "No Payments Recorded"}</div>
             </div>
-            <div className="bg-slate-50/50 p-3 rounded-lg border">
+            <div className="bg-muted/30 p-3 rounded-lg border border-border">
               <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Lifetime Sales</span>
               <div className="font-bold text-foreground mt-1">{fmtCurrency(stats.lifetimeSales)}</div>
             </div>
-            <div className="bg-slate-50/50 p-3 rounded-lg border">
+            <div className="bg-muted/30 p-3 rounded-lg border border-border">
               <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Lifetime Payments</span>
               <div className="font-bold text-success mt-1">{fmtCurrency(stats.lifetimePayments)}</div>
             </div>
@@ -535,7 +535,7 @@ function Page() {
             {loading ? (
               <div className="p-12 text-center text-xs text-muted-foreground animate-pulse">Loading transaction statements...</div>
             ) : ledger.length === 0 ? (
-              <Card className="shadow-soft p-12 text-center text-sm text-muted-foreground flex flex-col items-center justify-center gap-2 border border-slate-100">
+              <Card className="shadow-soft p-12 text-center text-sm text-muted-foreground flex flex-col items-center justify-center gap-2 border border-border">
                 <Receipt className="h-10 w-10 text-muted-foreground/45" />
                 <p>No ledger transactions found for this customer.</p>
               </Card>
@@ -552,12 +552,12 @@ function Page() {
                         setSelectedItem(r);
                         setShowDetailsModal(true);
                       }}
-                      className={`shadow-soft border border-slate-100 hover:border-primary/20 transition-all cursor-pointer relative overflow-hidden bg-white p-4 ${isVoided ? "opacity-75 bg-slate-50/50" : ""}`}
+                      className={`shadow-soft border border-border hover:border-primary/20 transition-all cursor-pointer relative overflow-hidden bg-card p-4 ${isVoided ? "opacity-75 bg-muted/30" : ""}`}
                     >
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                         <div className="flex items-start gap-3.5">
                           <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-                            isVoided ? "bg-slate-200 text-slate-400" : (isSale ? "bg-primary-soft text-primary" : "bg-success-soft text-success")
+                            isVoided ? "bg-muted text-muted-foreground" : (isSale ? "bg-primary-soft text-primary" : "bg-success-soft text-success")
                           }`}>
                             {isSale ? <ShoppingBag className="h-5 w-5" /> : <HandCoins className="h-5 w-5" />}
                           </div>
@@ -570,10 +570,10 @@ function Page() {
                               
                               {/* Payment Mode Badge */}
                               <span className={`text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full border ${
-                                isVoided ? "bg-slate-100 text-slate-400 border-slate-200" :
-                                (r.paymentMode === "credit" || r.paymentMode === "udhari" ? "bg-red-50 text-red-600 border-red-200" :
-                                 r.paymentMode === "split" ? "bg-blue-50 text-blue-600 border-blue-200" :
-                                 "bg-emerald-50 text-emerald-600 border-emerald-200")
+                                isVoided ? "bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-350 border-slate-200 dark:border-slate-750" :
+                                (r.paymentMode === "credit" || r.paymentMode === "udhari" ? "bg-red-50 dark:bg-red-950/20 text-red-600 dark:text-red-300 border-red-200 dark:border-red-900/50" :
+                                 r.paymentMode === "split" ? "bg-blue-50 dark:bg-blue-950/20 text-blue-600 dark:text-blue-300 border-blue-200 dark:border-blue-900/50" :
+                                 "bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-300 border-emerald-200 dark:border-emerald-900/50")
                               }`}>
                                 {r.paymentMode}
                               </span>
@@ -611,7 +611,7 @@ function Page() {
                           {/* Amount Panel */}
                           <div className="text-left sm:text-right space-y-0.5">
                             <div className={`text-base font-black tracking-tight ${
-                              isVoided ? "text-slate-400 line-through" : (isSale ? "text-destructive" : "text-success")
+                              isVoided ? "text-muted-foreground line-through" : (isSale ? "text-destructive" : "text-success")
                             }`}>
                               {isSale ? "+" : "-"}{fmtCurrency(isSale ? r.debit : r.credit)}
                             </div>
@@ -715,7 +715,7 @@ function Page() {
                         setSelectedItem(item);
                         setShowDetailsModal(true);
                       }}
-                      className={`p-4 flex items-center justify-between hover:bg-muted/15 transition-colors cursor-pointer ${s.is_deleted ? "bg-slate-50/50 text-muted-foreground" : ""}`}
+                      className={`p-4 flex items-center justify-between hover:bg-muted/15 transition-colors cursor-pointer ${s.is_deleted ? "bg-muted/30 text-muted-foreground" : ""}`}
                     >
                       <div>
                         <div className="font-bold text-foreground flex items-center gap-2">
@@ -778,7 +778,7 @@ function Page() {
                         setSelectedItem(item);
                         setShowDetailsModal(true);
                       }}
-                      className={`p-4 flex items-center justify-between hover:bg-muted/15 transition-colors cursor-pointer ${p.is_deleted ? "bg-slate-50/50 text-muted-foreground" : ""}`}
+                      className={`p-4 flex items-center justify-between hover:bg-muted/15 transition-colors cursor-pointer ${p.is_deleted ? "bg-muted/30 text-muted-foreground" : ""}`}
                     >
                       <div>
                         <div className="font-bold text-foreground flex items-center gap-2">
@@ -805,7 +805,7 @@ function Page() {
 
       {/* Collect Payment Dialog (Modal) */}
       <Dialog open={showPaymentModal} onOpenChange={setShowPaymentModal}>
-        <DialogContent className="max-w-md bg-white border border-slate-100 shadow-xl rounded-2xl p-6">
+        <DialogContent className="max-w-md bg-background border border-border shadow-xl rounded-2xl p-6">
           <DialogHeader>
             <DialogTitle className="text-xl font-bold tracking-tight text-foreground flex items-center gap-2">
               <HandCoins className="h-5 w-5 text-success" /> Receive Ledger Payment
@@ -891,7 +891,7 @@ function Page() {
 
       {/* Transaction Details & Audit Trail Dialog */}
       <Dialog open={showDetailsModal} onOpenChange={setShowDetailsModal}>
-        <DialogContent className="max-w-lg bg-white border border-slate-100 shadow-xl rounded-2xl p-6">
+        <DialogContent className="max-w-lg bg-background border border-border shadow-xl rounded-2xl p-6">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold tracking-tight text-foreground flex items-center gap-2">
               <Info className="h-5 w-5 text-primary" /> Transaction Details
@@ -905,7 +905,7 @@ function Page() {
             <div className="space-y-5 mt-4">
               
               {/* Primary metrics panel */}
-              <div className="grid grid-cols-2 gap-4 bg-muted/40 p-4 rounded-xl border border-slate-100">
+              <div className="grid grid-cols-2 gap-4 bg-muted/40 p-4 rounded-xl border border-border">
                 <div>
                   <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Type</span>
                   <div className="font-bold text-sm text-foreground mt-0.5">
@@ -987,7 +987,7 @@ function Page() {
               </div>
 
               {/* AUDIT TRAIL METADATA SECTION */}
-              <div className="space-y-2.5 bg-slate-50/50 p-4 rounded-xl border border-dashed border-slate-200">
+              <div className="space-y-2.5 bg-muted/40 p-4 rounded-xl border border-dashed border-border">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5 select-none">
                   <Clock className="h-3.5 w-3.5 text-muted-foreground" /> System Records
                 </h4>

@@ -415,7 +415,7 @@ function Page() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs border-collapse">
                     <thead>
-                      <tr className="bg-slate-50 border-b border-border/80 text-[10px] uppercase font-bold tracking-wider text-muted-foreground">
+                      <tr className="bg-muted/50 border-b border-border/80 text-[10px] uppercase font-bold tracking-wider text-muted-foreground">
                         <th className="p-4">Date</th>
                         <th className="p-4">Delivery Boy</th>
                         <th className="p-4">Customer</th>
@@ -432,13 +432,13 @@ function Page() {
                           <td className="p-4 font-semibold text-foreground whitespace-nowrap">{fmtDate(item.sale_date)}</td>
                           <td className="p-4 font-bold text-primary">{item.delivery_boy?.name}</td>
                           <td className="p-4 font-semibold text-foreground">{item.customer?.name}</td>
-                          <td className="p-4 whitespace-nowrap font-medium text-slate-500">{item.customer?.village ?? "—"}</td>
-                          <td className="p-4 font-semibold text-slate-700">{item.product?.name}</td>
+                          <td className="p-4 whitespace-nowrap font-medium text-muted-foreground">{item.customer?.village ?? "—"}</td>
+                          <td className="p-4 font-semibold text-slate-700 dark:text-slate-350">{item.product?.name}</td>
                           <td className="p-4 text-center font-bold text-foreground bg-primary-soft/5">{item.quantity}</td>
                           <td className="p-4 text-right font-extrabold text-success-dark">{fmtCurrency(item.commission_amount)}</td>
                           <td className="p-4 text-center whitespace-nowrap">
                             <span className={`inline-block text-[9px] uppercase font-black px-2 py-0.5 rounded border ${
-                              item.payment_mode === "credit" ? "bg-red-50 text-red-600 border-red-200" : "bg-emerald-50 text-emerald-600 border-emerald-200"
+                              item.payment_mode === "credit" ? "bg-red-50 dark:bg-red-950/20 text-red-600 dark:text-red-300 border-red-200 dark:border-red-900/50" : "bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-300 border-emerald-200 dark:border-emerald-900/50"
                             }`}>
                               {item.payment_mode}
                             </span>
@@ -520,7 +520,7 @@ function Page() {
 
       {/* Confirmation Dialog for Archiving Delivery Boy */}
       <Dialog open={!!confirmVoidId} onOpenChange={(v) => { if (!v) setConfirmVoidId(null); }}>
-        <DialogContent className="max-w-sm bg-white border border-slate-100 shadow-xl rounded-2xl p-6">
+        <DialogContent className="max-w-sm bg-background border border-border shadow-xl rounded-2xl p-6">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold text-destructive flex items-center gap-2">
               ⚠️ Archive Delivery Boy?

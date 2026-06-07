@@ -274,13 +274,13 @@ function Page() {
               ) : filtered.length === 0 ? (
                 <EmptyState title={t("common.noData")} />
               ) : (
-                <div className="divide-y divide-border/60 border-slate-100">
+                <div className="divide-y divide-border/60 border-border">
                   {filtered.map((p) => (
                     <div 
                       key={p.id} 
                       onClick={() => { setSelectedProduct(p); setShowDetails(true); }}
                       className={`p-4 flex flex-wrap items-center justify-between gap-4 transition-colors cursor-pointer ${
-                        p.is_deleted ? "bg-slate-50/50 text-muted-foreground line-through" : "hover:bg-accent/5"
+                        p.is_deleted ? "bg-muted/30 text-muted-foreground line-through" : "hover:bg-accent/5"
                       }`}
                     >
                       <div className="font-bold text-foreground flex items-center gap-2">
@@ -353,7 +353,7 @@ function Page() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs border-collapse">
                     <thead>
-                      <tr className="bg-slate-50 border-b border-border/80 text-[10px] uppercase font-bold tracking-wider text-muted-foreground">
+                      <tr className="bg-muted/50 border-b border-border/80 text-[10px] uppercase font-bold tracking-wider text-muted-foreground">
                         <th className="p-4">Product Name</th>
                         <th className="p-4 text-center">Opening Stock</th>
                         <th className="p-4 text-center">Inbound (Purchases)</th>
@@ -371,7 +371,7 @@ function Page() {
                         return (
                           <tr key={p.id} className="hover:bg-muted/5 transition-colors">
                             <td className="p-4 font-bold text-foreground">{p.name}</td>
-                            <td className="p-4 text-center font-semibold text-slate-500">{bal.openingStock} units</td>
+                            <td className="p-4 text-center font-semibold text-slate-500 dark:text-slate-400">{bal.openingStock} units</td>
                             <td className="p-4 text-center font-semibold text-emerald-600">+{purchases}</td>
                             <td className="p-4 text-center font-semibold text-rose-600">-{sales}</td>
                             <td className="p-4 text-right bg-primary-soft/5">
@@ -396,7 +396,7 @@ function Page() {
 
               {/* Purchase form card */}
               <Card className="shadow-soft border"><CardContent className="p-4">
-                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider border-b pb-2 flex items-center gap-1.5">
+                <h4 className="text-xs font-bold text-foreground uppercase tracking-wider border-b pb-2 flex items-center gap-1.5">
                   📥 Record Stock Purchase
                 </h4>
                 <form onSubmit={handlePurchase} className="space-y-3.5 mt-3">
@@ -431,7 +431,7 @@ function Page() {
 
               {/* Adjustment form card */}
               <Card className="shadow-soft border"><CardContent className="p-4">
-                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider border-b pb-2 flex items-center gap-1.5">
+                <h4 className="text-xs font-bold text-foreground uppercase tracking-wider border-b pb-2 flex items-center gap-1.5">
                   🔧 Record Stock Adjustment
                 </h4>
                 <form onSubmit={handleAdjustment} className="space-y-3.5 mt-3">
@@ -476,7 +476,7 @@ function Page() {
 
               {/* Transfer form card */}
               <Card className="shadow-soft border"><CardContent className="p-4">
-                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider border-b pb-2 flex items-center gap-1.5">
+                <h4 className="text-xs font-bold text-foreground uppercase tracking-wider border-b pb-2 flex items-center gap-1.5">
                   🚚 Record Stock Transfer
                 </h4>
                 <form onSubmit={handleTransfer} className="space-y-3.5 mt-3">
@@ -521,7 +521,7 @@ function Page() {
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
-                    <tr className="bg-slate-50 border-b border-border/80 text-[10px] uppercase font-bold tracking-wider text-muted-foreground">
+                    <tr className="bg-muted/50 border-b border-border/80 text-[10px] uppercase font-bold tracking-wider text-muted-foreground">
                       <th className="p-4">Timestamp</th>
                       <th className="p-4">Product Name</th>
                       <th className="p-4">Movement Type</th>
@@ -550,7 +550,7 @@ function Page() {
                           {item.quantity > 0 ? `+${item.quantity}` : item.quantity}
                         </td>
                         <td className="p-4 font-mono text-[10px] text-foreground font-semibold uppercase">{item.reference.substring(0, 8)}</td>
-                        <td className="p-4 font-medium text-slate-500">{item.description}</td>
+                        <td className="p-4 font-medium text-slate-500 dark:text-slate-400">{item.description}</td>
                         <td className="p-4 text-[10px] font-mono text-muted-foreground whitespace-nowrap">
                           {item.created_by ? `UID:${item.created_by.substring(0, 8)}` : "System / Seeder"}
                         </td>
@@ -566,7 +566,7 @@ function Page() {
 
       {/* Product Details & System Audit Trail Modal */}
       <Dialog open={showDetails} onOpenChange={setShowDetails}>
-        <DialogContent className="max-w-md bg-white border border-slate-100 shadow-xl rounded-2xl p-6">
+        <DialogContent className="max-w-md bg-background border border-border shadow-xl rounded-2xl p-6">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold tracking-tight text-foreground flex items-center gap-2">
               <Info className="h-5 w-5 text-primary" /> Product Registry Details
@@ -580,7 +580,7 @@ function Page() {
             <div className="space-y-5 mt-4">
               
               {/* Primary metrics panel */}
-              <div className="grid grid-cols-2 gap-4 bg-muted/40 p-4 rounded-xl border border-slate-100">
+              <div className="grid grid-cols-2 gap-4 bg-muted/40 p-4 rounded-xl border border-border">
                 <div>
                   <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Product Rate</span>
                   <div className="font-black text-lg text-primary mt-0.5">
@@ -613,7 +613,7 @@ function Page() {
               </div>
 
               {/* AUDIT TRAIL METADATA SECTION */}
-              <div className="space-y-2.5 bg-slate-50/50 p-4 rounded-xl border border-dashed border-slate-200">
+              <div className="space-y-2.5 bg-muted/40 p-4 rounded-xl border border-dashed border-border">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5 select-none">
                   <Clock className="h-3.5 w-3.5 text-muted-foreground" /> System Records
                 </h4>
@@ -682,7 +682,7 @@ function Page() {
 
       {/* Confirmation Dialog for Archive Product */}
       <Dialog open={!!confirmArchiveId} onOpenChange={(v) => { if (!v) setConfirmArchiveId(null); }}>
-        <DialogContent className="max-w-sm bg-white border border-slate-100 shadow-xl rounded-2xl p-6">
+        <DialogContent className="max-w-sm bg-background border border-border shadow-xl rounded-2xl p-6">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold text-destructive flex items-center gap-2">
               ⚠️ Archive Product?

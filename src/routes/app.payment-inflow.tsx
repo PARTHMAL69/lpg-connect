@@ -254,7 +254,7 @@ function PaymentInflowPage() {
 
       {/* Add Dialog */}
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
-        <DialogContent className="max-w-sm bg-white rounded-2xl shadow-xl p-6">
+        <DialogContent className="max-w-sm bg-background border border-border rounded-2xl shadow-xl p-6">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-lg font-bold">
               <ArrowDownToLine className="h-5 w-5 text-emerald-500" /> Record Payment Inflow
@@ -286,7 +286,7 @@ function PaymentInflowPage() {
               <Input required type="number" step="any" min="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" className="h-11 font-bold text-lg" />
             </div>
             {paymentType === "split" && (
-              <Card className="p-4 bg-muted/40 border border-slate-100 space-y-3 rounded-lg">
+              <Card className="p-4 bg-muted/40 border border-border space-y-3 rounded-lg">
                 <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Split Payment Breakdown</h4>
                 <div className="grid grid-cols-3 gap-2">
                   <div className="space-y-1">

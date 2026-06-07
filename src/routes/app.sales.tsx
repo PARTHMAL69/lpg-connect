@@ -430,7 +430,7 @@ function Page() {
                   key={r.id} 
                   onClick={() => { setSelectedSale(r); setShowDetails(true); }}
                   className={`p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-all cursor-pointer ${
-                    r.is_deleted ? "bg-slate-50/50 text-muted-foreground" : "hover:bg-accent/5"
+                    r.is_deleted ? "bg-slate-50/50 dark:bg-slate-900/30 text-muted-foreground" : "hover:bg-accent/5"
                   }`}
                 >
                   <div className="min-w-0 space-y-1.5 flex-1">
@@ -511,7 +511,7 @@ function Page() {
 
       {/* Sale Details & System Audit Trail Modal */}
       <Dialog open={showDetails} onOpenChange={setShowDetails}>
-        <DialogContent className="max-w-lg bg-white border border-slate-100 shadow-xl rounded-2xl p-6">
+        <DialogContent className="max-w-lg bg-background border border-border shadow-xl rounded-2xl p-6">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold tracking-tight text-foreground flex items-center gap-2">
               <Info className="h-5 w-5 text-primary" /> Sale Invoice Details
@@ -525,7 +525,7 @@ function Page() {
             <div className="space-y-5 mt-4">
               
               {/* Primary metrics panel */}
-              <div className="grid grid-cols-2 gap-4 bg-muted/40 p-4 rounded-xl border border-slate-100">
+              <div className="grid grid-cols-2 gap-4 bg-muted/40 p-4 rounded-xl border border-border">
                 <div>
                   <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Product Sold</span>
                   <div className="font-bold text-sm text-foreground mt-0.5">
@@ -580,7 +580,7 @@ function Page() {
               </div>
 
               {/* AUDIT TRAIL METADATA SECTION */}
-              <div className="space-y-2.5 bg-slate-50/50 p-4 rounded-xl border border-dashed border-slate-200">
+              <div className="space-y-2.5 bg-muted/40 p-4 rounded-xl border border-dashed border-border">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5 select-none">
                   <Clock className="h-3.5 w-3.5 text-muted-foreground" /> System Records
                 </h4>
@@ -649,7 +649,7 @@ function Page() {
 
       {/* Confirmation overlay for Void Sale */}
       <Dialog open={!!confirmVoidId} onOpenChange={(v) => { if (!v) setConfirmVoidId(null); }}>
-        <DialogContent className="max-w-sm bg-white border border-slate-100 shadow-xl rounded-2xl p-6">
+        <DialogContent className="max-w-sm bg-background border border-border shadow-xl rounded-2xl p-6">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold text-destructive flex items-center gap-2">
               ⚠️ Cancel Sale Invoice?
@@ -1120,7 +1120,7 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
           const isCnc = prod ? prod.name.toLowerCase().includes("cnc") : false;
           
           return (
-            <Card key={row.key} className="p-4 border border-slate-100 bg-slate-50/30 rounded-lg relative space-y-3">
+            <Card key={row.key} className="p-4 border border-border bg-muted/20 rounded-lg relative space-y-3">
               {prodRows.length > 1 && (
                 <button
                   type="button"
@@ -1130,7 +1130,7 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
                   ✕ Remove
                 </button>
               )}
-              <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Product #{index + 1}</h4>
+              <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Product #{index + 1}</h4>
               
               {/* Product Select */}
               <div className="space-y-1.5">
@@ -1140,7 +1140,7 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
                   onValueChange={(v) => handleProductChange(index, v)}
                   required
                 >
-                  <SelectTrigger className="h-11 bg-white">
+                  <SelectTrigger className="h-11 bg-background">
                     <SelectValue placeholder="Select Product..." />
                   </SelectTrigger>
                   <SelectContent>
@@ -1168,7 +1168,7 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
                       const val = Math.max(1, Math.round(Number(e.target.value) || 1));
                       handleRowValueChange(index, "quantity", String(val));
                     }}
-                    className="h-11 bg-white font-bold text-sm"
+                    className="h-11 bg-background font-bold text-sm"
                   />
                 </div>
                 <div className="space-y-1.5">
@@ -1184,7 +1184,7 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
                       const val = Math.max(0, parseFloat(e.target.value) || 0);
                       handleRowValueChange(index, "rate", String(val));
                     }}
-                    className="h-11 bg-white font-bold text-sm"
+                    className="h-11 bg-background font-bold text-sm"
                   />
                 </div>
               </div>
@@ -1203,7 +1203,7 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
                       const val = Math.max(0, parseFloat(e.target.value) || 0);
                       handleRowValueChange(index, "commission_rate", String(val));
                     }}
-                    className="h-11 bg-white"
+                    className="h-11 bg-background"
                   />
                 </div>
               )}
@@ -1223,7 +1223,7 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
                     const val = Math.max(0, Math.min(qVal, Math.round(Number(e.target.value) || 0)));
                     handleRowValueChange(index, "prepaid_qty", String(val));
                   }}
-                  className="h-11 bg-white font-bold text-sm"
+                  className="h-11 bg-background font-bold text-sm"
                   placeholder="Prepaid quantity..."
                 />
               </div>
@@ -1263,7 +1263,7 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
 
       {/* Split Payment Breakdown */}
       {isSplit && (
-        <Card className="p-4 bg-muted/40 border border-slate-100 space-y-3 rounded-lg">
+        <Card className="p-4 bg-muted/40 border border-border space-y-3 rounded-lg">
           <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Split Payment Breakdown</h4>
           
           <div className="grid grid-cols-3 gap-2">
@@ -1306,11 +1306,11 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
         <div className="space-y-3 divide-y divide-primary/10">
           {calculatedRows.map((r, idx) => (
             <div key={r.key} className={`text-xs space-y-1.5 ${idx > 0 ? "pt-2.5" : ""}`}>
-              <div className="font-bold text-slate-700 flex justify-between">
+              <div className="font-bold text-slate-700 dark:text-slate-200 flex justify-between">
                 <span>{idx + 1}. {r.product_name} ({r.qty} unit{r.qty !== 1 ? "s" : ""})</span>
                 {r.prep > 0 && <span className="text-slate-400 font-normal">({r.prep} prepaid)</span>}
               </div>
-              <div className="flex justify-between items-center text-slate-500 pl-2">
+              <div className="flex justify-between items-center text-slate-500 dark:text-slate-400 pl-2">
                 <span>Gross Amount ({r.billedQty} × {fmtCurrency(r.rateVal)})</span>
                 <span>{fmtCurrency(r.grossTotal)}</span>
               </div>
@@ -1320,7 +1320,7 @@ function SaleForm({ editSale, onDone }: { editSale: Row | null; onDone: () => vo
                   <span>-{fmtCurrency(r.commissionTotal)}</span>
                 </div>
               )}
-              <div className="flex justify-between items-center font-semibold text-slate-600 pl-2 pt-0.5">
+              <div className="flex justify-between items-center font-semibold text-slate-600 dark:text-slate-350 pl-2 pt-0.5">
                 <span>Product Subtotal</span>
                 <span>{fmtCurrency(r.netTotal)}</span>
               </div>

@@ -550,7 +550,7 @@ function UdhariPage() {
  
       {/* Payment dialog */}
       <Dialog open={!!payTarget} onOpenChange={(open) => !open && setPayTarget(null)}>
-        <DialogContent className="max-w-md bg-white border border-slate-100 shadow-xl rounded-2xl p-6">
+        <DialogContent className="max-w-md bg-background border border-border shadow-xl rounded-2xl p-6">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <IndianRupee className="h-5 w-5 text-emerald-500" />
@@ -558,8 +558,8 @@ function UdhariPage() {
             </DialogTitle>
           </DialogHeader>
           {payTarget && (
-            <form onSubmit={handlePayment} className="space-y-4">
-              <div className="p-3 bg-red-500/5 border border-red-100 rounded-lg text-center">
+            <form onSubmit={handlePayment} className="space-y-4 pt-4">
+              <div className="p-3 bg-red-500/5 border border-red-100 dark:border-red-900/30 rounded-lg text-center">
                 <div className="text-xs text-muted-foreground uppercase font-bold tracking-wider">Current Outstanding</div>
                 <div className="text-2xl font-extrabold text-destructive mt-1 tabular-nums">{fmtCurrency(payTarget.outstanding)}</div>
                 <div className="text-[10px] text-muted-foreground mt-1">
@@ -616,10 +616,10 @@ function UdhariPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Statement Modal */}
+      {/* Statement overlay */}
       <Dialog open={!!stmtTarget} onOpenChange={(open) => !open && setStmtTarget(null)}>
-        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col bg-white border border-slate-100 shadow-xl rounded-2xl p-0 overflow-hidden">
-          <DialogHeader className="px-6 pt-6 pb-4 border-b border-slate-100 shrink-0">
+        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col bg-background border border-border shadow-xl rounded-2xl p-0 overflow-hidden">
+          <DialogHeader className="px-6 pt-6 pb-4 border-b border-border shrink-0">
             <DialogTitle className="flex items-center gap-2 text-base">
               <FileText className="h-5 w-5 text-primary" />
               Udhari Statement — {stmtTarget?.name}
@@ -643,17 +643,17 @@ function UdhariPage() {
                   key={item.id}
                   className={`flex items-start justify-between gap-4 rounded-xl border px-4 py-3 transition-colors ${
                     item.type === "debit"
-                      ? "bg-red-50/60 border-red-100 hover:bg-red-50"
-                      : "bg-emerald-50/60 border-emerald-100 hover:bg-emerald-50"
+                      ? "bg-red-50/60 dark:bg-red-950/10 border-red-100 dark:border-red-900/30 hover:bg-red-50 dark:hover:bg-red-950/20"
+                      : "bg-emerald-50/60 dark:bg-emerald-950/10 border-emerald-100 dark:border-emerald-900/30 hover:bg-emerald-50 dark:hover:bg-emerald-950/20"
                   }`}
                 >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-semibold text-sm text-slate-800 leading-snug">{item.label}</span>
+                      <span className="font-semibold text-sm text-foreground leading-snug">{item.label}</span>
                       <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${
                         item.mode === "Udhari" || item.mode === "Split+Udhari"
-                          ? "bg-amber-50 text-amber-700 border-amber-200"
-                          : "bg-slate-100 text-slate-600 border-slate-200"
+                          ? "bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-350 border-amber-200 dark:border-amber-900/50"
+                          : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-350 border-slate-200 dark:border-slate-700"
                       }`}>{item.mode}</span>
                     </div>
                     <div className="flex items-center gap-1.5 mt-1 text-xs text-muted-foreground">
@@ -671,9 +671,9 @@ function UdhariPage() {
             )}
           </div>
 
-          {/* Statement footer totals */}
+           {/* Statement footer totals */}
           {!stmtLoading && stmtItems.length > 0 && (
-            <div className="shrink-0 border-t border-slate-100 bg-slate-50 px-6 py-4 grid grid-cols-3 gap-3 text-center">
+            <div className="shrink-0 border-t border-border bg-muted/40 px-6 py-4 grid grid-cols-3 gap-3 text-center">
               <div>
                 <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Total Udhari</div>
                 <div className="text-lg font-black text-red-600 tabular-nums mt-0.5">
@@ -703,15 +703,15 @@ function AgingCard({ label, amount, tone, onClick, active }: {
   onClick: () => void; active: boolean;
 }) {
   const tones: Record<string, string> = {
-    muted: "border-slate-200 hover:border-slate-300",
-    info: "border-blue-200/60 hover:border-blue-400 bg-blue-50/30",
-    warning: "border-amber-200/60 hover:border-amber-400 bg-amber-50/30",
-    orange: "border-orange-200/60 hover:border-orange-400 bg-orange-50/30",
-    danger: "border-red-200/60 hover:border-red-400 bg-red-50/30",
+    muted: "border-slate-200 dark:border-slate-800 hover:border-slate-350 bg-background",
+    info: "border-blue-200/60 dark:border-blue-900/40 hover:border-blue-400 bg-blue-50/30 dark:bg-blue-950/20",
+    warning: "border-amber-200/60 dark:border-amber-900/40 hover:border-amber-400 bg-amber-50/30 dark:bg-amber-950/20",
+    orange: "border-orange-200/60 dark:border-orange-900/40 hover:border-orange-400 bg-orange-50/30 dark:bg-orange-950/20",
+    danger: "border-red-200/60 dark:border-red-900/40 hover:border-red-400 bg-red-50/30 dark:bg-red-950/20",
   };
   const valTone: Record<string, string> = {
-    muted: "text-foreground", info: "text-blue-700",
-    warning: "text-amber-700", orange: "text-orange-700", danger: "text-destructive",
+    muted: "text-foreground", info: "text-blue-700 dark:text-blue-400",
+    warning: "text-amber-700 dark:text-amber-400", orange: "text-orange-700 dark:text-orange-400", danger: "text-destructive dark:text-red-400",
   };
   return (
     <button onClick={onClick} type="button"
@@ -724,11 +724,11 @@ function AgingCard({ label, amount, tone, onClick, active }: {
 
 function BucketBadge({ bucket, days }: { bucket: Bucket; days: number }) {
   const map: Record<Bucket, { label: string; cls: string }> = {
-    current: { label: "Today", cls: "bg-slate-100 text-slate-700 border-slate-200" },
-    b30: { label: `${days}d`, cls: "bg-blue-50 text-blue-700 border-blue-200" },
-    b60: { label: `${days}d`, cls: "bg-amber-50 text-amber-700 border-amber-200" },
-    b90: { label: `${days}d`, cls: "bg-orange-50 text-orange-700 border-orange-200" },
-    b90plus: { label: `${days}d`, cls: "bg-red-50 text-red-700 border-red-200" },
+    current: { label: "Today", cls: "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700" },
+    b30: { label: `${days}d`, cls: "bg-blue-50 dark:bg-blue-950/20 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-900/40" },
+    b60: { label: `${days}d`, cls: "bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-900/40" },
+    b90: { label: `${days}d`, cls: "bg-orange-50 dark:bg-orange-950/20 text-orange-700 dark:text-orange-300 border-orange-200 dark:border-orange-900/40" },
+    b90plus: { label: `${days}d`, cls: "bg-red-50 dark:bg-red-950/20 text-red-700 dark:text-red-300 border-red-200 dark:border-red-900/40" },
   };
   const m = map[bucket];
   return <span className={`inline-block text-[10px] font-extrabold uppercase tracking-wider px-2 py-1 rounded border ${m.cls}`}>{m.label}</span>;
