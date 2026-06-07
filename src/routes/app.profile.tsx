@@ -6,15 +6,14 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { getMe, updateUserProfile, updateAgencyLogo, updateAgencyDetails } from "@/lib/auth.functions";
-import { saveBackupSettings, sendManualBackupEmail } from "@/lib/backup.functions";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { 
-  Mail, Save, Send, Download, MailCheck, Trash2, Plus, 
-  Settings2, Loader2, Sparkles, FileSpreadsheet, ShieldAlert,
+  Save, Download, 
+  Settings2, Loader2, FileSpreadsheet, 
   User, Upload, Image, Camera
 } from "lucide-react";
 import * as XLSXStyle from "xlsx-js-style";
@@ -37,26 +36,11 @@ function ProfilePage() {
     queryFn: () => meFn() 
   });
   
-  const saveSettingsFn = useServerFn(saveBackupSettings);
-  const sendManualFn = useServerFn(sendManualBackupEmail);
   const updateProfileFn = useServerFn(updateUserProfile);
   const updateLogoFn = useServerFn(updateAgencyLogo);
   const updateAgencyFn = useServerFn(updateAgencyDetails);
 
-  const [emails, setEmails] = useState<string[]>([]);
-  const [newEmail, setNewEmail] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [sendingManual, setSendingManual] = useState(false);
   const [exportingHistory, setExportingHistory] = useState(false);
-  
-  // Date picker state for manual accounts report backup sending
-  const [backupDate, setBackupDate] = useState(() => {
-    const d = new Date();
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    return `${y}-${m}-${day}`;
-  });
 
   // Profile fields state
   const [username, setUsername] = useState("");
@@ -76,9 +60,6 @@ function ProfilePage() {
 
   // Populate state from user/agency details when loaded
   useEffect(() => {
-    if (me?.agency?.backup_emails) {
-      setEmails(me.agency.backup_emails);
-    }
     if (me?.user) {
       setUsername(me.user.username || "");
       setFullName(me.user.full_name || "");
@@ -89,67 +70,6 @@ function ProfilePage() {
     }
   }, [me]);
 
-  const addEmail = (e: React.FormEvent) => {
-    e.preventDefault();
-    const email = newEmail.trim().toLowerCase();
-    if (!email) return;
-
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      toast.error("Please enter a valid email address.");
-      return;
-    }
-
-    if (emails.includes(email)) {
-      toast.error("This email is already added.");
-      return;
-    }
-
-    if (emails.length >= 3) {
-      toast.error("You can configure up to 3 backup emails.");
-      return;
-    }
-
-    setEmails([...emails, email]);
-    setNewEmail("");
-  };
-
-  const removeEmail = (index: number) => {
-    setEmails(emails.filter((_, i) => i !== index));
-  };
-
-  const handleSave = async () => {
-    if (emails.length === 0) {
-      toast.error("Please add at least one backup email address before saving.");
-      return;
-    }
-    setSaving(true);
-    try {
-      await saveSettingsFn({ data: { emails } });
-      toast.success("Backup settings saved! A test report has been sent to your emails.");
-      void queryClient.invalidateQueries({ queryKey: ["me"] });
-    } catch (e: any) {
-      toast.error(getFriendlyErrorMessage(e));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleSendManual = async () => {
-    if (emails.length === 0) {
-      toast.error("Please save at least one backup email address first.");
-      return;
-    }
-    setSendingManual(true);
-    try {
-      await sendManualFn({ data: { date: backupDate } });
-      toast.success(`Accounts report for ${fmtDate(backupDate)} has been sent to your email(s)!`);
-    } catch (e: any) {
-      toast.error(getFriendlyErrorMessage(e));
-    } finally {
-      setSendingManual(false);
-    }
-  };
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1085,16 +1005,16 @@ function ProfilePage() {
       <div className="flex flex-col gap-1.5">
         <h1 className="text-3xl font-extrabold tracking-tight flex items-center gap-2">
           <Settings2 className="h-8 w-8 text-primary animate-pulse" />
-          Profile & Backup Settings
+          Profile & Agency Settings
         </h1>
         <p className="text-muted-foreground text-sm">
-          Manage your personal credentials, customize branding logo, and configure backup destinations.
+          Manage your personal credentials, customize branding logo, and export history archives.
         </p>
       </div>
 
       <div className="grid gap-6 md:grid-cols-12">
         {/* Left Column: Profile & Branding Settings */}
-        <div className="md:col-span-5 space-y-6">
+        <div className="md:col-span-7 space-y-6">
           {/* User Profile Settings */}
           <Card className="border-muted-foreground/10 bg-card/60 backdrop-blur-md shadow-xl">
             <CardHeader>
@@ -1270,142 +1190,8 @@ function ProfilePage() {
           </Card>
         </div>
 
-        {/* Right Column: Backup Email destinations & Manual Send */}
-        <div className="md:col-span-7 space-y-6">
-          <Card className="border-muted-foreground/10 bg-card/60 backdrop-blur-md shadow-xl overflow-hidden relative">
-            <div className="absolute top-0 right-0 p-4">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
-                <Sparkles className="h-3 w-3 animate-bounce" />
-                Daily Backup at 9:30 PM IST
-              </span>
-            </div>
-
-            <CardHeader>
-              <CardTitle className="text-xl flex items-center gap-2">
-                <Mail className="h-5 w-5 text-primary" />
-                Backup Email Destinations
-              </CardTitle>
-              <CardDescription className="max-w-[80%]">
-                Configure up to 3 email addresses where your daily account books and sales reports will be sent as Excel spreadsheets.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {/* Added emails list */}
-              <div className="space-y-2.5">
-                <Label className="text-sm font-semibold text-muted-foreground">Active Email Destinations ({emails.length}/3)</Label>
-                {emails.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-8 px-4 border border-dashed rounded-xl bg-muted/20 text-muted-foreground border-muted-foreground/20">
-                    <MailCheck className="h-10 w-10 mb-2 opacity-40 text-muted-foreground" />
-                    <p className="text-sm font-medium">No email addresses configured</p>
-                    <p className="text-xs mt-1">Add up to 3 emails below to enable automatic backups.</p>
-                  </div>
-                ) : (
-                  <div className="grid gap-2">
-                    {emails.map((email, idx) => (
-                      <div 
-                        key={email} 
-                        className="flex items-center justify-between px-4 py-3 rounded-xl border border-muted-foreground/10 bg-muted/40 transition-all hover:bg-muted/60 hover:shadow-sm"
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <span className="w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs">
-                            {idx + 1}
-                          </span>
-                          <span className="font-semibold text-sm truncate">{email}</span>
-                        </div>
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          onClick={() => removeEmail(idx)}
-                          className="h-8 w-8 text-destructive hover:bg-destructive/10 rounded-lg"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Email input form */}
-              {emails.length < 3 && (
-                <form onSubmit={addEmail} className="flex gap-2">
-                  <div className="flex-1 space-y-1.5">
-                    <Label htmlFor="email" className="sr-only">Email address</Label>
-                    <Input
-                      id="email"
-                      type="email"
-                      placeholder="Enter email address (e.g. owner@gmail.com)"
-                      value={newEmail}
-                      onChange={(e) => setNewEmail(e.target.value)}
-                      className="h-11"
-                    />
-                  </div>
-                  <Button type="submit" variant="outline" className="h-11 px-4 font-semibold border-muted-foreground/20">
-                    <Plus className="h-4 w-4 mr-1.5 text-primary" /> Add Email
-                  </Button>
-                </form>
-              )}
-
-              {/* Warning callout */}
-              <div className="flex gap-3 p-4 rounded-xl bg-amber-500/10 text-amber-600 border border-amber-500/20 text-xs leading-relaxed">
-                <ShieldAlert className="h-5 w-5 shrink-0" />
-                <div>
-                  <span className="font-bold">Automated Daily Backups:</span> Saving your settings triggers a test report email to all addresses. Daily ledger summaries are dispatched at <strong>9:30 PM IST</strong>.
-                </div>
-              </div>
-
-              {/* Actions footer */}
-              <div className="flex flex-col gap-3 pt-4 border-t border-muted-foreground/10">
-                <div className="flex flex-col sm:flex-row gap-3">
-                  <Button 
-                    onClick={handleSave} 
-                    disabled={saving}
-                    className="flex-1 h-11 font-bold bg-gradient-to-r from-primary to-primary/80 text-primary-foreground shadow-lg shadow-primary/25"
-                  >
-                    {saving ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Saving Settings...
-                      </>
-                    ) : (
-                      <>
-                        <Save className="h-4 w-4 mr-2" /> Save Backup Settings
-                      </>
-                    )}
-                  </Button>
-                </div>
-                
-                <div className="flex flex-col sm:flex-row items-end sm:items-center gap-3 bg-muted/20 p-3 rounded-xl border border-muted-foreground/5 mt-1">
-                  <div className="flex-1 min-w-[150px] w-full space-y-1">
-                    <Label htmlFor="backup-date" className="text-[11px] text-muted-foreground font-semibold">Select Cashbook Date to Send</Label>
-                    <Input
-                      id="backup-date"
-                      type="date"
-                      value={backupDate}
-                      onChange={(e) => setBackupDate(e.target.value)}
-                      className="h-11 bg-background"
-                    />
-                  </div>
-                  <Button 
-                    variant="outline" 
-                    onClick={handleSendManual} 
-                    disabled={sendingManual || emails.length === 0}
-                    className="w-full sm:w-48 h-11 font-bold border-muted-foreground/20 hover:bg-muted/50 shadow-sm"
-                  >
-                    {sendingManual ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Sending...
-                      </>
-                    ) : (
-                      <>
-                        <Send className="h-4 w-4 mr-2" /> Send on Mail
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
+        {/* Right Column: Historical Export */}
+        <div className="md:col-span-5 space-y-6">
           {/* History Archive Export */}
           <Card className="border-muted-foreground/10 bg-card/60 backdrop-blur-md shadow-xl overflow-hidden">
             <CardHeader>

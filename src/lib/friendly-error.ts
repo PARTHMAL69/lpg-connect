@@ -47,35 +47,15 @@ export function getFriendlyError(err: unknown): string {
   if (message.includes("password is too short") || message.includes("Password should be")) {
     return "Your password must be at least 8 characters long.";
   }
-  if (message.includes("is already in the list")) {
-    return "This email is already in your backup list.";
-  }
-  if (message.includes("maximum of 3") || message.includes("max(3)")) {
-    return "You can configure a maximum of 3 backup email addresses.";
-  }
-  if (message.includes("No backup emails")) {
-    return "Please save at least one backup email address first.";
-  }
-
   // Database errors  
-  if (message.includes("backup_emails") || message.includes("logo_url") || (message.includes("column") && message.includes("does not exist"))) {
-    return "Database columns are missing. Please execute the SQL script in your Supabase SQL Editor: ALTER TABLE agencies ADD COLUMN IF NOT EXISTS logo_url text; ALTER TABLE agencies ADD COLUMN IF NOT EXISTS backup_emails text[];";
+  if (message.includes("logo_url") || (message.includes("column") && message.includes("does not exist"))) {
+    return "Database columns are missing. Please execute the SQL script in your Supabase SQL Editor: ALTER TABLE agencies ADD COLUMN IF NOT EXISTS logo_url text;";
   }
   if (message.includes("PGRST") || message.includes("relation") || message.includes("column")) {
     return "A database error occurred. Please refresh the page and try again.";
   }
   if (message.includes("network") || message.includes("fetch") || message.toLowerCase().includes("failed to fetch")) {
     return "Network connection issue. Please check your internet and try again.";
-  }
-
-  // Resend email errors
-  if (message.includes("You can only send testing emails to")) {
-    const match = message.match(/testing emails to your own email address \(([^)]+)\)/);
-    const ownerEmail = match ? match[1] : "your registered email";
-    return `Resend Sandbox Limit: You can only send test emails to your verified Resend account email (${ownerEmail}). To send to other email addresses, you must verify your custom domain on Resend.com.`;
-  }
-  if (message.includes("Resend") || message.includes("resend") || message.includes("validation_error")) {
-    return "Could not send the email. Ensure you are sending only to your registered Resend email address, or check your Resend configuration.";
   }
 
   // Generic user-facing messages

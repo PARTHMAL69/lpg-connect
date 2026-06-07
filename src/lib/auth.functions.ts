@@ -322,34 +322,23 @@ export const getMe = createServerFn({ method: "GET" })
         .maybeSingle(),
       admin.from("user_roles").select("role, agency_id").eq("user_id", context.userId),
     ]);
-    let agency = null as null | { id: string; name: string; code: string; default_language: string; backup_emails: string[] | null; logo_url: string | null };
+    let agency = null as null | { id: string; name: string; code: string; default_language: string; logo_url: string | null };
     if (au?.agency_id) {
-      // 1. Try fetching with both backup_emails and logo_url
+      // Try fetching with logo_url
       const { data: ag, error: agErr } = await admin
         .from("agencies")
-        .select("id, name, code, default_language, backup_emails, logo_url")
+        .select("id, name, code, default_language, logo_url")
         .eq("id", au.agency_id)
         .maybeSingle();
       if (agErr) {
-        console.warn("Failed to fetch agencies with new columns. Retrying with secondary fallback...", agErr.message);
-        // 2. Try fetching with backup_emails only (logo_url might be missing)
-        const { data: agBackupOnly, error: backupOnlyErr } = await admin
+        console.warn("Failed to fetch agencies with logo_url. Retrying with basic columns only...", agErr.message);
+        // Fall back to basic columns only (logo_url might be missing)
+        const { data: agBasic } = await admin
           .from("agencies")
-          .select("id, name, code, default_language, backup_emails")
+          .select("id, name, code, default_language")
           .eq("id", au.agency_id)
           .maybeSingle();
-        if (backupOnlyErr) {
-          console.warn("Failed to fetch backup_emails. Retrying with basic columns only...", backupOnlyErr.message);
-          // 3. Fall back to standard columns only (both columns are missing)
-          const { data: agBasic } = await admin
-            .from("agencies")
-            .select("id, name, code, default_language")
-            .eq("id", au.agency_id)
-            .maybeSingle();
-          agency = agBasic ? { ...agBasic, backup_emails: null, logo_url: null } : null;
-        } else {
-          agency = agBackupOnly ? { ...agBackupOnly, logo_url: null } : null;
-        }
+        agency = agBasic ? { ...agBasic, logo_url: null } : null;
       } else {
         agency = ag ?? null;
       }
