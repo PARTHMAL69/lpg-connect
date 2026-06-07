@@ -484,6 +484,45 @@ export const updateAgencyLogo = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+/** Updates the agency's name details. */
+export const updateAgencyDetails = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        name: z.string().trim().min(2).max(100),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const admin = getAdminClient();
+    
+    // 1. Fetch user's agency_id
+    const { data: au } = await admin
+      .from("agency_users")
+      .select("agency_id")
+      .eq("user_id", context.userId)
+      .maybeSingle();
+      
+    if (!au || !au.agency_id) {
+      throw new Error("Unauthorized: User has no associated agency.");
+    }
+    
+    // 2. Update agencies table
+    const { error: updateErr } = await admin
+      .from("agencies")
+      .update({
+        name: data.name,
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", au.agency_id);
+      
+    if (updateErr) throw new Error(updateErr.message);
+    
+    return { ok: true };
+  });
+
+
 export const listAgencyUsers = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {

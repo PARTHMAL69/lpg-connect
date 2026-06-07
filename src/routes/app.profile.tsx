@@ -5,7 +5,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
-import { getMe, updateUserProfile, updateAgencyLogo } from "@/lib/auth.functions";
+import { getMe, updateUserProfile, updateAgencyLogo, updateAgencyDetails } from "@/lib/auth.functions";
 import { saveBackupSettings, sendManualBackupEmail } from "@/lib/backup.functions";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -41,6 +41,7 @@ function ProfilePage() {
   const sendManualFn = useServerFn(sendManualBackupEmail);
   const updateProfileFn = useServerFn(updateUserProfile);
   const updateLogoFn = useServerFn(updateAgencyLogo);
+  const updateAgencyFn = useServerFn(updateAgencyDetails);
 
   const [emails, setEmails] = useState<string[]>([]);
   const [newEmail, setNewEmail] = useState("");
@@ -63,6 +64,10 @@ function ProfilePage() {
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingLogo, setSavingLogo] = useState(false);
+  
+  // Agency fields state
+  const [agencyName, setAgencyName] = useState("");
+  const [savingAgency, setSavingAgency] = useState(false);
 
   // User-friendly error translator
   function getFriendlyErrorMessage(err: any): string {
@@ -80,6 +85,7 @@ function ProfilePage() {
     }
     if (me?.agency) {
       setLogoUrl(me.agency.logo_url || null);
+      setAgencyName(me.agency.name || "");
     }
   }, [me]);
 
@@ -181,6 +187,29 @@ function ProfilePage() {
       toast.error(getFriendlyErrorMessage(e));
     } finally {
       setSavingProfile(false);
+    }
+  };
+
+  const handleSaveAgency = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanName = agencyName.trim();
+    if (!cleanName) {
+      toast.error("Please enter an agency name.");
+      return;
+    }
+    if (cleanName.length < 2) {
+      toast.error("Agency name must be at least 2 characters.");
+      return;
+    }
+    setSavingAgency(true);
+    try {
+      await updateAgencyFn({ data: { name: cleanName } });
+      toast.success("Agency name updated successfully!");
+      void queryClient.invalidateQueries({ queryKey: ["me"] });
+    } catch (e: any) {
+      toast.error(getFriendlyErrorMessage(e));
+    } finally {
+      setSavingAgency(false);
     }
   };
 
@@ -1112,6 +1141,59 @@ function ProfilePage() {
                   ) : (
                     <>
                       <Save className="mr-2 h-4 w-4" /> Save Profile Details
+                    </>
+                  )}
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+
+          {/* Agency Settings Card */}
+          <Card className="border-muted-foreground/10 bg-card/60 backdrop-blur-md shadow-xl">
+            <CardHeader>
+              <CardTitle className="text-xl flex items-center gap-2">
+                <Settings2 className="h-5 w-5 text-primary" />
+                Agency Profile Details
+              </CardTitle>
+              <CardDescription>
+                Change the name of your agency as displayed in sidebars and reports.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleSaveAgency} className="space-y-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="agencyName">Agency Name</Label>
+                  <Input
+                    id="agencyName"
+                    value={agencyName}
+                    onChange={(e) => setAgencyName(e.target.value)}
+                    placeholder="Agency Name"
+                    className="h-11"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="agencyCode">Agency Code</Label>
+                  <Input
+                    id="agencyCode"
+                    value={me?.agency?.code || ""}
+                    disabled
+                    placeholder="Agency Code"
+                    className="h-11 bg-muted/40 font-mono select-none"
+                  />
+                  <p className="text-[11px] text-muted-foreground">Unique identifier used for agency logins (non-editable).</p>
+                </div>
+                <Button 
+                  type="submit" 
+                  disabled={savingAgency}
+                  className="w-full h-11 font-bold bg-gradient-to-r from-primary to-primary/80 shadow-md mt-2"
+                >
+                  {savingAgency ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving Agency Name...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="mr-2 h-4 w-4" /> Save Agency Details
                     </>
                   )}
                 </Button>
