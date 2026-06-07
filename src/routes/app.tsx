@@ -8,7 +8,7 @@ import { useAuth } from "@/lib/auth-context";
 import {
   LayoutDashboard, ShoppingCart, Users, Package, IndianRupee,
   Receipt, Wallet, Truck, BookOpen, LogOut, Flame, Menu, UserCog,
-  ArrowDownToLine, ArrowUpFromLine, Coins,
+  ArrowDownToLine, ArrowUpFromLine, Coins, Moon, Sun,
 } from "lucide-react";
 import { useState, useMemo, useEffect } from "react";
 import { cn } from "@/lib/utils";
@@ -45,6 +45,34 @@ function AppLayout() {
   const [open, setOpen] = useState(false);
   const nav = useNavigate();
 
+  // Dark mode theme state
+  const [theme, setTheme] = useState<"light" | "dark">("light");
+
+  useEffect(() => {
+    // Initial theme setup
+    const isDark = localStorage.getItem("theme") === "dark" || 
+      (!localStorage.getItem("theme") && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    if (isDark) {
+      document.documentElement.classList.add("dark");
+      setTheme("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+      setTheme("light");
+    }
+  }, []);
+
+  const toggleTheme = () => {
+    const nextTheme = theme === "dark" ? "light" : "dark";
+    setTheme(nextTheme);
+    if (nextTheme === "dark") {
+      document.documentElement.classList.add("dark");
+      localStorage.setItem("theme", "dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+      localStorage.setItem("theme", "light");
+    }
+  };
+
   useEffect(() => {
     const handleWheel = (e: WheelEvent) => {
       if (document.activeElement && (document.activeElement as HTMLInputElement).type === "number") {
@@ -75,7 +103,7 @@ function AppLayout() {
   }
 
   return (
-    <div className="min-h-screen flex bg-muted/30">
+    <div className="min-h-screen flex bg-muted/30 text-foreground transition-colors duration-200">
       {/* Sidebar (desktop) */}
       <aside className="hidden lg:flex w-64 flex-col bg-sidebar border-r border-sidebar-border">
         <div className="h-16 px-5 flex items-center gap-2 border-b border-sidebar-border">
@@ -109,17 +137,29 @@ function AppLayout() {
           ))}
         </nav>
         <div className="p-3 border-t border-sidebar-border">
-          <div className="text-xs text-muted-foreground mb-2 px-3">{me?.user?.full_name ?? me?.user?.username}</div>
-          <Button variant="ghost" className="w-full justify-start" onClick={signOut}>
+          <div className="flex items-center justify-between mb-2 px-3">
+            <div className="text-xs text-muted-foreground truncate max-w-[150px]">
+              {me?.user?.full_name ?? me?.user?.username}
+            </div>
+            <button 
+              onClick={toggleTheme} 
+              className="text-muted-foreground hover:text-foreground p-1.5 rounded-lg hover:bg-sidebar-accent transition-colors"
+              title={theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}
+            >
+              {theme === "dark" ? <Sun className="w-4 h-4 text-amber-500 animate-spin-slow" /> : <Moon className="w-4 h-4" />}
+            </button>
+          </div>
+          <Button variant="ghost" className="w-full justify-start text-sidebar-foreground hover:bg-sidebar-accent" onClick={signOut}>
             <LogOut className="w-4 h-4 mr-2" /> Sign Out
           </Button>
         </div>
       </aside>
 
-      {/* Mobile header */}
+      {/* Mobile container */}
       <div className="flex-1 flex flex-col min-w-0">
+        {/* Mobile header */}
         <header className="lg:hidden h-14 px-4 flex items-center justify-between border-b bg-background sticky top-0 z-30">
-          <button onClick={() => setOpen(!open)} className="p-2 -ml-2"><Menu className="w-6 h-6" /></button>
+          <button onClick={() => setOpen(!open)} className="p-2 -ml-2 text-foreground"><Menu className="w-6 h-6" /></button>
           <div className="flex items-center gap-2 font-semibold">
             {me?.agency?.logo_url ? (
               <img 
@@ -134,7 +174,16 @@ function AppLayout() {
             )}
             <span className="truncate max-w-[150px]">{me?.agency?.name ?? "LPG Agency"}</span>
           </div>
-          <button onClick={signOut} className="p-2 -mr-2"><LogOut className="w-5 h-5" /></button>
+          <div className="flex items-center gap-1">
+            <button 
+              onClick={toggleTheme} 
+              className="p-2 text-muted-foreground hover:text-foreground"
+              title={theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}
+            >
+              {theme === "dark" ? <Sun className="w-5 h-5 text-amber-500" /> : <Moon className="w-5 h-5" />}
+            </button>
+            <button onClick={signOut} className="p-2 -mr-2 text-muted-foreground hover:text-foreground"><LogOut className="w-5 h-5" /></button>
+          </div>
         </header>
 
         {/* Mobile drawer */}
@@ -142,7 +191,7 @@ function AppLayout() {
           <div className="lg:hidden fixed inset-0 z-40" onClick={() => setOpen(false)}>
             <div className="absolute inset-0 bg-black/40" />
             <aside className="absolute left-0 top-0 bottom-0 w-72 bg-sidebar shadow-xl p-3 overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-              <div className="mb-4 px-2 py-3 border-b flex items-center gap-2.5">
+              <div className="mb-4 px-2 py-3 border-b border-sidebar-border flex items-center gap-2.5">
                 {me?.agency?.logo_url ? (
                   <img 
                     src={me.agency.logo_url} 
@@ -159,22 +208,62 @@ function AppLayout() {
                   <div className="text-xs text-muted-foreground">{me?.agency?.code}</div>
                 </div>
               </div>
-              {navItems.map((n) => (
-                <Link key={n.to} to={n.to} onClick={() => setOpen(false)}
-                  className="flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium hover:bg-sidebar-accent"
-                  activeProps={{ className: "bg-sidebar-accent text-sidebar-primary" }}
-                  activeOptions={{ exact: (n as any).exact }}
-                >
-                  <n.icon className="w-5 h-5" />{n.label}
-                </Link>
-              ))}
+              <div className="space-y-1">
+                {navItems.map((n) => (
+                  <Link key={n.to} to={n.to} onClick={() => setOpen(false)}
+                    className="flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium text-sidebar-foreground hover:bg-sidebar-accent"
+                    activeProps={{ className: "bg-sidebar-accent text-sidebar-primary" }}
+                    activeOptions={{ exact: (n as any).exact }}
+                  >
+                    <n.icon className="w-5 h-5" />{n.label}
+                  </Link>
+                ))}
+              </div>
             </aside>
           </div>
         )}
 
-        <main className={cn("flex-1 p-4 lg:p-8 max-w-7xl w-full mx-auto")}>
+        {/* Main Content Pane */}
+        <main className={cn("flex-1 p-4 pb-24 lg:p-8 max-w-7xl w-full mx-auto")}>
           <Outlet />
         </main>
+
+        {/* Mobile Bottom Navigation Bar (Sticky) */}
+        <nav className="lg:hidden fixed bottom-0 left-0 right-0 h-16 bg-background border-t border-border flex items-center justify-around z-30 pb-safe shadow-lg">
+          <Link 
+            to="/app" 
+            activeOptions={{ exact: true }} 
+            className="flex flex-col items-center justify-center flex-1 h-full text-muted-foreground transition-colors hover:text-foreground" 
+            activeProps={{ className: "text-primary font-semibold dark:text-primary" }}
+          >
+            <LayoutDashboard className="w-5 h-5 mb-0.5" />
+            <span className="text-[10px]">Home</span>
+          </Link>
+          <Link 
+            to="/app/sales" 
+            className="flex flex-col items-center justify-center flex-1 h-full text-muted-foreground transition-colors hover:text-foreground" 
+            activeProps={{ className: "text-primary font-semibold dark:text-primary" }}
+          >
+            <ShoppingCart className="w-5 h-5 mb-0.5" />
+            <span className="text-[10px]">Sales</span>
+          </Link>
+          <Link 
+            to="/app/udhari" 
+            className="flex flex-col items-center justify-center flex-1 h-full text-muted-foreground transition-colors hover:text-foreground" 
+            activeProps={{ className: "text-primary font-semibold dark:text-primary" }}
+          >
+            <IndianRupee className="w-5 h-5 mb-0.5" />
+            <span className="text-[10px]">Credit</span>
+          </Link>
+          <Link 
+            to="/app/profile" 
+            className="flex flex-col items-center justify-center flex-1 h-full text-muted-foreground transition-colors hover:text-foreground" 
+            activeProps={{ className: "text-primary font-semibold dark:text-primary" }}
+          >
+            <UserCog className="w-5 h-5 mb-0.5" />
+            <span className="text-[10px]">Profile</span>
+          </Link>
+        </nav>
       </div>
     </div>
   );
