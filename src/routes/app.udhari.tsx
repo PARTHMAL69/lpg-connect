@@ -410,78 +410,139 @@ function UdhariPage() {
           ) : filtered.length === 0 ? (
             <div className="text-center py-20 text-muted-foreground">No outstanding accounts match the active filters.</div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="border-b bg-muted/40 font-bold text-xs uppercase tracking-wider text-muted-foreground">
-                    <th className="p-4 pl-6">Customer</th>
-                    <th className="p-4">Village</th>
-                    <th className="p-4 text-center">Aging</th>
-                    <th className="p-4">Oldest Debt</th>
-                    <th className="p-4">Last Payment</th>
-                    <th className="p-4 text-right">Outstanding</th>
-                    <th className="p-4 text-center pr-6">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {filtered.map((c) => {
-                    const isPriority = c.ageDays > 60;
-                    return (
-                      <tr 
-                        key={c.id} 
-                        className={`transition-colors border-l-4 ${
-                          isPriority 
-                            ? "bg-destructive/5 hover:bg-destructive/10 border-l-destructive" 
-                            : "hover:bg-muted/30 border-l-transparent"
-                        }`}
-                      >
-                        <td className="p-4 pl-6">
-                          <div className="flex items-center flex-wrap gap-1.5">
-                            <span className="font-bold text-foreground">{c.name}</span>
+            <div>
+              {/* Mobile Card-Based List View */}
+              <div className="md:hidden divide-y divide-border/60">
+                {filtered.map((c) => {
+                  const isPriority = c.ageDays > 60;
+                  return (
+                    <div 
+                      key={c.id} 
+                      className={`p-4 flex flex-col gap-3 transition-colors border-l-4 ${
+                        isPriority ? "bg-destructive/5 border-l-destructive" : "border-l-transparent"
+                      }`}
+                    >
+                      <div className="flex justify-between items-start gap-2">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-bold text-foreground text-sm truncate">{c.name}</span>
                             {isPriority && (
-                              <span className="bg-destructive/15 text-destructive border border-destructive/25 text-[8px] font-black uppercase px-1.5 py-0.5 rounded animate-pulse">
+                              <span className="bg-destructive/15 text-destructive border border-destructive/25 text-[8px] font-black uppercase px-1.5 py-0.5 rounded">
                                 🚨 Priority
                               </span>
                             )}
                           </div>
-                          <div className="text-xs text-muted-foreground mt-0.5 font-medium">
+                          <div className="text-[11px] text-muted-foreground mt-0.5 font-semibold">
                             {c.mobile ?? "—"}{c.consumer_number ? ` · ${c.consumer_number}` : ""}
                           </div>
-                        </td>
-                      <td className="p-4 text-sm text-muted-foreground">{c.village || "—"}</td>
-                      <td className="p-4 text-center"><BucketBadge bucket={c.bucket} days={c.ageDays} /></td>
-                      <td className="p-4 text-xs text-muted-foreground whitespace-nowrap">
-                        {c.oldestUnpaidDate ? (
-                          <div className="flex items-center gap-1.5">
-                            <Calendar className="h-3.5 w-3.5" />
-                            {fmtDate(c.oldestUnpaidDate)}
-                          </div>
-                        ) : "—"}
-                      </td>
-                      <td className="p-4 text-xs text-muted-foreground whitespace-nowrap">
-                        {c.lastPaymentDate ? fmtDate(c.lastPaymentDate) : <span className="text-destructive font-semibold">Never</span>}
-                      </td>
-                      <td className="p-4 text-right font-extrabold text-destructive tabular-nums">
-                        <div className="flex items-center gap-1.5 justify-end">
+                        </div>
+                        <div className="text-right shrink-0">
+                          <div className="text-base font-black text-destructive tabular-nums">{fmtCurrency(c.outstanding)}</div>
+                          <div className="text-[9px] text-muted-foreground font-bold uppercase tracking-wider">Outstanding</div>
+                        </div>
+                      </div>
 
-                          <span>{fmtCurrency(c.outstanding)}</span>
+                      <div className="grid grid-cols-3 gap-2 bg-muted/40 p-2.5 rounded-xl border border-border/20 text-center text-xs">
+                        <div>
+                          <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider">Village</span>
+                          <div className="font-bold text-foreground truncate mt-0.5">{c.village || "—"}</div>
                         </div>
-                      </td>
-                      <td className="p-4 text-center pr-6">
-                        <div className="flex items-center justify-center gap-2">
-                          <Button size="sm" variant="outline" onClick={() => setPayTarget(c)} className="h-9 hover:border-emerald-500 hover:text-emerald-600">
-                            <PlusCircle className="h-4 w-4 mr-1.5" /> Receive Payment
-                          </Button>
-                          <Button size="sm" variant="outline" onClick={() => openStatement(c)} className="h-9">
-                              <Eye className="h-4 w-4 mr-1.5" /> View Statement
-                            </Button>
+                        <div>
+                          <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider">Aging</span>
+                          <div className="mt-0.5"><BucketBadge bucket={c.bucket} days={c.ageDays} /></div>
                         </div>
-                      </td>
-                    </tr>
+                        <div>
+                          <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider">Oldest Debt</span>
+                          <div className="font-bold text-foreground mt-0.5 truncate">{c.oldestUnpaidDate ? fmtDate(c.oldestUnpaidDate) : "—"}</div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-end gap-2 pt-1">
+                        <Button size="sm" variant="outline" onClick={() => setPayTarget(c)} className="h-9 flex-1 hover:border-emerald-500 hover:text-emerald-600 font-bold">
+                          <PlusCircle className="h-4 w-4 mr-1 text-emerald-500" /> Pay
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => openStatement(c)} className="h-9 flex-1 font-bold">
+                          <Eye className="h-4 w-4 mr-1" /> Statement
+                        </Button>
+                      </div>
+                    </div>
                   );
                 })}
-                </tbody>
-              </table>
+              </div>
+
+              {/* Desktop Table View */}
+              <div className="hidden md:block overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b bg-muted/40 font-bold text-xs uppercase tracking-wider text-muted-foreground">
+                      <th className="p-4 pl-6">Customer</th>
+                      <th className="p-4">Village</th>
+                      <th className="p-4 text-center">Aging</th>
+                      <th className="p-4">Oldest Debt</th>
+                      <th className="p-4">Last Payment</th>
+                      <th className="p-4 text-right">Outstanding</th>
+                      <th className="p-4 text-center pr-6">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {filtered.map((c) => {
+                      const isPriority = c.ageDays > 60;
+                      return (
+                        <tr 
+                          key={c.id} 
+                          className={`transition-colors border-l-4 ${
+                            isPriority 
+                              ? "bg-destructive/5 hover:bg-destructive/10 border-l-destructive" 
+                              : "hover:bg-muted/30 border-l-transparent"
+                          }`}
+                        >
+                          <td className="p-4 pl-6">
+                            <div className="flex items-center flex-wrap gap-1.5">
+                              <span className="font-bold text-foreground">{c.name}</span>
+                              {isPriority && (
+                                <span className="bg-destructive/15 text-destructive border border-destructive/25 text-[8px] font-black uppercase px-1.5 py-0.5 rounded animate-pulse">
+                                  🚨 Priority
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-xs text-muted-foreground mt-0.5 font-medium">
+                              {c.mobile ?? "—"}{c.consumer_number ? ` · ${c.consumer_number}` : ""}
+                            </div>
+                          </td>
+                          <td className="p-4 text-sm text-muted-foreground">{c.village || "—"}</td>
+                          <td className="p-4 text-center"><BucketBadge bucket={c.bucket} days={c.ageDays} /></td>
+                          <td className="p-4 text-xs text-muted-foreground whitespace-nowrap">
+                            {c.oldestUnpaidDate ? (
+                              <div className="flex items-center gap-1.5">
+                                <Calendar className="h-3.5 w-3.5" />
+                                {fmtDate(c.oldestUnpaidDate)}
+                              </div>
+                            ) : "—"}
+                          </td>
+                          <td className="p-4 text-xs text-muted-foreground whitespace-nowrap">
+                            {c.lastPaymentDate ? fmtDate(c.lastPaymentDate) : <span className="text-destructive font-semibold">Never</span>}
+                          </td>
+                          <td className="p-4 text-right font-extrabold text-destructive tabular-nums">
+                            <div className="flex items-center gap-1.5 justify-end">
+                              <span>{fmtCurrency(c.outstanding)}</span>
+                            </div>
+                          </td>
+                          <td className="p-4 text-center pr-6">
+                            <div className="flex items-center justify-center gap-2">
+                              <Button size="sm" variant="outline" onClick={() => setPayTarget(c)} className="h-9 hover:border-emerald-500 hover:text-emerald-600">
+                                <PlusCircle className="h-4 w-4 mr-1.5" /> Receive Payment
+                              </Button>
+                              <Button size="sm" variant="outline" onClick={() => openStatement(c)} className="h-9">
+                                <Eye className="h-4 w-4 mr-1.5" /> View Statement
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </CardContent>

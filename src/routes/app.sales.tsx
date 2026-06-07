@@ -429,43 +429,46 @@ function Page() {
                 <div 
                   key={r.id} 
                   onClick={() => { setSelectedSale(r); setShowDetails(true); }}
-                  className={`p-5 flex flex-wrap items-center justify-between gap-4 transition-all cursor-pointer ${
+                  className={`p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-all cursor-pointer ${
                     r.is_deleted ? "bg-slate-50/50 text-muted-foreground" : "hover:bg-accent/5"
                   }`}
                 >
-                  <div className="min-w-0 space-y-1">
+                  <div className="min-w-0 space-y-1.5 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-bold text-foreground">{r.product_name} × {r.quantity}</span>
-                      <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded ${
-                        r.payment_mode === "credit" ? "bg-red-50 text-red-600 border border-red-200" : "bg-emerald-50 text-emerald-600 border border-emerald-200"
+                      <span className="text-sm font-extrabold text-foreground">{r.product_name} × {r.quantity}</span>
+                      <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full border ${
+                        r.payment_mode === "credit" 
+                          ? "bg-red-50 text-red-600 border-red-200 dark:bg-red-950/20 dark:text-red-400 dark:border-red-900/50" 
+                          : "bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-400 dark:border-emerald-900/50"
                       }`}>
                         {r.payment_mode}
                       </span>
                       {r.is_deleted && (
-                        <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-muted text-muted-foreground border">
+                        <span className="text-[9px] uppercase font-bold px-2 py-0.5 rounded-full bg-muted text-muted-foreground border dark:border-border/30">
                           Voided
                         </span>
                       )}
                     </div>
-                    <div className="text-xs text-muted-foreground font-medium">
-                      Cust: <span className="text-foreground font-semibold">{r.customer_name ?? "Direct / Walk-in"}</span> · 
-                      Date: <span className="text-foreground font-semibold">{fmtDate(r.sale_date)}</span> · 
-                      Ref: <span className="font-semibold uppercase">{r.id.substring(0, 8)}</span>
+                    <div className="text-xs text-muted-foreground font-semibold space-y-0.5 sm:space-y-0">
+                      <div>Cust: <span className="text-foreground font-bold">{r.customer_name ?? "Direct / Walk-in"}</span></div>
+                      <div className="text-[11px] text-muted-foreground opacity-90">
+                        Date: <span className="font-bold text-foreground">{fmtDate(r.sale_date)}</span> • Ref: <span className="font-mono font-bold uppercase">{r.id.substring(0, 8)}</span>
+                      </div>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-4" onClick={(e) => e.stopPropagation()}>
-                    <div className="text-right space-y-0.5">
-                      <div className="text-sm font-bold text-primary">{fmtCurrency(r.total)}</div>
-                      <div className="text-[10px] text-muted-foreground uppercase font-semibold">Net Received: {fmtCurrency(r.net_amount)}</div>
+                  <div className="flex items-center justify-between sm:justify-end gap-4 pt-2 sm:pt-0 border-t sm:border-t-0 border-border/40" onClick={(e) => e.stopPropagation()}>
+                    <div className="text-left sm:text-right space-y-0.5">
+                      <div className="text-sm font-black text-primary">{fmtCurrency(r.total)}</div>
+                      <div className="text-[10px] text-muted-foreground uppercase font-bold">Net: {fmtCurrency(r.net_amount)}</div>
                     </div>
 
                     <div className="flex items-center gap-1">
                       <Button 
                         variant="ghost" 
-                        size="sm" 
+                        size="icon" 
                         onClick={() => { setSelectedSale(r); setShowDetails(true); }}
-                        className="h-9 w-9 p-0 text-muted-foreground hover:text-foreground"
+                        className="h-9 w-9 text-muted-foreground hover:text-foreground hover:bg-muted"
                       >
                         <Eye className="h-4 w-4" />
                       </Button>
@@ -473,17 +476,17 @@ function Page() {
                         <>
                           <Button 
                             variant="ghost" 
-                            size="sm" 
+                            size="icon" 
                             onClick={() => setEditSale(r)}
-                            className="h-9 w-9 p-0 text-muted-foreground hover:text-foreground"
+                            className="h-9 w-9 text-muted-foreground hover:text-foreground hover:bg-muted"
                           >
                             <Edit className="h-4 w-4" />
                           </Button>
                           <Button 
                             variant="ghost" 
-                            size="sm" 
+                            size="icon" 
                             onClick={() => setConfirmVoidId(r.id)}
-                            className="h-9 w-9 p-0 text-destructive hover:bg-destructive/5"
+                            className="h-9 w-9 text-destructive hover:bg-destructive/10"
                           >
                             <Archive className="h-4 w-4" />
                           </Button>
@@ -491,11 +494,10 @@ function Page() {
                       ) : (
                         <Button 
                           variant="ghost" 
-                          size="sm" 
                           onClick={() => restoreSale(r.id)}
-                          className="h-9 px-2 text-success hover:bg-success/5 font-semibold text-xs"
+                          className="h-9 px-2.5 text-success hover:bg-success/10 font-bold text-xs gap-1"
                         >
-                          <RotateCcw className="h-3.5 w-3.5" />
+                          <RotateCcw className="h-3.5 w-3.5" /> Restore
                         </Button>
                       )}
                     </div>

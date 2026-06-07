@@ -282,20 +282,39 @@ function Dash() {
   return (
     <div className="space-y-6 pb-8">
       
-      {/* Premium Welcome Banner */}
-      <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 text-white rounded-2xl p-6 shadow-soft flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border border-slate-800">
-        <div className="space-y-1.5">
-          <div className="flex items-center gap-2">
-            <Flame className="h-6 w-6 text-primary animate-pulse" />
-            <h1 className="text-2xl font-bold tracking-wide">{agency?.name ?? "LPG Distributorship"}</h1>
+      {/* Compact Welcome & Agency Header Banner */}
+      <Card className="border-muted-foreground/10 bg-card/60 backdrop-blur-md shadow-md overflow-hidden">
+        <CardContent className="p-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div className="flex items-center gap-3 min-w-0">
+            {agency?.logo_url ? (
+              <img 
+                src={agency.logo_url} 
+                className="w-12 h-12 rounded-xl object-cover border border-border/80 shadow-sm shrink-0" 
+                alt="Agency Logo" 
+              />
+            ) : (
+              <div className="w-12 h-12 rounded-xl bg-primary text-primary-foreground grid place-items-center shadow-inner shrink-0">
+                <Flame className="w-6 h-6 animate-pulse" />
+              </div>
+            )}
+            <div className="min-w-0 space-y-0.5">
+              <h1 className="text-xl font-bold tracking-tight text-foreground truncate">{agency?.name ?? "LPG Distributorship"}</h1>
+              <div className="text-xs text-muted-foreground font-semibold flex items-center gap-2">
+                <span className="bg-primary/10 text-primary px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider">{agency?.code || "LPG"}</span>
+                <span className="text-muted-foreground/60">•</span>
+                <span className="uppercase tracking-wider text-[10px] text-muted-foreground">Distributorship Dashboard</span>
+              </div>
+            </div>
           </div>
-          <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider">GasFlow Enterprise LPG Distributorship Dashboard</p>
-        </div>
-        <div className="bg-slate-800/80 px-4 py-2.5 rounded-xl border border-slate-700/50 flex flex-col items-end">
-          <span className="text-[10px] text-slate-400 uppercase font-semibold">Today's Date</span>
-          <span className="font-bold text-sm tracking-wide">{fmtDate(todayISO())}</span>
-        </div>
-      </div>
+          <div className="flex flex-col items-start sm:items-end justify-center shrink-0">
+            <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Today's Date</span>
+            <div className="flex items-center gap-1.5 font-bold text-foreground mt-0.5">
+              <Calendar className="h-4 w-4 text-primary shrink-0" />
+              <span className="text-sm tracking-tight">{fmtDate(todayISO())}</span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* KPI Stats Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

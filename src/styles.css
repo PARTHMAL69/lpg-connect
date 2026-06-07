@@ -166,7 +166,12 @@
   }
   /* Larger touch targets on mobile */
   @media (max-width: 640px) {
-    button, [role="button"], a.btn, input, select, textarea {
+    button:not([role="switch"]):not(.h-9):not(.h-8):not(.w-9):not(.w-8), 
+    [role="button"]:not([role="switch"]), 
+    a.btn, 
+    input:not([type="checkbox"]):not([type="radio"]), 
+    select, 
+    textarea {
       min-height: 44px;
     }
   }
