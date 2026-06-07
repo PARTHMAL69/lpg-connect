@@ -682,36 +682,47 @@ export const saveBackupSettings = createServerFn({ method: "POST" })
         const buf = XLSXStyle.write(wb, { type: "buffer", bookType: "xlsx" });
         const base64 = buf.toString("base64");
 
-        const subject = `[Test Auto-Backup] Daily Report - ${agencyName} - ${fmtDate(todayStr)}`;
+        const subject = `Daily Accounts Report (Configuration Test) - ${agencyName}`;
         const html = `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
-            <h2 style="color: #1a3c5e; border-bottom: 2px solid #2e75b6; padding-bottom: 10px; margin-top: 0;">
-              Daily Data Backup Successfully Configured!
-            </h2>
-            <p style="color: #4a5568; font-size: 15px; line-height: 1.6;">
-              Hello, your backup email settings for <strong>${agencyName}</strong> have been saved successfully. 
-              This test backup email has been sent automatically.
-            </p>
-            <div style="background-color: #f7fafc; padding: 15px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #2e75b6;">
-              <h4 style="margin: 0 0 10px 0; color: #2d3748;">Today's Summary (${fmtDate(todayStr)}):</h4>
-              <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
-                <tr>
-                  <td style="padding: 4px 0; color: #718096;">Total Received:</td>
-                  <td style="padding: 4px 0; text-align: right; font-weight: bold; color: #1f7a4d;">₹${metrics.leftGrandTotal.toFixed(2)}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 4px 0; color: #718096;">Total Paid Outflows:</td>
-                  <td style="padding: 4px 0; text-align: right; font-weight: bold; color: #9c0006;">₹${metrics.totalOutflows.toFixed(2)}</td>
-                </tr>
-                <tr style="border-top: 1px solid #e2e8f0;">
-                  <td style="padding: 6px 0 0 0; font-weight: bold; color: #2d3748;">Calculated Balance:</td>
-                  <td style="padding: 6px 0 0 0; text-align: right; font-weight: bold; color: #1a3c5e;">₹${metrics.cashBalance.toFixed(2)}</td>
-                </tr>
-              </table>
+          <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; padding: 0; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03); background-color: #ffffff;">
+            <div style="background: linear-gradient(135deg, #1e3c5e 0%, #12253a 100%); padding: 30px 24px; text-align: center; color: #ffffff;">
+              <h1 style="margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.5px;">Daily Accounts Report</h1>
+              <p style="margin: 5px 0 0 0; font-size: 14px; opacity: 0.85;">${agencyName}</p>
             </div>
-            <p style="color: #718096; font-size: 13px; line-height: 1.5; margin-bottom: 0;">
-              Every day at <strong>9:30 PM</strong>, a copy of your daily styled Excel report containing your Cash Book, Sales Log, and Udhari Ledger will be emailed here.
-            </p>
+            <div style="padding: 24px; color: #334155;">
+              <p style="margin: 0 0 16px 0; font-size: 15px; line-height: 1.6; color: #475569;">
+                Hello, your backup email settings for <strong>${agencyName}</strong> have been configured successfully. This test email confirms that your email address is ready to receive daily ledger summaries.
+              </p>
+              <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin: 20px 0;">
+                <h3 style="margin: 0 0 12px 0; font-size: 15px; font-weight: 600; color: #1e293b;">Configuration Summary</h3>
+                <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                  <tr style="border-bottom: 1px solid #e2e8f0;">
+                    <td style="padding: 8px 0; color: #64748b;">Configured On:</td>
+                    <td style="padding: 8px 0; text-align: right; font-weight: 600; color: #0f172a;">${fmtDate(todayStr)}</td>
+                  </tr>
+                  <tr style="border-bottom: 1px solid #e2e8f0;">
+                    <td style="padding: 8px 0; color: #64748b;">Total Received:</td>
+                    <td style="padding: 8px 0; text-align: right; font-weight: 700; color: #16a34a;">₹${metrics.leftGrandTotal.toFixed(2)}</td>
+                  </tr>
+                  <tr style="border-bottom: 1px solid #e2e8f0;">
+                    <td style="padding: 8px 0; color: #64748b;">Total Paid Outflows:</td>
+                    <td style="padding: 8px 0; text-align: right; font-weight: 700; color: #dc2626;">₹${metrics.totalOutflows.toFixed(2)}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 10px 0 0 0; font-weight: bold; color: #1e293b; font-size: 15px;">Calculated Balance:</td>
+                    <td style="padding: 10px 0 0 0; text-align: right; font-weight: bold; color: #1e3c5e; font-size: 15px;">₹${metrics.cashBalance.toFixed(2)}</td>
+                  </tr>
+                </table>
+              </div>
+              <div style="border-left: 4px solid #1e3c5e; background-color: #eff6ff; padding: 12px 16px; border-radius: 0 8px 8px 0; margin-bottom: 24px;">
+                <p style="margin: 0; font-size: 13px; line-height: 1.5; color: #1e40af;">
+                  <strong>Attachment:</strong> A fully styled daily Excel report containing your Cash Book, Sales Log, and Udhari Ledger is attached below.
+                </p>
+              </div>
+              <p style="margin: 0; font-size: 13px; color: #94a3b8; text-align: center; border-top: 1px solid #f1f5f9; padding-top: 16px;">
+                Every day at 9:30 PM, your daily backup will be sent automatically.
+              </p>
+            </div>
           </div>
         `;
 
@@ -734,7 +745,14 @@ export const saveBackupSettings = createServerFn({ method: "POST" })
 /** Triggers a backup email immediately for the logged-in agency */
 export const sendManualBackupEmail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
     const admin = getAdminClient();
 
     // 1. Fetch user agency and emails
@@ -756,42 +774,54 @@ export const sendManualBackupEmail = createServerFn({ method: "POST" })
       throw new Error("No backup emails configured. Please configure at least one email address first.");
     }
 
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const targetDate = data?.date || new Date().toISOString().slice(0, 10);
 
     // 2. Generate daily cash book report sheet
-    const { wb, metrics } = await compileDailyCashBookWorkbook(admin, au.agency_id, todayStr);
+    const { wb, metrics } = await compileDailyCashBookWorkbook(admin, au.agency_id, targetDate);
     const buf = XLSXStyle.write(wb, { type: "buffer", bookType: "xlsx" });
     const base64 = buf.toString("base64");
 
-    const subject = `[Manual Backup] Daily Report - ${agencyName} - ${fmtDate(todayStr)}`;
+    const subject = `Daily Accounts Report - ${agencyName} - ${fmtDate(targetDate)}`;
     const html = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
-        <h2 style="color: #1a3c5e; border-bottom: 2px solid #2e75b6; padding-bottom: 10px; margin-top: 0;">
-          Manual Data Backup Report
-        </h2>
-        <p style="color: #4a5568; font-size: 15px; line-height: 1.6;">
-          This manual backup report for <strong>${agencyName}</strong> was requested on-demand.
-        </p>
-        <div style="background-color: #f7fafc; padding: 15px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #2e75b6;">
-          <h4 style="margin: 0 0 10px 0; color: #2d3748;">Today's Summary (${fmtDate(todayStr)}):</h4>
-          <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
-            <tr>
-              <td style="padding: 4px 0; color: #718096;">Total Received:</td>
-              <td style="padding: 4px 0; text-align: right; font-weight: bold; color: #1f7a4d;">₹${metrics.leftGrandTotal.toFixed(2)}</td>
-            </tr>
-            <tr>
-              <td style="padding: 4px 0; color: #718096;">Total Paid Outflows:</td>
-              <td style="padding: 4px 0; text-align: right; font-weight: bold; color: #9c0006;">₹${metrics.totalOutflows.toFixed(2)}</td>
-            </tr>
-            <tr style="border-top: 1px solid #e2e8f0;">
-              <td style="padding: 6px 0 0 0; font-weight: bold; color: #2d3748;">Calculated Balance:</td>
-              <td style="padding: 6px 0 0 0; text-align: right; font-weight: bold; color: #1a3c5e;">₹${metrics.cashBalance.toFixed(2)}</td>
-            </tr>
-          </table>
+      <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; padding: 0; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03); background-color: #ffffff;">
+        <div style="background: linear-gradient(135deg, #1e3c5e 0%, #12253a 100%); padding: 30px 24px; text-align: center; color: #ffffff;">
+          <h1 style="margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.5px;">Daily Accounts Report</h1>
+          <p style="margin: 5px 0 0 0; font-size: 14px; opacity: 0.85;">${agencyName}</p>
         </div>
-        <p style="color: #718096; font-size: 13px; margin-bottom: 0;">
-          The full spreadsheet attachment is attached below.
-        </p>
+        <div style="padding: 24px; color: #334155;">
+          <p style="margin: 0 0 16px 0; font-size: 15px; line-height: 1.6; color: #475569;">
+            Please find the manual on-demand accounts report for <strong>${agencyName}</strong> generated for the date of <strong>${fmtDate(targetDate)}</strong>.
+          </p>
+          <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin: 20px 0;">
+            <h3 style="margin: 0 0 12px 0; font-size: 15px; font-weight: 600; color: #1e293b;">Report Details</h3>
+            <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+              <tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 8px 0; color: #64748b;">Report Date:</td>
+                <td style="padding: 8px 0; text-align: right; font-weight: 600; color: #0f172a;">${fmtDate(targetDate)}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 8px 0; color: #64748b;">Total Inflows:</td>
+                <td style="padding: 8px 0; text-align: right; font-weight: 700; color: #16a34a;">₹${metrics.leftGrandTotal.toFixed(2)}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 8px 0; color: #64748b;">Total Paid Outflows:</td>
+                <td style="padding: 8px 0; text-align: right; font-weight: 700; color: #dc2626;">₹${metrics.totalOutflows.toFixed(2)}</td>
+              </tr>
+              <tr>
+                <td style="padding: 10px 0 0 0; font-weight: bold; color: #1e293b; font-size: 15px;">Net Cash Balance:</td>
+                <td style="padding: 10px 0 0 0; text-align: right; font-weight: bold; color: #1e3c5e; font-size: 15px;">₹${metrics.cashBalance.toFixed(2)}</td>
+              </tr>
+            </table>
+          </div>
+          <div style="border-left: 4px solid #1e3c5e; background-color: #eff6ff; padding: 12px 16px; border-radius: 0 8px 8px 0; margin-bottom: 24px;">
+            <p style="margin: 0; font-size: 13px; line-height: 1.5; color: #1e40af;">
+              <strong>Attachment:</strong> A fully detailed, formatted Excel worksheet (containing the Cash Book, Sales Log, and Udhari Ledger) is attached to this email.
+            </p>
+          </div>
+          <p style="margin: 0; font-size: 13px; color: #94a3b8; text-align: center; border-top: 1px solid #f1f5f9; padding-top: 16px;">
+            This backup was requested on-demand. Do not reply to this email.
+          </p>
+        </div>
       </div>
     `;
 
@@ -800,7 +830,7 @@ export const sendManualBackupEmail = createServerFn({ method: "POST" })
       subject: subject,
       htmlContent: html,
       attachmentBase64: base64,
-      filename: `cashbook_${todayStr}.xlsx`,
+      filename: `cashbook_${targetDate}.xlsx`,
     });
 
     return { ok: true };

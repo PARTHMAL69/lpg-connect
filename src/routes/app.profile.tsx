@@ -47,6 +47,15 @@ function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [sendingManual, setSendingManual] = useState(false);
   const [exportingHistory, setExportingHistory] = useState(false);
+  
+  // Date picker state for manual accounts report backup sending
+  const [backupDate, setBackupDate] = useState(() => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  });
 
   // Profile fields state
   const [username, setUsername] = useState("");
@@ -127,8 +136,8 @@ function ProfilePage() {
     }
     setSendingManual(true);
     try {
-      await sendManualFn();
-      toast.success("Today's accounts report has been sent to your email(s)!");
+      await sendManualFn({ data: { date: backupDate } });
+      toast.success(`Accounts report for ${fmtDate(backupDate)} has been sent to your email(s)!`);
     } catch (e: any) {
       toast.error(getFriendlyErrorMessage(e));
     } finally {
@@ -189,38 +198,89 @@ function ProfilePage() {
       return;
     }
 
+    setSavingLogo(true);
     const reader = new FileReader();
     reader.onload = (event) => {
-      const img = new Image();
+      const dataUrlStr = event.target?.result as string;
+      if (!dataUrlStr) {
+        toast.error("Failed to read image file.");
+        setSavingLogo(false);
+        return;
+      }
+      
+      const img = new window.Image();
       img.onload = () => {
-        const canvas = document.createElement("canvas");
-        const MAX_WIDTH = 256;
-        const MAX_HEIGHT = 256;
-        let width = img.width;
-        let height = img.height;
+        try {
+          const canvas = document.createElement("canvas");
+          const MAX_WIDTH = 256;
+          const MAX_HEIGHT = 256;
+          let width = img.width;
+          let height = img.height;
 
-        if (width > height) {
-          if (width > MAX_WIDTH) {
-            height *= MAX_WIDTH / width;
-            width = MAX_WIDTH;
+          if (width === 0 || height === 0) {
+            // Fallback to original image if dimensions are 0
+            if (file.size > 700 * 1024) {
+              toast.error("Resizing image failed and original file is too large (must be under 700KB). Please try a smaller file.");
+              setSavingLogo(false);
+              return;
+            }
+            saveLogo(dataUrlStr);
+            return;
           }
-        } else {
-          if (height > MAX_HEIGHT) {
-            width *= MAX_HEIGHT / height;
-            height = MAX_HEIGHT;
-          }
-        }
 
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext("2d");
-        if (ctx) {
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height = Math.round(height * (MAX_WIDTH / width));
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width = Math.round(width * (MAX_HEIGHT / height));
+              height = MAX_HEIGHT;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            if (file.size > 700 * 1024) {
+              toast.error("Resizing image failed and original file is too large (must be under 700KB). Please try a smaller file.");
+              setSavingLogo(false);
+              return;
+            }
+            saveLogo(dataUrlStr);
+            return;
+          }
+          
           ctx.drawImage(img, 0, 0, width, height);
           const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
           saveLogo(dataUrl);
+        } catch (err: any) {
+          console.error("Canvas resizing failed:", err);
+          if (file.size > 700 * 1024) {
+            toast.error("Resizing image failed and original file is too large (must be under 700KB). Please try a smaller file.");
+            setSavingLogo(false);
+            return;
+          }
+          saveLogo(dataUrlStr);
         }
       };
-      img.src = event.target?.result as string;
+      img.onerror = (err) => {
+        console.error("Image loading failed:", err);
+        if (file.size > 700 * 1024) {
+          toast.error("Image load failed and original file is too large (must be under 700KB). Please try a smaller file.");
+          setSavingLogo(false);
+          return;
+        }
+        saveLogo(dataUrlStr);
+      };
+      img.src = dataUrlStr;
+    };
+    reader.onerror = (err) => {
+      console.error("FileReader failed:", err);
+      toast.error("Failed to read image file.");
+      setSavingLogo(false);
     };
     reader.readAsDataURL(file);
   };
@@ -1213,38 +1273,53 @@ function ProfilePage() {
               </div>
 
               {/* Actions footer */}
-              <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t border-muted-foreground/10">
-                <Button 
-                  onClick={handleSave} 
-                  disabled={saving}
-                  className="flex-1 h-11 font-bold bg-gradient-to-r from-primary to-primary/80 text-primary-foreground shadow-lg shadow-primary/25"
-                >
-                  {saving ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Saving Settings...
-                    </>
-                  ) : (
-                    <>
-                      <Save className="h-4 w-4 mr-2" /> Save Backup Settings
-                    </>
-                  )}
-                </Button>
-                <Button 
-                  variant="outline" 
-                  onClick={handleSendManual} 
-                  disabled={sendingManual || emails.length === 0}
-                  className="sm:w-48 h-11 font-bold border-muted-foreground/20 hover:bg-muted/50"
-                >
-                  {sendingManual ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Sending...
-                    </>
-                  ) : (
-                    <>
-                      <Send className="h-4 w-4 mr-2" /> Send on Mail
-                    </>
-                  )}
-                </Button>
+              <div className="flex flex-col gap-3 pt-4 border-t border-muted-foreground/10">
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <Button 
+                    onClick={handleSave} 
+                    disabled={saving}
+                    className="flex-1 h-11 font-bold bg-gradient-to-r from-primary to-primary/80 text-primary-foreground shadow-lg shadow-primary/25"
+                  >
+                    {saving ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Saving Settings...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="h-4 w-4 mr-2" /> Save Backup Settings
+                      </>
+                    )}
+                  </Button>
+                </div>
+                
+                <div className="flex flex-col sm:flex-row items-end sm:items-center gap-3 bg-muted/20 p-3 rounded-xl border border-muted-foreground/5 mt-1">
+                  <div className="flex-1 min-w-[150px] w-full space-y-1">
+                    <Label htmlFor="backup-date" className="text-[11px] text-muted-foreground font-semibold">Select Cashbook Date to Send</Label>
+                    <Input
+                      id="backup-date"
+                      type="date"
+                      value={backupDate}
+                      onChange={(e) => setBackupDate(e.target.value)}
+                      className="h-11 bg-background"
+                    />
+                  </div>
+                  <Button 
+                    variant="outline" 
+                    onClick={handleSendManual} 
+                    disabled={sendingManual || emails.length === 0}
+                    className="w-full sm:w-48 h-11 font-bold border-muted-foreground/20 hover:bg-muted/50 shadow-sm"
+                  >
+                    {sendingManual ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Sending...
+                      </>
+                    ) : (
+                      <>
+                        <Send className="h-4 w-4 mr-2" /> Send on Mail
+                      </>
+                    )}
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>

@@ -59,36 +59,47 @@ export const Route = createFileRoute("/api/backup")({
               const buf = XLSXStyle.write(wb, { type: "buffer", bookType: "xlsx" });
               const base64 = buf.toString("base64");
 
-              const subject = `[Auto-Backup] Daily Report - ${agency.name} - ${fmtDate(todayStr)}`;
+              const subject = `Daily Accounts Report - ${agency.name} - ${fmtDate(todayStr)}`;
               const html = `
-                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
-                  <h2 style="color: #1a3c5e; border-bottom: 2px solid #2e75b6; padding-bottom: 10px; margin-top: 0;">
-                    Automated Daily Data Backup
-                  </h2>
-                  <p style="color: #4a5568; font-size: 15px; line-height: 1.6;">
-                    Here is your daily automated cash book backup for <strong>${agency.name}</strong>.
-                  </p>
-                  <div style="background-color: #f7fafc; padding: 15px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #2e75b6;">
-                    <h4 style="margin: 0 0 10px 0; color: #2d3748;">Summary for ${fmtDate(todayStr)}:</h4>
-                    <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
-                      <tr>
-                        <td style="padding: 4px 0; color: #718096;">Total Received:</td>
-                        <td style="padding: 4px 0; text-align: right; font-weight: bold; color: #1f7a4d;">₹${metrics.leftGrandTotal.toFixed(2)}</td>
-                      </tr>
-                      <tr>
-                        <td style="padding: 4px 0; color: #718096;">Total Paid Outflows:</td>
-                        <td style="padding: 4px 0; text-align: right; font-weight: bold; color: #9c0006;">₹${metrics.totalOutflows.toFixed(2)}</td>
-                      </tr>
-                      <tr style="border-top: 1px solid #e2e8f0;">
-                        <td style="padding: 6px 0 0 0; font-weight: bold; color: #2d3748;">Calculated Balance:</td>
-                        <td style="padding: 6px 0 0 0; text-align: right; font-weight: bold; color: #1a3c5e;">₹${metrics.cashBalance.toFixed(2)}</td>
-                      </tr>
-                    </table>
+                <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; padding: 0; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03); background-color: #ffffff;">
+                  <div style="background: linear-gradient(135deg, #1e3c5e 0%, #12253a 100%); padding: 30px 24px; text-align: center; color: #ffffff;">
+                    <h1 style="margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.5px;">Daily Accounts Report</h1>
+                    <p style="margin: 5px 0 0 0; font-size: 14px; opacity: 0.85;">${agency.name}</p>
                   </div>
-                  <p style="color: #718096; font-size: 13px; margin-bottom: 0;">
-                    This backup was compiled and sent automatically at 9:30 PM IST. 
-                    Please keep this email for your records.
-                  </p>
+                  <div style="padding: 24px; color: #334155;">
+                    <p style="margin: 0 0 16px 0; font-size: 15px; line-height: 1.6; color: #475569;">
+                      Here is your daily automated accounts backup report for <strong>${agency.name}</strong> for the date of <strong>${fmtDate(todayStr)}</strong>.
+                    </p>
+                    <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin: 20px 0;">
+                      <h3 style="margin: 0 0 12px 0; font-size: 15px; font-weight: 600; color: #1e293b;">Report Details</h3>
+                      <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                        <tr style="border-bottom: 1px solid #e2e8f0;">
+                          <td style="padding: 8px 0; color: #64748b;">Report Date:</td>
+                          <td style="padding: 8px 0; text-align: right; font-weight: 600; color: #0f172a;">${fmtDate(todayStr)}</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid #e2e8f0;">
+                          <td style="padding: 8px 0; color: #64748b;">Total Received:</td>
+                          <td style="padding: 8px 0; text-align: right; font-weight: 700; color: #16a34a;">₹${metrics.leftGrandTotal.toFixed(2)}</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid #e2e8f0;">
+                          <td style="padding: 8px 0; color: #64748b;">Total Paid Outflows:</td>
+                          <td style="padding: 8px 0; text-align: right; font-weight: 700; color: #dc2626;">₹${metrics.totalOutflows.toFixed(2)}</td>
+                        </tr>
+                        <tr>
+                          <td style="padding: 10px 0 0 0; font-weight: bold; color: #1e293b; font-size: 15px;">Net Cash Balance:</td>
+                          <td style="padding: 10px 0 0 0; text-align: right; font-weight: bold; color: #1e3c5e; font-size: 15px;">₹${metrics.cashBalance.toFixed(2)}</td>
+                        </tr>
+                      </table>
+                    </div>
+                    <div style="border-left: 4px solid #1e3c5e; background-color: #eff6ff; padding: 12px 16px; border-radius: 0 8px 8px 0; margin-bottom: 24px;">
+                      <p style="margin: 0; font-size: 13px; line-height: 1.5; color: #1e40af;">
+                        <strong>Attachment:</strong> A fully detailed, formatted Excel worksheet (containing the Cash Book, Sales Log, and Udhari Ledger) is attached to this email.
+                      </p>
+                    </div>
+                    <p style="margin: 0; font-size: 13px; color: #94a3b8; text-align: center; border-top: 1px solid #f1f5f9; padding-top: 16px;">
+                      This backup was compiled and sent automatically at 9:30 PM IST. Please keep this email for your records.
+                    </p>
+                  </div>
                 </div>
               `;
 

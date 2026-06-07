@@ -41,7 +41,16 @@ const BADGE_COLORS: Record<string, string> = {
   split:  "bg-rose-100 text-rose-700",
 };
 
-interface InflowItem { id: string; particular: string; amount: number; note?: string; payment_type?: string; }
+interface InflowItem { 
+  id: string; 
+  particular: string; 
+  amount: number; 
+  note?: string; 
+  payment_type?: string; 
+  split_cash?: number; 
+  split_online?: number; 
+  split_credit?: number; 
+}
 
 function newId() { return "inf-" + Date.now() + "-" + Math.random().toString(36).slice(2, 7); }
 
