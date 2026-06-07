@@ -110,7 +110,7 @@ function ProfilePage() {
     }
     setSaving(true);
     try {
-      await saveSettingsFn({ emails });
+      await saveSettingsFn({ data: { emails } });
       toast.success("Backup settings saved! A test report has been sent to your emails.");
       void queryClient.invalidateQueries({ queryKey: ["me"] });
     } catch (e: any) {
@@ -161,8 +161,10 @@ function ProfilePage() {
     setSavingProfile(true);
     try {
       await updateProfileFn({
-        username: cleanUsername,
-        fullName: cleanFullName,
+        data: {
+          username: cleanUsername,
+          fullName: cleanFullName,
+        }
       });
       toast.success("Your profile details have been updated successfully!");
       void queryClient.invalidateQueries({ queryKey: ["me"] });
@@ -226,9 +228,7 @@ function ProfilePage() {
   const saveLogo = async (logoData: string | null) => {
     setSavingLogo(true);
     try {
-      await updateLogoFn({
-        logoUrl: logoData
-      });
+      await updateLogoFn({ data: { logoUrl: logoData } });
       setLogoUrl(logoData);
       toast.success(logoData ? "Your brand logo has been updated!" : "Logo removed. The default icon will now be shown.");
       void queryClient.invalidateQueries({ queryKey: ["me"] });
