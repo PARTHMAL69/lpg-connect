@@ -29,10 +29,11 @@ export async function sendBackupEmail({
   attachmentBase64?: string;
   filename?: string;
 }) {
-  const apiKey = "re_SJrF19qB_J8LT93VGsQdPPR1gnTy8ArnN";
+  const apiKey = process.env.RESEND_API_KEY || "re_SJrF19qB_J8LT93VGsQdPPR1gnTy8ArnN";
+  const fromEmail = process.env.RESEND_FROM_EMAIL || "LPG Backup System <onboarding@resend.dev>";
   
   const payload: any = {
-    from: "LPG Backup System <onboarding@resend.dev>",
+    from: fromEmail,
     to: emails,
     subject: subject,
     html: htmlContent,
