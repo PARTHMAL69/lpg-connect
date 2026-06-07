@@ -69,8 +69,13 @@ export function getFriendlyError(err: unknown): string {
   }
 
   // Resend email errors
-  if (message.includes("Resend") || message.includes("resend")) {
-    return "Could not send the email at this time. Please try again later.";
+  if (message.includes("You can only send testing emails to")) {
+    const match = message.match(/testing emails to your own email address \(([^)]+)\)/);
+    const ownerEmail = match ? match[1] : "your registered email";
+    return `Resend Sandbox Limit: You can only send test emails to your verified Resend account email (${ownerEmail}). To send to other email addresses, you must verify your custom domain on Resend.com.`;
+  }
+  if (message.includes("Resend") || message.includes("resend") || message.includes("validation_error")) {
+    return "Could not send the email. Ensure you are sending only to your registered Resend email address, or check your Resend configuration.";
   }
 
   // Generic user-facing messages
