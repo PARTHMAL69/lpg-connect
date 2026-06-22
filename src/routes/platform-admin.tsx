@@ -2,7 +2,7 @@ import { createFileRoute, Outlet, redirect, Link, useNavigate } from "@tanstack/
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { getMe, listAgencies, createAgency, setAgencyStatus, resetAgencyAdminPassword } from "@/lib/auth.functions";
+import { getMe, listAgencies, createAgency, setAgencyStatus, resetAgencyAdminPassword, deleteAgency } from "@/lib/auth.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
