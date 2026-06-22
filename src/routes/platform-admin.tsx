@@ -59,6 +59,7 @@ export function AgenciesPage() {
   const listFn = useServerFn(listAgencies);
   const setStatusFn = useServerFn(setAgencyStatus);
   const resetPwFn = useServerFn(resetAgencyAdminPassword);
+  const deleteFn = useServerFn(deleteAgency);
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ["agencies"], queryFn: () => listFn() });
 
@@ -70,6 +71,14 @@ export function AgenciesPage() {
 
   const [resetTarget, setResetTarget] = useState<{ id: string; name: string } | null>(null);
   const [resetPw, setResetPw] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string; code: string } | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState("");
+
+  const deleteMut = useMutation({
+    mutationFn: () => deleteFn({ data: { agencyId: deleteTarget!.id, confirmCode: deleteConfirm } }),
+    onSuccess: () => { toast.success("Agency deleted"); setDeleteTarget(null); setDeleteConfirm(""); qc.invalidateQueries({ queryKey: ["agencies"] }); },
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   const resetMut = useMutation({
     mutationFn: () => resetPwFn({ data: { agencyId: resetTarget!.id, newPassword: resetPw } }),
