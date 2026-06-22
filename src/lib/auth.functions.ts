@@ -309,6 +309,54 @@ export const resetAgencyAdminPassword = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+/** Platform admin: permanently delete an agency, all its data, and its users. */
+export const deleteAgency = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({ agencyId: z.string().uuid(), confirmCode: z.string().trim().min(1) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { data: roles } = await context.supabase
+      .from("user_roles")
+      .select("role")
+      .eq("role", "platform_admin")
+      .maybeSingle();
+    if (!roles) throw new Error("Forbidden");
+
+    const admin = getAdminClient();
+    const { data: agency } = await admin
+      .from("agencies")
+      .select("id, code")
+      .eq("id", data.agencyId)
+      .maybeSingle();
+    if (!agency) throw new Error("Agency not found");
+    if (agency.code.toLowerCase() !== data.confirmCode.toLowerCase()) {
+      throw new Error("Confirmation code does not match agency code");
+    }
+
+    // Collect user ids belonging to the agency to delete from auth as well
+    const { data: users } = await admin
+      .from("agency_users")
+      .select("user_id")
+      .eq("agency_id", data.agencyId);
+    const userIds = (users ?? []).map((u) => u.user_id).filter(Boolean) as string[];
+
+    // Delete the agency — child tables cascade via FKs
+    const { error: delErr } = await admin.from("agencies").delete().eq("id", data.agencyId);
+    if (delErr) throw new Error(delErr.message);
+
+    // Best-effort: remove auth users for that agency
+    for (const uid of userIds) {
+      try {
+        await admin.auth.admin.deleteUser(uid);
+      } catch (e) {
+        console.warn("Failed to delete auth user", uid, e);
+      }
+    }
+
+    return { ok: true };
+  });
+
 /** Returns role/agency info for the current signed-in user. */
 export const getMe = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])

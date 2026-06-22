@@ -580,6 +580,7 @@ export type Database = {
           name: string
           rate: number
           requires_delivery_boy: boolean
+          show_qty_in_cashbook: boolean
           sku: string | null
           updated_at: string
           updated_by: string | null
@@ -596,6 +597,7 @@ export type Database = {
           name: string
           rate?: number
           requires_delivery_boy?: boolean
+          show_qty_in_cashbook?: boolean
           sku?: string | null
           updated_at?: string
           updated_by?: string | null
@@ -612,6 +614,7 @@ export type Database = {
           name?: string
           rate?: number
           requires_delivery_boy?: boolean
+          show_qty_in_cashbook?: boolean
           sku?: string | null
           updated_at?: string
           updated_by?: string | null

@@ -2,7 +2,7 @@ import { createFileRoute, Outlet, redirect, Link, useNavigate } from "@tanstack/
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { getMe, listAgencies, createAgency, setAgencyStatus, resetAgencyAdminPassword } from "@/lib/auth.functions";
+import { getMe, listAgencies, createAgency, setAgencyStatus, resetAgencyAdminPassword, deleteAgency } from "@/lib/auth.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Shield, Building2, LogOut, Plus, Loader2, KeyRound, Power, PowerOff } from "lucide-react";
+import { Shield, Building2, LogOut, Plus, Loader2, KeyRound, Power, PowerOff, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { formatDate } from "@/lib/format";
@@ -59,6 +59,7 @@ export function AgenciesPage() {
   const listFn = useServerFn(listAgencies);
   const setStatusFn = useServerFn(setAgencyStatus);
   const resetPwFn = useServerFn(resetAgencyAdminPassword);
+  const deleteFn = useServerFn(deleteAgency);
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ["agencies"], queryFn: () => listFn() });
 
@@ -70,6 +71,14 @@ export function AgenciesPage() {
 
   const [resetTarget, setResetTarget] = useState<{ id: string; name: string } | null>(null);
   const [resetPw, setResetPw] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string; code: string } | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState("");
+
+  const deleteMut = useMutation({
+    mutationFn: () => deleteFn({ data: { agencyId: deleteTarget!.id, confirmCode: deleteConfirm } }),
+    onSuccess: () => { toast.success("Agency deleted"); setDeleteTarget(null); setDeleteConfirm(""); qc.invalidateQueries({ queryKey: ["agencies"] }); },
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   const resetMut = useMutation({
     mutationFn: () => resetPwFn({ data: { agencyId: resetTarget!.id, newPassword: resetPw } }),
