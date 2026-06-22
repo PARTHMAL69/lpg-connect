@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Shield, Building2, LogOut, Plus, Loader2, KeyRound, Power, PowerOff } from "lucide-react";
+import { Shield, Building2, LogOut, Plus, Loader2, KeyRound, Power, PowerOff, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { formatDate } from "@/lib/format";
